@@ -1,0 +1,142 @@
+#include <QGuiApplication>
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QUrl>
+#include <QDir>
+#include <QStandardPaths>
+#include <QCursor>
+#include <QDebug>
+#include <QWindow>
+#include <QQuickWindow>
+#include <locale.h>
+
+#include "AppCore.h"
+#include "modules/local_files/LocalFilesBackend.h"
+#include "modules/plex/PlexBackend.h"
+#include "modules/jellyfin/JellyfinBackend.h"
+#include "modules/ambient_mode/AmbientModeBackend.h"
+#include "modules/youtube/YouTubeBackend.h"
+#include "player/MpvController.h"
+#include "input/InputManager.h"
+#include "input/IdleTracker.h"
+#include "update/UpdateManager.h"
+#ifdef Q_OS_MAC
+#include "macos_utils.h"
+#endif
+
+static QString resolveAppRoot() {
+    QString envRoot = qEnvironmentVariable("APP_ROOT");
+    if (!envRoot.isEmpty())
+        return QDir(envRoot).canonicalPath();
+
+    QString appDir = QCoreApplication::applicationDirPath();
+
+    if (QCoreApplication::applicationFilePath().contains(".app/Contents/MacOS/"))
+        return QDir(appDir + "/../Resources").canonicalPath();
+
+    QDir fhsData(appDir + "/../share/240mp");
+    if (fhsData.exists())
+        return fhsData.canonicalPath();
+
+    return QDir(appDir + "/..").canonicalPath();
+}
+
+static QString resolveDataRoot() {
+    QString envRoot = qEnvironmentVariable("DATA_ROOT");
+    if (!envRoot.isEmpty())
+        return QDir(envRoot).canonicalPath();
+
+    QString path = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(path);
+    return path;
+}
+
+int main(int argc, char *argv[]) {
+    QGuiApplication app(argc, argv);
+    app.setApplicationName("240-MP");
+    app.setApplicationVersion(QStringLiteral(APP_VERSION));
+
+    // Hide cursor — 240-MP is keyboard-only so the cursor serves no purpose.
+    // On Linux, only hide on headless EGLFS (not desktop X11/Wayland sessions).
+#ifdef Q_OS_LINUX
+    if (qgetenv("DISPLAY").isEmpty() && qgetenv("WAYLAND_DISPLAY").isEmpty())
+        QGuiApplication::setOverrideCursor(Qt::BlankCursor);
+#endif
+#ifdef Q_OS_MAC
+    QGuiApplication::setOverrideCursor(Qt::BlankCursor);
+    hideMacOSMenuBar();
+    int macW = macMainScreenWidth();
+    int macH = macMainScreenHeight();
+    qDebug("[main] macOS NSScreen main frame: %dx%d", macW, macH);
+#endif
+
+    setlocale(LC_NUMERIC, "C");
+
+    const QString appRoot  = resolveAppRoot();
+    const QString dataRoot = resolveDataRoot();
+    qDebug("[main] appRoot  = %s", qPrintable(appRoot));
+    qDebug("[main] dataRoot = %s", qPrintable(dataRoot));
+
+    QQmlApplicationEngine engine;
+
+    AppCore             appCore(appRoot, dataRoot);
+    LocalFilesBackend   localFiles(appRoot, dataRoot);
+    PlexBackend         plexBackend(appRoot, dataRoot);
+    JellyfinBackend     jellyfinBackend(appRoot, dataRoot);
+    AmbientModeBackend  ambientMode(dataRoot);
+    YouTubeBackend      youtubeBackend(appRoot, dataRoot);
+    MpvController       mpvController(appRoot, &appCore);
+    InputManager        inputManager(dataRoot);
+    IdleTracker         idleTracker(60);   // disabled until Main.qml applies the saved setting
+    UpdateManager       updateManager(appRoot, dataRoot);
+
+    // When the Qt window is inactive (fullscreen mpv has OS focus on macOS),
+    // gamepad actions bypass QML and drive mpv directly over IPC.
+    QObject::connect(&inputManager, &InputManager::mpvKeyRequested,
+                     &mpvController, &MpvController::sendKey);
+
+    // Each module backend is wired in one call: stored for action routing, exposed to QML
+    // under its context-property name, and its optional signals/slots connected by
+    // introspection. The module ID lives in exactly one place per module.
+    QQmlContext *ctx = engine.rootContext();
+    appCore.registerModule("com.240mp.local_files",  "localFilesBackend",  &localFiles,  ctx);
+    appCore.registerModule("com.240mp.plex",         "plexBackend",        &plexBackend, ctx);
+    appCore.registerModule("com.240mp.jellyfin",     "jellyfinBackend",    &jellyfinBackend, ctx);
+    appCore.registerModule("com.240mp.ambient_mode", "ambientModeBackend", &ambientMode, ctx);
+    appCore.registerModule("com.240mp.youtube",      "youtubeBackend",     &youtubeBackend, ctx);
+
+    ctx->setContextProperty("idleTracker",   &idleTracker);
+    ctx->setContextProperty("appCore",       &appCore);
+    ctx->setContextProperty("mpvController", &mpvController);
+    ctx->setContextProperty("inputManager",  &inputManager);
+    ctx->setContextProperty("updateManager", &updateManager);
+#ifdef Q_OS_MAC
+    // QVariant(0), not literal 0 — a bare 0 is a null pointer constant and
+    // resolves to the QObject* overload, handing QML null instead of an int.
+    engine.rootContext()->setContextProperty("macScreenX",      QVariant(0));
+    engine.rootContext()->setContextProperty("macScreenY",      QVariant(0));
+    engine.rootContext()->setContextProperty("macScreenWidth",  macW);
+    engine.rootContext()->setContextProperty("macScreenHeight", macH);
+#endif
+
+    engine.addImportPath(appRoot + "/views");
+
+    engine.load(QUrl::fromLocalFile(appRoot + "/Main.qml"));
+    if (engine.rootObjects().isEmpty()) {
+        qCritical("[main] QML engine failed to load Main.qml");
+        return 1;
+    }
+
+    // Gamepad key events are posted straight to the root window so they reach
+    // the QML focus item even when another window (mpv) holds OS focus.
+    inputManager.setTargetWindow(qobject_cast<QQuickWindow *>(engine.rootObjects().first()));
+
+#ifdef Q_OS_MAC
+    if (QWindow *win = qobject_cast<QWindow *>(engine.rootObjects().first())) {
+        win->winId(); // ensure native NSWindow is created
+        forceWindowFullScreen(reinterpret_cast<void *>(win->winId()));
+    }
+#endif
+
+    return app.exec();
+}

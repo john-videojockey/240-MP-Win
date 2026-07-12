@@ -1,0 +1,20 @@
+{
+  "id": "com.240mp.ambient_mode",
+  "name": "Ambient:Mode",
+  "icon": "assets/images/logo.svg",
+  "entry_point_qml": "views/Root.qml",
+  "settings": [
+    {
+      "key": "enabled",
+      "label": "ENABLED",
+      "type": "toggle",
+      "default": "OFF"
+    },
+    {
+      "key": "media_directory",
+      "label": "Media Directory",
+      "type": "directory_browser",
+      "default": ""
+    }
+  ]
+}
