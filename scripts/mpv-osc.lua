@@ -17,6 +17,11 @@ do
     end
 end
 
+-- Set by the app (--script-opts-append=episode-nav=1) when |< / >| should be
+-- offered even without an mpv playlist: >| asks the app for the next episode
+-- via a client-message; |< restarts the current one.
+local episode_nav = (mp.get_opt("episode-nav") == "1")
+
 local menu_visible = false
 local focus_row = 0  -- 0: Seek Bar, 1: Buttons
 local focus_btn = 1  -- index into visible left buttons + STOP; varies with track availability
@@ -24,8 +29,9 @@ local update_timer = nil
 local idle_timer = nil
 local skip_active = false
 
-local SEEK_SECONDS = 10
-local MENU_TIMEOUT = 5
+local SEEK_SECONDS  = 10
+local MENU_TIMEOUT  = 5   -- keyboard-triggered auto-hide
+local MOUSE_TIMEOUT = 3   -- mouse-triggered auto-hide
 
 -- Colors (ABGR format for ASS)
 local C_WHITE = "&HFFFFFF&"
@@ -70,15 +76,6 @@ local function get_sub_str()
     return table.concat(parts, " ")
 end
 
-local btn_actions = {
-    function() mp.command("no-osd cycle audio") end,
-    function() mp.command("no-osd cycle sub") end,
-    function() mp.command("no-osd cycle-values panscan 0 1") end,
-    function() mp.command("quit") end,
-    function() mp.command("playlist-prev") end,
-    function() mp.command("playlist-next") end,
-}
-
 local function has_subtitle_tracks()
     local tracks = mp.get_property_native("track-list", {})
     for _, t in ipairs(tracks) do
@@ -91,23 +88,22 @@ local function has_playlist()
     return (mp.get_property_number("playlist-count", 1) or 1) > 1
 end
 
-local function build_left_btns(has_sub, has_pl, bar_w)
-    local btns = {}
-    if skip_active then
-        btns[#btns + 1] = {label="SKIP", width=math.floor(bar_w * 0.090625), action=function()
-            mp.commandv("script-message", "skip-segment")
-        end}
+local function nav_prev()
+    if has_playlist() then
+        mp.command("playlist-prev")
+    else
+        -- Restart the current item — the app resolves "previous" no further.
+        mp.commandv("seek", "0", "absolute")
     end
-    btns[#btns + 1] = {label="AUDIO", width=math.floor(bar_w * 0.109375), action=btn_actions[1]}
-    if has_sub then
-        table.insert(btns, {label="SUBTITLE", width=math.floor(bar_w * 0.15625), action=btn_actions[2]})
+end
+
+local function nav_next()
+    if has_playlist() then
+        mp.command("playlist-next")
+    elseif episode_nav then
+        -- The app decides what comes next (e.g. next episode in the season).
+        mp.commandv("script-message", "episode-nav", "next")
     end
-    table.insert(btns, {label="CROP", width=math.floor(bar_w * 0.090625), action=btn_actions[3]})
-    if has_pl then
-        table.insert(btns, {label="<", width=math.floor(bar_w * 0.055), action=btn_actions[5]})
-        table.insert(btns, {label=">", width=math.floor(bar_w * 0.055), action=btn_actions[6]})
-    end
-    return btns
 end
 
 local transcode_offset = tonumber(mp.get_opt("transcode-offset") or "0") or 0
@@ -132,6 +128,82 @@ local function format_time(seconds)
     end
 end
 
+-- ── Layout ────────────────────────────────────────────────────────────────────
+-- One source of truth for every rectangle, shared by drawing (draw_menu) and
+-- mouse hit-testing (the MBTN_LEFT handler) so they can never drift apart.
+
+local function build_left_btns(has_sub, show_nav, bar_w)
+    local btns = {}
+    if skip_active then
+        btns[#btns + 1] = {label="SKIP", width=math.floor(bar_w * 0.090625), action=function()
+            mp.commandv("script-message", "skip-segment")
+        end}
+    end
+    if show_nav then
+        btns[#btns + 1] = {label="|<", width=math.floor(bar_w * 0.055), action=nav_prev}
+    end
+    local paused = mp.get_property_native("pause", false)
+    btns[#btns + 1] = {label=(paused and "PLAY" or "PAUSE"),
+                       width=math.floor(bar_w * 0.109375),
+                       action=function() mp.command("no-osd cycle pause") end}
+    if show_nav then
+        btns[#btns + 1] = {label=">|", width=math.floor(bar_w * 0.055), action=nav_next}
+    end
+    btns[#btns + 1] = {label="AUDIO", width=math.floor(bar_w * 0.109375),
+                       action=function() mp.command("no-osd cycle audio") end}
+    if has_sub then
+        btns[#btns + 1] = {label="SUBTITLE", width=math.floor(bar_w * 0.15625),
+                           action=function() mp.command("no-osd cycle sub") end}
+    end
+    btns[#btns + 1] = {label="CROP", width=math.floor(bar_w * 0.090625),
+                       action=function() mp.command("no-osd cycle-values panscan 0 1") end}
+    return btns
+end
+
+local function layout()
+    local ww, wh = mp.get_osd_size()
+    if ww == 0 or wh == 0 then return nil end
+
+    local g = {}
+    g.ww, g.wh = ww, wh
+    g.fs      = math.floor(wh * 0.0333333)   -- font size
+    g.lm      = math.floor(ww * 0.12)        -- left margin
+    g.rm      = math.floor(ww * 0.88)        -- right margin
+    g.bar_w   = g.rm - g.lm
+    g.border  = 2
+
+    g.bar_h   = math.floor(g.fs * 2)
+    g.btn_h   = math.floor(g.fs * 1.5)
+    g.btn_gap = math.floor(g.bar_w * 0.025)
+
+    g.title_y = math.floor(wh * 0.0666667)
+    g.info_y  = math.floor(wh * 0.125)
+    g.row1_y  = math.floor(wh * 0.7083333)
+    g.bar_y   = math.floor(wh * 0.74375)
+    g.btn_y   = math.floor(wh * 0.8333333)
+
+    g.has_sub  = has_subtitle_tracks()
+    g.show_nav = has_playlist() or episode_nav
+
+    -- Close (X) button, top-right, square
+    g.close = { x = g.rm - g.btn_h, y = g.title_y, w = g.btn_h, h = g.btn_h }
+
+    -- Seek bar
+    g.bar = { x = g.lm, y = g.bar_y, w = g.bar_w, h = g.bar_h, inset = g.border + 2 }
+
+    -- Button row: left group with x positions assigned, STOP pinned right
+    g.btns = build_left_btns(g.has_sub, g.show_nav, g.bar_w)
+    local bx = g.lm
+    for _, btn in ipairs(g.btns) do
+        btn.x, btn.y, btn.h = bx, g.btn_y, g.btn_h
+        bx = bx + btn.width + g.btn_gap
+    end
+    local stop_w = math.floor(g.bar_w * 0.090625)
+    g.stop = { x = g.rm - stop_w, y = g.btn_y, w = stop_w, h = g.btn_h }
+
+    return g
+end
+
 -- Draw a filled rectangle with an optional border.
 -- Uses ass:pos() (no \an tag) to match mpv's expected drawing coordinate origin.
 local function draw_rect(ass, x, y, w, h, fc, fa, bs, bc)
@@ -154,39 +226,30 @@ local function draw_text(ass, x, y, anchor, text, fs, fc, fa)
 end
 
 local function draw_menu()
+    local g = layout()
+    if not g then return end
     local ass = assdraw.ass_new()
-    local ww, wh = mp.get_osd_size()
-    if ww == 0 or wh == 0 then return end
 
-    -- Layout constants
-    local fs      = math.floor(wh * 0.0333333)   -- font size
-    local lm      = math.floor(ww * 0.12)    -- left margin
-    local rm      = math.floor(ww * 0.88)    -- right margin
-    local bar_w   = rm - lm
-    local border  = 2
+    -- ── Title (top-left) + close X (top-right) ────────────────────
+    local title = (mp.get_property("media-title", "") or ""):upper()
+    -- VCR OSD Mono is monospace ≈ 0.6em per glyph; keep clear of the X button.
+    local max_chars = math.floor((g.close.x - g.lm - g.btn_gap) / (g.fs * 0.6))
+    if #title > max_chars and max_chars > 3 then
+        title = title:sub(1, max_chars - 3) .. "..."
+    end
+    draw_text(ass, g.lm, g.title_y + g.btn_h / 2, 4, title, g.fs, C_WHITE, A_OPAQUE)
 
-    -- Heights derived from fs so they scale consistently with the font
-    local bar_h   = math.floor(fs * 2)
-    local btn_h   = math.floor(fs * 1.5)
-    local btn_gap = math.floor(bar_w * 0.025)
+    draw_rect(ass, g.close.x, g.close.y, g.close.w, g.close.h,
+              C_BLACK, A_TRANS, g.border, C_WHITE)
+    draw_text(ass, g.close.x + g.close.w / 2, g.close.y + g.close.h / 2, 5,
+              "X", g.fs, C_WHITE, A_OPAQUE)
 
-    -- Row y-positions
-    local row1_y  = math.floor(wh * 0.7083333)
-    local bar_y   = math.floor(wh * 0.74375)
-    local btn_y   = math.floor(wh * 0.8333333)
-
-    local has_sub    = has_subtitle_tracks()
-    local stop_w     = math.floor(bar_w * 0.090625)
-    local left_btns  = build_left_btns(has_sub, has_playlist(), bar_w)
-
-    -- ── Track info (top-left) ─────────────────────────────────────
-    local info_fs  = math.floor(fs * 1)
+    -- ── Track info ────────────────────────────────────────────────
+    local info_fs  = math.floor(g.fs * 1)
     local info_lh  = math.floor(info_fs * 1.5)
-    local info_y   = math.floor(wh * 0.125)
-
-    draw_text(ass, lm, info_y, 4, "AUDIO: " .. get_audio_str(), info_fs, C_WHITE, A_OPAQUE)
-    if has_sub then
-        draw_text(ass, lm, info_y + info_lh, 4, "SUBTITLE: " .. get_sub_str(),  info_fs, C_WHITE, A_OPAQUE)
+    draw_text(ass, g.lm, g.info_y, 4, "AUDIO: " .. get_audio_str(), info_fs, C_WHITE, A_OPAQUE)
+    if g.has_sub then
+        draw_text(ass, g.lm, g.info_y + info_lh, 4, "SUBTITLE: " .. get_sub_str(), info_fs, C_WHITE, A_OPAQUE)
     end
 
     -- ── Row 1: Time text ──────────────────────────────────────────
@@ -194,75 +257,67 @@ local function draw_menu()
     local time_pos = math.min(math.max(0, (mp.get_property_number("time-pos", 0) or 0) + transcode_offset), total)
     local percent  = (total > 0) and math.min(100, math.max(0, time_pos / total * 100)) or 0
 
-    draw_text(ass, lm, row1_y, 4, format_time(time_pos), fs, C_WHITE, A_OPAQUE)
-    draw_text(ass, rm, row1_y, 6, format_time(total),    fs, C_WHITE, A_OPAQUE)
+    draw_text(ass, g.lm, g.row1_y, 4, format_time(time_pos), g.fs, C_WHITE, A_OPAQUE)
+    draw_text(ass, g.rm, g.row1_y, 6, format_time(total),    g.fs, C_WHITE, A_OPAQUE)
 
     -- ── Row 2: Seek bar ───────────────────────────────────────────
-    local pad   = 2
-    local inset = border + pad
-
-    -- Transparent box with white border
-    draw_rect(ass, lm, bar_y, bar_w, bar_h, C_BLACK, A_TRANS, border, C_WHITE)
-
-    -- Progress fill (full opacity when focused, 40% when not)
-    local inner_w    = bar_w - 2 * inset
+    draw_rect(ass, g.bar.x, g.bar.y, g.bar.w, g.bar.h, C_BLACK, A_TRANS, g.border, C_WHITE)
+    local inner_w    = g.bar.w - 2 * g.bar.inset
     local fill_w     = math.max(0, math.floor(inner_w * (percent / 100)))
     local fill_alpha = (focus_row == 0) and A_OPAQUE or A_DIM
     if fill_w > 0 then
-        draw_rect(ass, lm + inset, bar_y + inset, fill_w, bar_h - 2 * inset,
-                  C_WHITE, fill_alpha, 0, C_WHITE)
+        draw_rect(ass, g.bar.x + g.bar.inset, g.bar.y + g.bar.inset,
+                  fill_w, g.bar.h - 2 * g.bar.inset, C_WHITE, fill_alpha, 0, C_WHITE)
     end
 
     -- ── Row 3: Buttons ────────────────────────────────────────────
-    -- Left group: AUDIO, [SUBTITLE], CROP
-    local stop_idx = #left_btns + 1
-    local bx = lm
-    for i, btn in ipairs(left_btns) do
+    local stop_idx = #g.btns + 1
+    for i, btn in ipairs(g.btns) do
         local sel    = (focus_row == 1 and focus_btn == i)
         local fill_c = sel and C_WHITE or C_BLACK
         local fill_a = sel and A_OPAQUE or A_TRANS
         local text_c = sel and C_BLACK  or C_WHITE
 
-        draw_rect(ass, bx, btn_y, btn.width, btn_h, fill_c, fill_a, border, C_WHITE)
-        draw_text(ass, bx + btn.width / 2, btn_y + btn_h / 2, 5,
-                  btn.label, fs, text_c, A_OPAQUE)
-        bx = bx + btn.width + btn_gap
+        draw_rect(ass, btn.x, btn.y, btn.width, btn.h, fill_c, fill_a, g.border, C_WHITE)
+        draw_text(ass, btn.x + btn.width / 2, btn.y + btn.h / 2, 5,
+                  btn.label, g.fs, text_c, A_OPAQUE)
     end
 
-    -- Right: STOP
-    local stop_x = rm - stop_w
     local sel    = (focus_row == 1 and focus_btn == stop_idx)
     local fill_c = sel and C_WHITE or C_BLACK
     local fill_a = sel and A_OPAQUE or A_TRANS
     local text_c = sel and C_BLACK  or C_WHITE
+    draw_rect(ass, g.stop.x, g.stop.y, g.stop.w, g.stop.h, fill_c, fill_a, g.border, C_WHITE)
+    draw_text(ass, g.stop.x + g.stop.w / 2, g.stop.y + g.stop.h / 2, 5,
+              "STOP", g.fs, text_c, A_OPAQUE)
 
-    draw_rect(ass, stop_x, btn_y, stop_w, btn_h, fill_c, fill_a, border, C_WHITE)
-    draw_text(ass, stop_x + stop_w / 2, btn_y + btn_h / 2, 5,
-              "STOP", fs, text_c, A_OPAQUE)
-
-    mp.set_osd_ass(ww, wh, ass.text)
+    mp.set_osd_ass(g.ww, g.wh, ass.text)
 end
 
-local function reset_idle_timer()
+-- ── Show / hide ───────────────────────────────────────────────────────────────
+
+local function hide_menu()
+    if not menu_visible then return end
+    menu_visible = false
+    mp.set_osd_ass(0, 0, "")
+    if update_timer then update_timer:stop() end
+    if idle_timer   then idle_timer:kill()   end
+    mp.remove_key_binding("menu-up")
+    mp.remove_key_binding("menu-down")
+    mp.remove_key_binding("menu-left")
+    mp.remove_key_binding("menu-right")
+    mp.remove_key_binding("menu-enter")
+    mp.remove_key_binding("menu-esc")
+    mp.remove_key_binding("menu-bs")
+end
+
+local function reset_idle_timer(timeout)
     if idle_timer then idle_timer:kill() end
-    idle_timer = mp.add_timeout(MENU_TIMEOUT, function()
-        if menu_visible then
-            menu_visible = false
-            mp.set_osd_ass(0, 0, "")
-            if update_timer then update_timer:stop() end
-            mp.remove_key_binding("menu-up")
-            mp.remove_key_binding("menu-down")
-            mp.remove_key_binding("menu-left")
-            mp.remove_key_binding("menu-right")
-            mp.remove_key_binding("menu-enter")
-            mp.remove_key_binding("menu-esc")
-            mp.remove_key_binding("menu-bs")
-        end
-    end)
+    idle_timer = mp.add_timeout(timeout or MENU_TIMEOUT, hide_menu)
 end
 
 local function update_nav(action)
-    reset_idle_timer()
+    reset_idle_timer(MENU_TIMEOUT)
 
     if action == "up" then
         focus_row = 0
@@ -272,95 +327,151 @@ local function update_nav(action)
         if focus_row == 0 then
             mp.command("seek -" .. SEEK_SECONDS)
         else
-            local has_sub = has_subtitle_tracks()
-            local has_pl  = has_playlist()
-            local ww, _   = mp.get_osd_size()
-            local bar_w   = math.floor(ww * 0.88) - math.floor(ww * 0.12)
-            local total   = #build_left_btns(has_sub, has_pl, bar_w) + 1
+            local g = layout()
+            local total = g and (#g.btns + 1) or 1
             focus_btn = focus_btn > 1 and focus_btn - 1 or total
         end
     elseif action == "right" then
         if focus_row == 0 then
             mp.command("seek " .. SEEK_SECONDS)
         else
-            local has_sub = has_subtitle_tracks()
-            local has_pl  = has_playlist()
-            local ww, _   = mp.get_osd_size()
-            local bar_w   = math.floor(ww * 0.88) - math.floor(ww * 0.12)
-            local total   = #build_left_btns(has_sub, has_pl, bar_w) + 1
+            local g = layout()
+            local total = g and (#g.btns + 1) or 1
             focus_btn = focus_btn < total and focus_btn + 1 or 1
         end
     elseif action == "enter" and focus_row == 1 then
-        local has_sub   = has_subtitle_tracks()
-        local has_pl    = has_playlist()
-        local ww, wh    = mp.get_osd_size()
-        local bar_w     = math.floor(ww * 0.88) - math.floor(ww * 0.12)
-        local btns      = build_left_btns(has_sub, has_pl, bar_w)
-        local total     = #btns + 1
-        local clamped   = math.min(focus_btn, total)
-        if clamped <= #btns then
-            btns[clamped].action()
-        else
-            btn_actions[4]()
+        local g = layout()
+        if g then
+            local total   = #g.btns + 1
+            local clamped = math.min(focus_btn, total)
+            if clamped <= #g.btns then
+                g.btns[clamped].action()
+            else
+                mp.command("quit")
+            end
         end
     end
 
     draw_menu()
 end
 
-local function toggle_menu()
+local function show_menu(timeout)
     if menu_visible then
-        menu_visible = false
-        mp.set_osd_ass(0, 0, "")
-        if update_timer then update_timer:stop() end
-        if idle_timer   then idle_timer:kill()   end
-        mp.remove_key_binding("menu-up")
-        mp.remove_key_binding("menu-down")
-        mp.remove_key_binding("menu-left")
-        mp.remove_key_binding("menu-right")
-        mp.remove_key_binding("menu-enter")
-        mp.remove_key_binding("menu-esc")
-        mp.remove_key_binding("menu-bs")
-    else
-        -- Tell the volume bar (media-keys.lua) to stand down — the two OSDs
-        -- share the same spot and are mutually exclusive.
-        mp.commandv("script-message", "240mp-osd-volume-hide")
-        menu_visible = true
-        focus_row    = 1
-        draw_menu()
-        update_timer = mp.add_periodic_timer(0.5, draw_menu)
-        reset_idle_timer()
-
-        mp.add_forced_key_binding("UP",    "menu-up",    function() update_nav("up")    end)
-        mp.add_forced_key_binding("DOWN",  "menu-down",  function() update_nav("down")  end)
-        mp.add_forced_key_binding("LEFT",  "menu-left",  function() update_nav("left")  end)
-        mp.add_forced_key_binding("RIGHT", "menu-right", function() update_nav("right") end)
-        mp.add_forced_key_binding("ENTER", "menu-enter", function() update_nav("enter") end)
-        mp.add_forced_key_binding("ESC",   "menu-esc",   toggle_menu)
-        mp.add_forced_key_binding("BS",    "menu-bs",    toggle_menu)
+        reset_idle_timer(timeout)
+        return
     end
+    -- Tell the volume bar (media-keys.lua) to stand down — the two OSDs
+    -- share the same spot and are mutually exclusive.
+    mp.commandv("script-message", "240mp-osd-volume-hide")
+    menu_visible = true
+    focus_row    = 1
+    draw_menu()
+    update_timer = mp.add_periodic_timer(0.5, draw_menu)
+    reset_idle_timer(timeout)
+
+    mp.add_forced_key_binding("UP",    "menu-up",    function() update_nav("up")    end)
+    mp.add_forced_key_binding("DOWN",  "menu-down",  function() update_nav("down")  end)
+    mp.add_forced_key_binding("LEFT",  "menu-left",  function() update_nav("left")  end)
+    mp.add_forced_key_binding("RIGHT", "menu-right", function() update_nav("right") end)
+    mp.add_forced_key_binding("ENTER", "menu-enter", function() update_nav("enter") end)
+    mp.add_forced_key_binding("ESC",   "menu-esc",   hide_menu)
+    mp.add_forced_key_binding("BS",    "menu-bs",    hide_menu)
 end
 
--- The volume bar (media-keys.lua) broadcasts this when it appears; close the
--- menu so the two OSDs never overlap. toggle_menu() runs the full teardown.
-mp.register_script_message("240mp-osd-menu-hide", function()
-    if menu_visible then toggle_menu() end
+local function toggle_menu()
+    if menu_visible then hide_menu() else show_menu(MENU_TIMEOUT) end
+end
+
+-- ── Mouse support ─────────────────────────────────────────────────────────────
+-- Plex-style: controls appear on mouse movement or click and hide after
+-- MOUSE_TIMEOUT seconds of stillness, or immediately on a click outside them.
+
+local last_mx, last_my = nil, nil
+mp.observe_property("mouse-pos", "native", function(_, mpos)
+    if not mpos or mpos.hover == false then return end
+    if last_mx ~= nil and (mpos.x ~= last_mx or mpos.y ~= last_my) then
+        show_menu(MOUSE_TIMEOUT)
+    end
+    last_mx, last_my = mpos.x, mpos.y
 end)
+
+local function hit(r, mx, my)
+    return r and mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h
+end
+
+mp.add_forced_key_binding("MBTN_LEFT", "osc-click", function()
+    local mpos = mp.get_property_native("mouse-pos") or {}
+    local mx, my = mpos.x or -1, mpos.y or -1
+
+    if not menu_visible then
+        show_menu(MOUSE_TIMEOUT)
+        return
+    end
+
+    local g = layout()
+    if not g then return end
+
+    if hit(g.close, mx, my) then
+        mp.command("quit")
+        return
+    end
+
+    if hit(g.bar, mx, my) then
+        -- Click-to-seek: map the x position to the displayed timeline, then
+        -- back out the transcode offset to get mpv's own time base.
+        local total = stable_duration or (mp.get_property_number("duration", 0) or 0)
+        if total > 0 then
+            local inner_x = g.bar.x + g.bar.inset
+            local inner_w = g.bar.w - 2 * g.bar.inset
+            local frac    = math.min(1, math.max(0, (mx - inner_x) / inner_w))
+            local target  = math.max(0, frac * total - transcode_offset)
+            mp.commandv("seek", tostring(target), "absolute")
+        end
+        focus_row = 0
+        reset_idle_timer(MOUSE_TIMEOUT)
+        draw_menu()
+        return
+    end
+
+    for i, btn in ipairs(g.btns) do
+        if hit({x=btn.x, y=btn.y, w=btn.width, h=btn.h}, mx, my) then
+            -- Sync the keyboard focus to the clicked button so the highlight
+            -- lands where the user is interacting.
+            focus_row, focus_btn = 1, i
+            btn.action()
+            reset_idle_timer(MOUSE_TIMEOUT)
+            draw_menu()
+            return
+        end
+    end
+
+    if hit(g.stop, mx, my) then
+        mp.command("quit")
+        return
+    end
+
+    -- Click outside every control: dismiss.
+    hide_menu()
+end)
+
+-- The volume bar (media-keys.lua) broadcasts this when it appears; close the
+-- menu so the two OSDs never overlap.
+mp.register_script_message("240mp-osd-menu-hide", hide_menu)
 
 -- media-keys.lua broadcasts this on seek / chapter changes so the nav menu
 -- pops up to show the new position. Open it if closed; otherwise just redraw
 -- and restart the auto-hide timer.
 mp.register_script_message("240mp-osd-menu-show", function()
     if menu_visible then
-        reset_idle_timer()
+        reset_idle_timer(MENU_TIMEOUT)
         draw_menu()
     else
-        toggle_menu()
+        show_menu(MENU_TIMEOUT)
     end
 end)
 
 -- Forced bindings so UP/DOWN take priority over mpv's default seek bindings
--- on desktop (macOS/Linux with native keyboard input).
+-- when native keyboard input reaches mpv directly.
 mp.add_forced_key_binding("UP",   "open_menu_up",   toggle_menu)
 mp.add_forced_key_binding("DOWN", "open_menu_down", toggle_menu)
 

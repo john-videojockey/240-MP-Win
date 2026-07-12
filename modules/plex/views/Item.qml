@@ -85,6 +85,16 @@ FocusScope {
                 }
             }
 
+            // Full display title for the mpv OSC's top-left corner
+            // (e.g. "SHOW - S1E2 - EPISODE TITLE"; movies use the title alone).
+            var mediaTitle = d.title
+            if (d.type === "episode") {
+                var se = "S" + (d.parentIndex != null ? d.parentIndex : "?")
+                       + "E" + (d.index != null ? d.index : "?")
+                mediaTitle = (d.grandparentTitle ? d.grandparentTitle + " - " : "")
+                           + se + " - " + d.title
+            }
+
             detailRoot.navigateTo("Player.qml", {
                 streamUrl: url,
                 plexToken: plexToken,
@@ -92,6 +102,8 @@ FocusScope {
                 partKey: d.partKey,
                 partId: d.partId,
                 title: d.title,
+                mediaTitle: mediaTitle,
+                episodeNav: d.type === "episode",
                 viewOffset: d.viewOffset || 0,
                 duration: d.duration || 0,
                 audioStreams: d.audioStreams || [],
@@ -248,7 +260,8 @@ FocusScope {
 
             Column {
                 topPadding: root.sh * 0.0083333 //4
-                width: root.sw * 0.54375 //348
+                // Narrower when the thumbnail is showing beside it.
+                width: detailThumb.visible ? root.sw * 0.35 : root.sw * 0.54375
                 spacing: root.sh * 0.0166667 //8
 
                 //Name
@@ -322,6 +335,32 @@ FocusScope {
                         PauseAnimation { duration: 4000 }
                         PropertyAction { target: summaryText; property: "y"; value: 0 }
                     }
+                }
+            }
+
+            // Thumbnail: 16:9 still for episodes, poster for movies — the box
+            // fits either via PreserveAspectFit. Hidden until loaded so the
+            // text-only layout stands on its own when there is no image.
+            Item {
+                id: detailThumb
+                width: root.sw * 0.155
+                height: root.sh * 0.32
+                visible: thumbImage.status === Image.Ready
+
+                Image {
+                    id: thumbImage
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    width: parent.width
+                    height: parent.height
+                    fillMode: Image.PreserveAspectFit
+                    horizontalAlignment: Image.AlignLeft
+                    verticalAlignment: Image.AlignTop
+                    asynchronous: true
+                    source: (detail && detail.thumb)
+                            ? plexBackend.image_url(detail.thumb,
+                                                    Math.round(width), Math.round(height))
+                            : ""
                 }
             }
         }

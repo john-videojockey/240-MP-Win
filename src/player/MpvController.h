@@ -67,6 +67,9 @@ signals:
     void playbackEnded(int finalPositionMs, int finalDurationMs, const QString &reason);
 
     void skipRequested();
+    // The OSC's |< / >| buttons when no mpv playlist is loaded: the app decides
+    // what "next"/"prev" means (e.g. Plex plays the next episode in the season).
+    void episodeNavRequested(const QString &direction);
 
 private slots:
     void onProcessFinished();

@@ -356,6 +356,8 @@ void MpvController::onIpcReadyRead() {
                     const QString msg = args[0].toString();
                     if (msg == "skip-segment")
                         emit skipRequested();
+                    else if (msg == "episode-nav" && args.size() > 1)
+                        emit episodeNavRequested(args[1].toString());
                 }
             }
             continue;

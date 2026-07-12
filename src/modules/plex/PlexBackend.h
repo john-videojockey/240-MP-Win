@@ -22,6 +22,9 @@ public:
     Q_INVOKABLE void     build_stream_url(const QString &ratingKey,
                                           const QString &partKey,
                                           const QString &sessionId);
+    // Sized image URL (photo transcoder + token) for an item's server-relative
+    // "thumb" path; empty string in or no active server → empty string out.
+    Q_INVOKABLE QString  image_url(const QString &imagePath, int width, int height);
 
     // Auth flow
     Q_INVOKABLE void start_pin_auth();

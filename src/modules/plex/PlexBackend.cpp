@@ -619,8 +619,15 @@ QString PlexBackend::msToDisplay(int ms) {
 }
 
 QVariantMap PlexBackend::formatItem(const QJsonObject &m) const {
+    // Best thumbnail for this item: its own, else the season's, else the
+    // show's. A server-relative path (e.g. /library/metadata/1/thumb/2) —
+    // turn it into a fetchable URL with image_url().
+    const QString thumb = !m["thumb"].toString().isEmpty()        ? m["thumb"].toString()
+                        : !m["parentThumb"].toString().isEmpty()  ? m["parentThumb"].toString()
+                                                                  : m["grandparentThumb"].toString();
     return QVariantMap{
         {"ratingKey",              m["ratingKey"].toString()},
+        {"thumb",                  thumb},
         {"title",                  m["title"].toString().toUpper()},
         {"editionTitle",           m["editionTitle"].toString()},
         {"year",                   m["year"].toVariant()},
@@ -1664,7 +1671,31 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
         {"parentRatingKey",  meta["parentRatingKey"].toString()},
         {"grandparentTitle", meta["grandparentTitle"].toString()},
         {"parentTitle",      meta["parentTitle"].toString()},
+        {"thumb",            !meta["thumb"].toString().isEmpty()       ? meta["thumb"].toString()
+                           : !meta["parentThumb"].toString().isEmpty() ? meta["parentThumb"].toString()
+                                                                       : meta["grandparentThumb"].toString()},
     };
+}
+
+// Fetchable URL for a server-relative image path (item "thumb"/"art"), sized
+// through the server's photo transcoder so the client never downloads a
+// full-size poster to draw a small preview. Empty in → empty out, so QML can
+// bind Image.source directly.
+QString PlexBackend::image_url(const QString &imagePath, int width, int height) {
+    if (imagePath.isEmpty()) return {};
+    const QString uri = serverUrl();
+    if (uri.isEmpty()) return {};
+    QUrl url(uri + "/photo/:/transcode");
+    QUrlQuery q;
+    q.addQueryItem("width",  QString::number(width));
+    q.addQueryItem("height", QString::number(height));
+    q.addQueryItem("minSize", "1");
+    q.addQueryItem("upscale", "1");
+    q.addQueryItem("url", imagePath);
+    // Token as a query item: QML's Image can't send headers.
+    q.addQueryItem("X-Plex-Token", serverToken());
+    url.setQuery(q);
+    return url.toString();
 }
 
 void PlexBackend::load_item_detail(const QString &ratingKey) {

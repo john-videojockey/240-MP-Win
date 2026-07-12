@@ -19,6 +19,10 @@ FocusScope {
     property string sessionId:    navParams.sessionId    || ""
     property int    viewOffset:   navParams.viewOffset   || 0
     property string itemTitle:    navParams.title        || ""
+    // Display title for the mpv OSC ("SHOW - S1E2 - TITLE"); falls back to the
+    // bare item title. episodeNav unlocks the OSC's |< / >| episode buttons.
+    property string mediaTitle:   navParams.mediaTitle   || navParams.title || ""
+    property bool   episodeNav:   navParams.episodeNav   || false
     property var    audioStreams:     navParams.audioStreams     || []
     property var    subtitleStreams:  navParams.subtitleStreams  || []
     property int    audioIdx:    0
@@ -39,6 +43,10 @@ FocusScope {
     // next episode in the same season, carrying over the audio/subtitle language.
     property bool   autoplayNext:       false
     property bool   pendingNextEpisode: false
+    // Set when the OSC's >| button asked for the next episode (mpv is still
+    // playing); a no-next-episode answer then just keeps playing instead of
+    // exiting like the end-of-file autoplay path does.
+    property bool   nextViaButton:      false
     property string carryAudioLang:     ""        // language code of the chosen audio track
     property string carrySubLang:       "__off__" // language code, or "__off__" when subtitles are off
 
@@ -195,16 +203,28 @@ FocusScope {
         startTimer.restart()
     }
 
+    // Per-playback mpv extras: the OSC title and (for episodes) the flag that
+    // shows its |< / >| buttons. --script-opts-append merges rather than
+    // clobbering the --script-opts list MpvController builds.
+    function playerExtraArgs() {
+        var args = []
+        if (mediaTitle) args.push("--force-media-title=" + mediaTitle)
+        if (episodeNav) args.push("--script-opts-append=episode-nav=1")
+        return args
+    }
+
     function doStartPlayback(offsetMs) {
         if (isTranscoding) {
             // Transcode covers the full timeline (requested at offset 0), so seek mpv
             // to the resume point. This keeps everything before offsetMs seekable, so
             // the user can rewind past the resume point.
-            mpvController.loadAndPlay(streamUrl, offsetMs / 1000.0, 0, -1, [], [], false, -1, 0.0, plexToken)
+            mpvController.loadAndPlay(streamUrl, offsetMs / 1000.0, 0, -1, [], [], false, -1, 0.0, plexToken,
+                                       false, "", false, [], 0.0, false, playerExtraArgs())
         } else {
             var sub = buildSubArgs()
             mpvController.loadAndPlay(streamUrl, offsetMs / 1000.0,
-                                       audioIdx + 1, sub.track, sub.urls, [], false, -1, 0.0, plexToken)
+                                       audioIdx + 1, sub.track, sub.urls, [], false, -1, 0.0, plexToken,
+                                       false, "", false, [], 0.0, false, playerExtraArgs())
         }
     }
 
@@ -242,7 +262,8 @@ FocusScope {
                 // Fallback transcode was requested at offset 0 (full timeline), so seek
                 // mpv to the resume point — keeps everything before it seekable.
                 var sub = buildSubArgs()
-                mpvController.loadAndPlay(url, viewOffset / 1000.0, audioIdx + 1, sub.track, sub.urls, [], false, -1, 0.0, plexToken)
+                mpvController.loadAndPlay(url, viewOffset / 1000.0, audioIdx + 1, sub.track, sub.urls, [], false, -1, 0.0, plexToken,
+                                           false, "", false, [], 0.0, false, playerExtraArgs())
                 return
             }
         }
@@ -250,11 +271,23 @@ FocusScope {
         function onNextEpisodeReady(detail) {
             if (!pendingNextEpisode) return
             // Empty detail → no next episode in the season (or a lookup failure).
-            // Fall back to the standard behavior: return to the detail view.
             if (!detail || !detail.ratingKey) {
                 pendingNextEpisode = false
+                if (nextViaButton) {
+                    // Button press while mpv is still playing: nothing to
+                    // advance to, so just keep watching the current episode.
+                    nextViaButton = false
+                    return
+                }
+                // End-of-file autoplay: fall back to returning to the detail view.
                 goBack()
                 return
+            }
+            if (nextViaButton) {
+                // The current episode is being cut short on purpose — mark it
+                // stopped before the player context swaps to the next one.
+                nextViaButton = false
+                reportStopped(mpvController.position, mpvController.duration)
             }
             playerRoot.advanceToEpisode(detail)
         }
@@ -267,6 +300,10 @@ FocusScope {
         partKey     = detail.partKey      || ""
         partId      = detail.partId       || ""
         itemTitle   = detail.title        || ""
+        mediaTitle  = (detail.grandparentTitle ? detail.grandparentTitle + " - " : "")
+                      + "S" + (detail.parentIndex != null ? detail.parentIndex : "?")
+                      + "E" + (detail.index != null ? detail.index : "?")
+                      + " - " + (detail.title || "")
         audioStreams    = detail.audioStreams    || []
         subtitleStreams = detail.subtitleStreams || []
         isTranscoding   = detail.forceTranscode  || false
@@ -335,6 +372,16 @@ FocusScope {
                 // loading indicator (mpv's own window now covers the screen).
                 playerRoot.playbackStarted = true
             }
+        }
+
+        // The OSC's >| button (mouse or keyboard) with no mpv playlist loaded:
+        // resolve and swap to the next episode while the current one keeps
+        // playing. |< is handled inside the OSC itself (restart from 0).
+        function onEpisodeNavRequested(direction) {
+            if (direction !== "next" || pendingNextEpisode) return
+            nextViaButton      = true
+            pendingNextEpisode = true
+            plexBackend.load_next_episode(ratingKey)
         }
         function onDurationChanged(ms) {
             if (ms > 0) playerRoot.lastKnownDurationMs = ms

@@ -218,12 +218,34 @@ FocusScope {
             font.pixelSize: root.sh * 0.0291667 //14
         }
 
+        // Thumbnail of the highlighted episode, previewed beside the list.
+        // Sized through the server's photo transcoder; hidden when the episode
+        // has no image (or no server) so the text-only layout stays intact.
+        Image {
+            id: episodeThumb
+            anchors.top: episodeListLabel.bottom
+            anchors.right: parent.right
+            anchors.topMargin: root.sh * 0.0145833 //7
+            width: root.sw * 0.28
+            height: width * 9 / 16
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            visible: status === Image.Ready
+            source: {
+                var ep = episodes[episodeList.currentIndex]
+                return (ep && ep.thumb)
+                       ? plexBackend.image_url(ep.thumb, Math.round(width), Math.round(height))
+                       : ""
+            }
+        }
+
         ListView {
             id: episodeList
             model: episodes
             anchors.top: episodeListLabel.bottom
             anchors.left: parent.left
-            anchors.right: parent.right
+            anchors.right: episodeThumb.visible ? episodeThumb.left : parent.right
+            anchors.rightMargin: episodeThumb.visible ? root.sw * 0.025 : 0
             anchors.topMargin: root.sh * 0.0145833 //7
             height: root.sh * 0.2916667 //140
             clip: true
