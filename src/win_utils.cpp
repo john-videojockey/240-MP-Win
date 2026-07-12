@@ -91,6 +91,21 @@ void keepDisplayAwake() {
     SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED);
 }
 
+QString findMpvExecutable() {
+    // Explicit suffix bypasses PATHEXT (which would prefer mpv.com).
+    QString bin = QStandardPaths::findExecutable(QStringLiteral("mpv.exe"));
+    if (!bin.isEmpty())
+        return bin;
+    bin = QStandardPaths::findExecutable(QStringLiteral("mpv"));
+    if (bin.endsWith(QLatin1String(".com"), Qt::CaseInsensitive)) {
+        // Wrapper found without a sibling on PATH — swap for the real player.
+        const QString exe = bin.left(bin.size() - 4) + QStringLiteral(".exe");
+        if (QFile::exists(exe))
+            return exe;
+    }
+    return bin;
+}
+
 void prependToolDirsToPath(const QString &appRoot) {
     const QStringList candidates = {
         appRoot + QStringLiteral("/mpv"),

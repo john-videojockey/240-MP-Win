@@ -1,4 +1,5 @@
 #include "AmbientModeBackend.h"
+#include "win_utils.h"
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
@@ -76,7 +77,9 @@ void AmbientModeBackend::startAudio(const QString &path)
 {
     stopAudio();
 
-    const QString bin = QStandardPaths::findExecutable("mpv");
+    // Resolves mpv.exe (never the mpv.com wrapper) so stopAudio's terminate()
+    // reaches the process actually playing audio.
+    const QString bin = findMpvExecutable();
     if (bin.isEmpty()) {
         qWarning("[AmbientMode] mpv not found in PATH — audio will not play");
         return;

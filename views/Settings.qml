@@ -125,6 +125,18 @@ FocusScope {
             moduleId: ""
         })
 
+        // Seek Amount — seconds jumped by the player's << / >> buttons and by
+        // LEFT/RIGHT on the seek bar. Applies from the next playback.
+        items.push({
+            type: "list_single",
+            key: "seek_seconds",
+            label: "Seek Amount",
+            options: ["5", "10", "15", "30", "60"],
+            value: appSettings["seek_seconds"] || "10",
+            description: "Seconds jumped per seek during playback (buttons and arrow keys)",
+            moduleId: ""
+        })
+
         // SCREEN SAVER section — single control: OFF disables, a number sets the
         // timeout for both menu idle and playback pause (handled inside mpv).
         items.push({

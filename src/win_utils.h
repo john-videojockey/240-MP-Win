@@ -26,3 +26,11 @@ void keepDisplayAwake();
 //   Scoop shims             — %USERPROFILE%/scoop/shims
 //   Chocolatey bin          — %ProgramData%/chocolatey/bin
 void prependToolDirsToPath(const QString &appRoot);
+
+// Resolves the real mpv player binary. Never returns the mpv.com console
+// wrapper that official builds ship next to mpv.exe: PATHEXT prefers .COM, so
+// a plain findExecutable("mpv") hands back the wrapper, which runs the actual
+// player as a *separate* process — QProcess::terminate()/kill() would then hit
+// only the wrapper and leave the video playing (the next-episode swap used to
+// leak an orphaned fullscreen mpv exactly this way). Empty string if no mpv.
+QString findMpvExecutable();

@@ -29,7 +29,9 @@ local update_timer = nil
 local idle_timer = nil
 local skip_active = false
 
-local SEEK_SECONDS  = 10
+-- Seek step for the << / >> buttons and LEFT/RIGHT on the seek bar. The app
+-- passes the user's "seek_seconds" setting via script-opts (default 10).
+local SEEK_SECONDS  = tonumber(mp.get_opt("seek-seconds") or "10") or 10
 local MENU_TIMEOUT  = 5   -- keyboard-triggered auto-hide
 local MOUSE_TIMEOUT = 3   -- mouse-triggered auto-hide
 
@@ -132,30 +134,34 @@ end
 -- One source of truth for every rectangle, shared by drawing (draw_menu) and
 -- mouse hit-testing (the MBTN_LEFT handler) so they can never drift apart.
 
-local function build_left_btns(has_sub, show_nav, bar_w)
+local function build_left_btns(has_sub, bar_w)
     local btns = {}
     if skip_active then
-        btns[#btns + 1] = {label="SKIP", width=math.floor(bar_w * 0.090625), action=function()
+        btns[#btns + 1] = {label="SKIP", width=math.floor(bar_w * 0.08), action=function()
             mp.commandv("script-message", "skip-segment")
         end}
     end
-    if show_nav then
-        btns[#btns + 1] = {label="|<", width=math.floor(bar_w * 0.055), action=nav_prev}
-    end
+    -- |< and >| are always present so the row never changes shape between
+    -- media types: |< restarts the current item everywhere; >| advances when
+    -- there is somewhere to go (mpv playlist or app-provided next episode)
+    -- and is a no-op otherwise (nav_next guards).
+    btns[#btns + 1] = {label="|<", width=math.floor(bar_w * 0.05), action=nav_prev}
+    btns[#btns + 1] = {label="<<", width=math.floor(bar_w * 0.05),
+                       action=function() mp.command("seek -" .. SEEK_SECONDS) end}
     local paused = mp.get_property_native("pause", false)
     btns[#btns + 1] = {label=(paused and "PLAY" or "PAUSE"),
-                       width=math.floor(bar_w * 0.109375),
+                       width=math.floor(bar_w * 0.095),
                        action=function() mp.command("no-osd cycle pause") end}
-    if show_nav then
-        btns[#btns + 1] = {label=">|", width=math.floor(bar_w * 0.055), action=nav_next}
-    end
-    btns[#btns + 1] = {label="AUDIO", width=math.floor(bar_w * 0.109375),
+    btns[#btns + 1] = {label=">>", width=math.floor(bar_w * 0.05),
+                       action=function() mp.command("seek " .. SEEK_SECONDS) end}
+    btns[#btns + 1] = {label=">|", width=math.floor(bar_w * 0.05), action=nav_next}
+    btns[#btns + 1] = {label="AUDIO", width=math.floor(bar_w * 0.095),
                        action=function() mp.command("no-osd cycle audio") end}
     if has_sub then
-        btns[#btns + 1] = {label="SUBTITLE", width=math.floor(bar_w * 0.15625),
+        btns[#btns + 1] = {label="SUBTITLE", width=math.floor(bar_w * 0.13),
                            action=function() mp.command("no-osd cycle sub") end}
     end
-    btns[#btns + 1] = {label="CROP", width=math.floor(bar_w * 0.090625),
+    btns[#btns + 1] = {label="CROP", width=math.floor(bar_w * 0.08),
                        action=function() mp.command("no-osd cycle-values panscan 0 1") end}
     return btns
 end
@@ -174,7 +180,7 @@ local function layout()
 
     g.bar_h   = math.floor(g.fs * 2)
     g.btn_h   = math.floor(g.fs * 1.5)
-    g.btn_gap = math.floor(g.bar_w * 0.025)
+    g.btn_gap = math.floor(g.bar_w * 0.02)
 
     g.title_y = math.floor(wh * 0.0666667)
     g.info_y  = math.floor(wh * 0.125)
@@ -183,19 +189,18 @@ local function layout()
     g.btn_y   = math.floor(wh * 0.8333333)
 
     g.has_sub  = has_subtitle_tracks()
-    g.show_nav = has_playlist() or episode_nav
 
     -- Seek bar
     g.bar = { x = g.lm, y = g.bar_y, w = g.bar_w, h = g.bar_h, inset = g.border + 2 }
 
     -- Button row: left group with x positions assigned, STOP pinned right
-    g.btns = build_left_btns(g.has_sub, g.show_nav, g.bar_w)
+    g.btns = build_left_btns(g.has_sub, g.bar_w)
     local bx = g.lm
     for _, btn in ipairs(g.btns) do
         btn.x, btn.y, btn.h = bx, g.btn_y, g.btn_h
         bx = bx + btn.width + g.btn_gap
     end
-    local stop_w = math.floor(g.bar_w * 0.090625)
+    local stop_w = math.floor(g.bar_w * 0.08)
     g.stop = { x = g.rm - stop_w, y = g.btn_y, w = stop_w, h = g.btn_h }
 
     return g

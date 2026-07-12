@@ -1,5 +1,6 @@
 #include "MpvController.h"
 #include "../AppCore.h"
+#include "../win_utils.h"
 #include <QDir>
 #include <QFile>
 #include <QProcessEnvironment>
@@ -71,8 +72,10 @@ MpvController::MpvController(const QString &appRoot, AppCore *appCore, QObject *
 MpvController::~MpvController() {
     if (m_process && m_process->state() != QProcess::NotRunning) {
         m_process->terminate();               // WM_CLOSE to mpv's window
-        if (!m_process->waitForFinished(2000))
+        if (!m_process->waitForFinished(2000)) {
             m_process->kill();                // TerminateProcess fallback
+            m_process->waitForFinished(500);
+        }
     }
 }
 
@@ -85,12 +88,25 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
                                  const QString &oscMode, bool shuffle,
                                  const QStringList &subTitles, float imageDurationSec,
                                  bool imageContent, const QStringList &extraArgs, const QString &jellyfinToken) {
+    // Replace-while-playing (e.g. the OSC's next-episode button): the old mpv
+    // must be fully gone before the new one starts, or it keeps the screen AND
+    // the IPC pipe name, leaving the replacement running deaf in the background.
+    // Ask nicely over IPC first (clean fullscreen teardown), then escalate.
     if (m_process) {
         m_process->disconnect();
         if (m_process->state() != QProcess::NotRunning) {
-            m_process->terminate();
-            if (!m_process->waitForFinished(1000))
-                m_process->kill();
+            if (m_ipc->state() == QLocalSocket::ConnectedState) {
+                sendCommand({"quit"});
+                m_ipc->flush();
+                m_process->waitForFinished(1000);
+            }
+            if (m_process->state() != QProcess::NotRunning) {
+                m_process->terminate();
+                if (!m_process->waitForFinished(1000)) {
+                    m_process->kill();
+                    m_process->waitForFinished(500);
+                }
+            }
         }
         m_process->deleteLater();
         m_process = nullptr;
@@ -105,7 +121,9 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
 
     // PATH was extended at startup (win_utils prependToolDirsToPath) to cover
     // an app-bundled <appRoot>/mpv as well as WinGet/Scoop/Chocolatey installs.
-    const QString bin = QStandardPaths::findExecutable("mpv");
+    // findMpvExecutable targets mpv.exe, never the mpv.com console wrapper —
+    // process control (terminate/kill) must reach the actual player.
+    const QString bin = findMpvExecutable();
     if (bin.isEmpty()) {
         qWarning("[MpvController] mpv not found — install it (winget install shinchiro.mpv) "
                  "or place mpv.exe in <app folder>\\mpv\\");
@@ -114,6 +132,7 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
         });
         return;
     }
+    qInfo("[MpvController] using mpv at %s", qPrintable(bin));
 
     const bool hasOscScript = (oscMode == "ambient") ? m_hasAmbientOscScript : m_hasMpvOscScript;
     const QString oscScript = m_appRoot + "/scripts/" + ((oscMode == "ambient") ? "ambient-osc.lua" : "mpv-osc.lua");
@@ -204,6 +223,18 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
         scriptOpts << QString("transcode-offset=%1").arg(double(transcodeOffsetSec), 0, 'f', 3);
     if (screensaverTimeout > 0)
         scriptOpts << QString("screensaver_timeout=%1").arg(screensaverTimeout);
+
+    // App-level "seek_seconds" setting: how far the OSC's <</>>  buttons and
+    // LEFT/RIGHT on the seek bar jump. Read per launch so a settings change
+    // applies on the next playback.
+    {
+        int seekSeconds = 10;
+        if (m_appCore) {
+            const int n = m_appCore->get_setting(QString(), "seek_seconds").toString().toInt();
+            if (n > 0) seekSeconds = n;
+        }
+        scriptOpts << QString("seek-seconds=%1").arg(seekSeconds);
+    }
 
     // Hand the OSC a map of external sub-file URL -> friendly track name so it can show
     // the real subtitle name. mpv otherwise titles an external sub from its URL basename
