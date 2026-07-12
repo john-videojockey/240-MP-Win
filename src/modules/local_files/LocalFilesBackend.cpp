@@ -5,6 +5,8 @@
 #include <QVariantMap>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QUrl>
+#include <QXmlStreamReader>
 
 // supported image types
 static const QStringList kImageExts = {
@@ -173,6 +175,143 @@ void LocalFilesBackend::onSettingChanged(const QString &moduleId, const QString 
         setMediaRoot(value.toString());
 }
 
+// Scraper artwork must not be listed as playable media: a folder of episodes
+// with TinyMediaManager "-thumb.jpg" sidecars would otherwise show every
+// artwork file as a slideshow entry between the videos.
+static bool isArtworkImage(const QString &baseName) {
+    static const QStringList kArtBases = {
+        "poster", "folder", "cover", "fanart", "backdrop", "background",
+        "banner", "landscape", "clearlogo", "clearart", "keyart", "disc", "thumb"
+    };
+    static const QStringList kArtSuffixes = {
+        "-poster", "-thumb", "-fanart", "-backdrop", "-landscape",
+        "-banner", "-clearlogo", "-clearart", "-keyart", "-disc"
+    };
+    const QString b = baseName.toLower();
+    if (kArtBases.contains(b)) return true;
+    for (const QString &s : kArtSuffixes)
+        if (b.endsWith(s)) return true;
+    return false;
+}
+
+// First existing "<base>.<ext>" image in dir for any of the given base names
+// (checked in order), as a file:// URL string QML's Image can load directly.
+QString LocalFilesBackend::findArtFile(const QDir &dir, const QStringList &baseNames) {
+    static const QStringList kArtExts = {"jpg", "jpeg", "png", "webp"};
+    for (const QString &base : baseNames) {
+        for (const QString &ext : kArtExts) {
+            const QString p = dir.filePath(base + "." + ext);
+            if (QFileInfo::exists(p))
+                return QUrl::fromLocalFile(p).toString();
+        }
+    }
+    return {};
+}
+
+// Minimal Kodi/TinyMediaManager .nfo reader: accepts <movie>, <tvshow>, or
+// <episodedetails> roots and extracts the display fields the views use.
+// Stops at the root's end so the URL line some scrapers append after the XML
+// doesn't trip the parser; a non-XML nfo (bare URL file) yields an empty map.
+QVariantMap LocalFilesBackend::parseNfo(const QString &nfoPath) {
+    QFile f(nfoPath);
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+
+    static const QStringList kRoots = {"movie", "tvshow", "episodedetails"};
+    QVariantMap meta;
+    QXmlStreamReader xml(&f);
+    QString rootName;
+    while (!xml.atEnd()) {
+        const auto tok = xml.readNext();
+        if (tok == QXmlStreamReader::StartElement) {
+            const QString name = xml.name().toString().toLower();
+            if (rootName.isEmpty()) {
+                if (!kRoots.contains(name))
+                    return {};   // not a media nfo
+                rootName = name;
+                continue;
+            }
+            // Only direct children we care about; readElementText consumes
+            // the element so nesting stays balanced.
+            if (name == "title")
+                meta["title"] = xml.readElementText(QXmlStreamReader::SkipChildElements).trimmed();
+            else if (name == "year")
+                meta["year"] = xml.readElementText(QXmlStreamReader::SkipChildElements).trimmed();
+            else if (name == "premiered" || name == "aired") {
+                const QString date = xml.readElementText(QXmlStreamReader::SkipChildElements).trimmed();
+                if (!meta.contains("year") && date.size() >= 4)
+                    meta["year"] = date.left(4);
+            }
+            else if (name == "plot" || (name == "outline" && !meta.contains("plot")))
+                meta["plot"] = xml.readElementText(QXmlStreamReader::SkipChildElements).trimmed();
+            else if (name == "showtitle")
+                meta["showTitle"] = xml.readElementText(QXmlStreamReader::SkipChildElements).trimmed();
+            else if (name == "season")
+                meta["season"] = xml.readElementText(QXmlStreamReader::SkipChildElements).trimmed().toInt();
+            else if (name == "episode")
+                meta["episode"] = xml.readElementText(QXmlStreamReader::SkipChildElements).trimmed().toInt();
+            else if (name == "runtime")
+                meta["runtime"] = xml.readElementText(QXmlStreamReader::SkipChildElements).trimmed().toInt();
+            else
+                xml.skipCurrentElement();
+        } else if (tok == QXmlStreamReader::EndElement
+                   && xml.name().toString().toLower() == rootName) {
+            break;   // ignore anything after the root (scraper URL lines)
+        }
+    }
+    return meta;
+}
+
+// Folder entries: Kodi-convention artwork inside the folder plus a
+// tvshow.nfo / movie.nfo for the display title.
+void LocalFilesBackend::enrichFolderItem(QVariantMap &item, const QString &folderPath) const {
+    const QDir d(folderPath);
+    const QString thumb = findArtFile(d, {"poster", "folder", "cover"});
+    const QString art   = findArtFile(d, {"fanart", "backdrop", "background"});
+    if (!thumb.isEmpty()) item["thumb"] = thumb;
+    if (!art.isEmpty())   item["art"]   = art;
+
+    for (const QString &nfoName : {QStringLiteral("tvshow.nfo"), QStringLiteral("movie.nfo")}) {
+        const QString nfoPath = d.filePath(nfoName);
+        if (!QFileInfo::exists(nfoPath)) continue;
+        const QVariantMap meta = parseNfo(nfoPath);
+        for (auto it = meta.constBegin(); it != meta.constEnd(); ++it)
+            item[it.key()] = it.value();
+        break;
+    }
+}
+
+// Video-file entries: TinyMediaManager sidecars ("<name>-poster.jpg",
+// "<name>-fanart.jpg", "<name>.nfo"), falling back to the folder's artwork —
+// right for the one-movie-per-folder layout, and for episodes it means the
+// season/show art.
+void LocalFilesBackend::enrichVideoItem(QVariantMap &item, const QString &filePath) const {
+    const QFileInfo fi(filePath);
+    const QDir d = fi.dir();
+    const QString base = fi.completeBaseName();
+
+    QString thumb = findArtFile(d, {base + "-poster", base + "-thumb", base + "-landscape"});
+    if (thumb.isEmpty()) thumb = findArtFile(d, {"poster", "folder", "cover"});
+    QString art = findArtFile(d, {base + "-fanart", base + "-backdrop"});
+    if (art.isEmpty()) art = findArtFile(d, {"fanart", "backdrop", "background"});
+    if (art.isEmpty()) {
+        // Episodes inside "Show/Season N/" — scrapers keep fanart at the show
+        // level, so look one folder up before giving up.
+        QDir parent = d;
+        if (parent.cdUp())
+            art = findArtFile(parent, {"fanart", "backdrop", "background"});
+    }
+    if (!thumb.isEmpty()) item["thumb"] = thumb;
+    if (!art.isEmpty())   item["art"]   = art;
+
+    const QString nfoPath = d.filePath(base + ".nfo");
+    if (QFileInfo::exists(nfoPath)) {
+        const QVariantMap meta = parseNfo(nfoPath);
+        for (auto it = meta.constBegin(); it != meta.constEnd(); ++it)
+            item[it.key()] = it.value();
+    }
+}
+
 QVariantList LocalFilesBackend::getItems(const QString &path) {
     QVariantList result;
     QDir dir(path);
@@ -211,15 +350,25 @@ QVariantList LocalFilesBackend::getItems(const QString &path) {
         item["name"]     = name;
         item["path"]     = dir.absoluteFilePath(name);
         item["isFolder"] = true;
+        enrichFolderItem(item, item["path"].toString());
         result.append(item);
     }
 
     for (const QString &name : dir.entryList(QDir::Files, QDir::Name)) {
-        if (!kMediaExts.contains(QFileInfo(name).suffix().toLower())) continue;
+        const QString suffix = QFileInfo(name).suffix().toLower();
+        if (!kMediaExts.contains(suffix)) continue;
+        // Skip scraper artwork (poster.jpg, <name>-thumb.jpg, …) — it backs
+        // the covers/backgrounds, it isn't content.
+        if (kImageExts.contains(suffix) && isArtworkImage(QFileInfo(name).completeBaseName()))
+            continue;
         QVariantMap item;
         item["name"]     = name;
         item["path"]     = dir.absoluteFilePath(name);
         item["isFolder"] = false;
+        // Artwork/nfo lookups only make sense for videos — images ARE their
+        // own art, and playlists have no scraper convention.
+        if (!kImageExts.contains(suffix) && !kPlaylistExts.contains(suffix))
+            enrichVideoItem(item, item["path"].toString());
         result.append(item);
     }
     return result;

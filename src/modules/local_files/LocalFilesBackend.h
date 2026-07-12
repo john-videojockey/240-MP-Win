@@ -4,6 +4,8 @@
 #include <QVariantList>
 #include <QVariantMap>
 
+class QDir;
+
 class LocalFilesBackend : public QObject {
     Q_OBJECT
 public:
@@ -38,4 +40,11 @@ private:
     QString      historyFilePath() const;
     QVariantMap  loadHistory() const;
     void         saveHistory(const QVariantMap &history);
+
+    // Kodi/TinyMediaManager-style artwork + metadata discovery, merged into
+    // getItems entries so the views can render posters, fanart, and titles.
+    static QString findArtFile(const QDir &dir, const QStringList &baseNames);
+    static QVariantMap parseNfo(const QString &nfoPath);
+    void enrichFolderItem(QVariantMap &item, const QString &folderPath) const;
+    void enrichVideoItem(QVariantMap &item, const QString &filePath) const;
 };

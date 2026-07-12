@@ -17,12 +17,14 @@ FocusScope {
     Connections {
         target: appCore;
         function onModulesLoaded(moduleData) {
-            menuList.model = moduleData
-            if (moduleData.length > 0) {
-                var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
-                menuList.currentIndex = Math.min(restore, moduleData.length - 1)
-                menuList.positionViewAtIndex(menuList.currentIndex, ListView.Contain)
-            }
+            // Trailing EXIT entry so touch/remote users can quit from the home
+            // menu without digging into Settings (two-tap protects against an
+            // accidental quit).
+            var model = moduleData.concat([{ name: "Exit", entry_point: "__quit__" }])
+            menuList.model = model
+            var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
+            menuList.currentIndex = Math.min(restore, model.length - 1)
+            menuList.positionViewAtIndex(menuList.currentIndex, ListView.Contain)
         }
     }
 
@@ -34,11 +36,11 @@ FocusScope {
         anchors.leftMargin: root.sw * 0.125 //80
     }
 
-    // Empty state
+    // Empty state (the synthetic EXIT row is always present)
     Column {
         anchors.centerIn: parent
         spacing: root.sh * 0.0333333 //16
-        visible: menuList.count === 0
+        visible: menuList.count <= 1
         Text {
             text: "No modules enabled"
             color: root.secondaryColor
@@ -147,6 +149,10 @@ FocusScope {
         
         Keys.onReturnPressed: {
             var selectedModulePath = menuList.model[menuList.currentIndex].entry_point
+            if (selectedModulePath === "__quit__") {
+                Qt.quit()
+                return
+            }
             console.log("Routing to: " + selectedModulePath)
             appRoot.navigateTo(selectedModulePath, {}, { currentIndex: menuList.currentIndex })
         }

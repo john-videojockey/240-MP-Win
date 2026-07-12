@@ -12,6 +12,70 @@ FocusScope {
     signal navigateTo(string path, var params, var listState)
     signal goBack()
 
+    property var items: []
+
+    // Browse View setting: "Cover" renders the folder as an art grid when the
+    // backend found any artwork (poster.jpg/folder.jpg in subfolders,
+    // TinyMediaManager "-poster"/"-thumb" sidecars, …). Folders with episode
+    // nfo metadata use landscape 16:9 cards, matching the Plex module.
+    property string browseView: (appCore.get_setting(moduleRoot.moduleId, "browse_view") || "Title")
+    property bool coverMode: browseView === "Cover" && items.length > 0 && anyArt(items)
+    property bool gridLandscape: coverMode && anyEpisodes(items)
+
+    // Fanart hover background (shared module settings with the detail screen)
+    property bool infoBg: true
+    property real infoBgOpacity: 0.3
+
+    function anyArt(arr) {
+        for (var i = 0; i < arr.length; i++) {
+            if (arr[i].thumb) return true
+        }
+        return false
+    }
+
+    function anyEpisodes(arr) {
+        for (var i = 0; i < arr.length; i++) {
+            if (arr[i].episode > 0) return true
+        }
+        return false
+    }
+
+    function displayTitle(it) {
+        if (!it) return ""
+        return it.title || it.name || ""
+    }
+
+    function isVideoFile(it) {
+        return it && !it.isFolder
+               && !localFilesBackend.isImage(it.path)
+               && !localFilesBackend.isPlaylist(it.path)
+    }
+
+    function currentItem() {
+        return items[coverMode ? coverGrid.currentIndex : fileList.currentIndex]
+    }
+
+    // Shared activation for both views: folders drill in, videos open the
+    // detail screen, images and playlists keep their direct hand-off to mpv.
+    function selectCurrent() {
+        var idx = coverMode ? coverGrid.currentIndex : fileList.currentIndex
+        var item = items[idx]
+        if (!item) return
+        if (item.isFolder) {
+            navigateTo("Items.qml",
+                { folderPath: item.path, folderName: item.name },
+                { currentIndex: idx })
+        } else if (isVideoFile(item)) {
+            navigateTo("Detail.qml",
+                { items: items, index: idx, folderName: folderName },
+                { currentIndex: idx })
+        } else {
+            navigateTo("Player.qml",
+                { filePath: item.path, title: item.name },
+                { currentIndex: idx })
+        }
+    }
+
     focus: true
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
@@ -23,6 +87,46 @@ FocusScope {
     // ---
     // UI
     // ---
+
+    // Hover fanart: the highlighted item's background art, debounced so
+    // scrolling doesn't load an image per step. Same treatment and settings
+    // as the Plex module.
+    Timer {
+        id: hoverArtDebounce
+        interval: 250
+        repeat: false
+        onTriggered: {
+            var it = itemsRoot.currentItem()
+            hoverArt.source = (itemsRoot.infoBg && it && it.art) ? it.art : ""
+        }
+    }
+    Connections {
+        target: fileList
+        function onCurrentIndexChanged() { if (itemsRoot.infoBg) hoverArtDebounce.restart() }
+    }
+    Connections {
+        target: coverGrid
+        function onCurrentIndexChanged() { if (itemsRoot.infoBg) hoverArtDebounce.restart() }
+    }
+
+    Image {
+        id: hoverArt
+        anchors.fill: parent
+        z: -1
+        visible: opacity > 0
+        opacity: (itemsRoot.infoBg && status === Image.Ready) ? itemsRoot.infoBgOpacity : 0
+        Behavior on opacity { NumberAnimation { duration: 200 } }
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+    }
+    Image {
+        anchors.fill: parent
+        z: -1
+        visible: hoverArt.visible
+        opacity: Math.min(1, hoverArt.opacity * 2)
+        fillMode: Image.Tile
+        source: "../../../assets/images/scanlines.png"
+    }
 
     // Header
     AppBar {
@@ -39,7 +143,7 @@ FocusScope {
     Column {
         anchors.centerIn: parent
         spacing: root.sh * 0.0333333 //16
-        visible: fileList.count === 0
+        visible: items.length === 0
         Text {
             text: "No items found"
             color: root.secondaryColor
@@ -60,9 +164,102 @@ FocusScope {
         }
     }
 
+    // ── Cover browse view ─────────────────────────────────────────────
+    Text {
+        visible: coverMode
+        text: itemsRoot.displayTitle(items[coverGrid.currentIndex])
+              + ((items[coverGrid.currentIndex] || {}).isFolder ? "/" : "")
+        color: root.primaryColor
+        font.family: root.globalFont
+        font.capitalization: Font.AllUppercase
+        elide: Text.ElideRight
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.topMargin: root.sh * 0.1875 //90
+        anchors.leftMargin: root.sw * 0.125 //80
+        width: root.sw * 0.75
+        font.pixelSize: root.sh * 0.05 //24
+    }
+
+    GridView {
+        id: coverGrid
+        model: items
+        visible: coverMode
+        focus: coverMode
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.topMargin: root.sh * 0.25 //120
+        anchors.leftMargin: root.sw * 0.115625 //74
+        width: root.sw * 0.76875 //492
+        height: root.sh * 0.525 //252
+        clip: true
+
+        property real posterH: root.sh * 0.245
+        property real posterW: posterH * (itemsRoot.gridLandscape ? 16 / 9 : 2 / 3)
+        cellHeight: root.sh * 0.2625
+        cellWidth: posterW + root.sw * 0.0078125 //5
+
+        Keys.onReturnPressed: itemsRoot.selectCurrent()
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
+                itemsRoot.goBack()
+                event.accepted = true
+            }
+        }
+
+        delegate: Item {
+            width: coverGrid.cellWidth
+            height: coverGrid.cellHeight
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (coverGrid.currentIndex === index) inputManager.touchKey("select")
+                    else coverGrid.currentIndex = index
+                }
+            }
+
+            Rectangle {
+                id: posterBox
+                width: coverGrid.posterW
+                height: coverGrid.posterH
+                color: "transparent"
+                border.color: coverGrid.currentIndex === index ? root.accentColor : root.tertiaryColor
+                border.width: coverGrid.currentIndex === index
+                              ? Math.max(2, Math.floor(root.sh * 0.00625)) : 1
+
+                Image {
+                    id: posterImage
+                    anchors.fill: parent
+                    anchors.margins: posterBox.border.width
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    source: modelData.thumb || ""
+                }
+
+                Text {
+                    visible: posterImage.status !== Image.Ready
+                    anchors.fill: parent
+                    anchors.margins: root.sw * 0.0078125 //5
+                    text: itemsRoot.displayTitle(modelData) + (modelData.isFolder ? "/" : "")
+                    color: coverGrid.currentIndex === index ? root.accentColor : root.secondaryColor
+                    font.family: root.globalFont
+                    font.capitalization: Font.AllUppercase
+                    wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                    font.pixelSize: root.sh * 0.0291667 //14
+                }
+            }
+        }
+    }
+
     // File list
     ListView {
         id: fileList
+        model: items
+        visible: !coverMode
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.topMargin: root.sh * 0.25 //120
@@ -71,21 +268,9 @@ FocusScope {
         height: root.sh * 0.525 //252
         keyNavigationEnabled: true
         clip: true
-        focus: true
+        focus: !coverMode
 
-        Keys.onReturnPressed: {
-            var item = model[currentIndex]
-            if (!item) return
-            if (item.isFolder) {
-                navigateTo("Items.qml",
-                    { folderPath: item.path, folderName: item.name },
-                    { currentIndex: fileList.currentIndex })
-            } else {
-                navigateTo("Player.qml",
-                    { filePath: item.path, title: item.name },
-                    { currentIndex: fileList.currentIndex })
-            }
-        }
+        Keys.onReturnPressed: itemsRoot.selectCurrent()
 
         delegate: Item {
             width: fileList.width
@@ -115,7 +300,7 @@ FocusScope {
 
                 Text {
                     id: rowText
-                    text: modelData.isFolder ? modelData.name + "/" : modelData.name
+                    text: itemsRoot.displayTitle(modelData) + (modelData.isFolder ? "/" : "")
                     color: fileList.currentIndex === index ? root.surfaceColor : root.primaryColor
                     font.family: root.globalFont
                     font.capitalization: Font.AllUppercase
@@ -147,14 +332,24 @@ FocusScope {
     }
 
     Component.onCompleted: {
-        var loaded = localFilesBackend.getItems(folderPath)
-        fileList.model = loaded
-        if (loaded.length > 0) {
+        var bg = appCore.get_setting(moduleRoot.moduleId, "info_background")
+        infoBg = (bg === undefined || bg === null || bg === "")
+                 ? true : (bg === true || bg === "ON")
+        var op = parseInt(appCore.get_setting(moduleRoot.moduleId, "info_background_opacity"))
+        if (op > 0) infoBgOpacity = op / 100
+
+        items = localFilesBackend.getItems(folderPath)
+        if (items.length > 0) {
             var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
-            fileList.currentIndex = Math.min(restore, loaded.length - 1)
-            fileList.positionViewAtIndex(fileList.currentIndex, ListView.Contain)
+            var idx = Math.min(restore, items.length - 1)
+            fileList.currentIndex = idx
+            fileList.positionViewAtIndex(idx, ListView.Contain)
+            coverGrid.currentIndex = idx
+            coverGrid.positionViewAtIndex(idx, GridView.Contain)
         }
-        fileList.forceActiveFocus()
+        if (coverMode) coverGrid.forceActiveFocus()
+        else fileList.forceActiveFocus()
+        if (infoBg) hoverArtDebounce.restart()
     }
 
     // Footer

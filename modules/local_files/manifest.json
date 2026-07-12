@@ -17,6 +17,26 @@
       "default": ""
     },
     {
+      "key": "browse_view",
+      "label": "Browse View",
+      "type": "list_single",
+      "options": ["Title", "Cover"],
+      "default": "Title"
+    },
+    {
+      "key": "info_background",
+      "label": "Fanart Background",
+      "type": "toggle",
+      "default": "ON"
+    },
+    {
+      "key": "info_background_opacity",
+      "label": "Background Opacity",
+      "type": "list_single",
+      "options": ["10%", "20%", "30%", "40%", "60%"],
+      "default": "30%"
+    },
+    {
       "key": "loop_playback",
       "label": "Loop Playback",
       "type": "toggle",

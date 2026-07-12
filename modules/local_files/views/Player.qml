@@ -9,6 +9,12 @@ FocusScope {
 
     property string filePath:    navParams.filePath || ""
     property string itemTitle:   navParams.title    || ""
+    // Display title for the mpv OSC, and the folder's sibling videos so the
+    // OSC's |< / >| can step through them (passed by Detail.qml; absent when
+    // playing playlists/images straight from the list).
+    property string mediaTitle:   navParams.mediaTitle || navParams.title || ""
+    property var    siblings:     navParams.siblings || []
+    property int    siblingIndex: navParams.siblingIndex !== undefined ? navParams.siblingIndex : -1
 
     property bool   overlayVisible:      false
     property int    savedPositionMs:     0
@@ -59,7 +65,7 @@ FocusScope {
                 if (choiceIndex === 0 && startPlPos >= 0)
                     resumedFromPlaylistPos = startPlPos
                 overlayVisible = false
-                mpvController.loadAndPlay(filePath, startMs / 1000.0, 0, subFlag, [], subtitleLangs, loopOn, startPlPos, 0.0, "", false, "", false, [], imageDurationSec, imageContent)
+                mpvController.loadAndPlay(filePath, startMs / 1000.0, 0, subFlag, [], subtitleLangs, loopOn, startPlPos, 0.0, "", false, "", false, [], imageDurationSec, imageContent, playerExtraArgs())
                 event.accepted = true
             }
         } else {
@@ -91,8 +97,47 @@ FocusScope {
         }
     }
 
+    // Per-playback mpv extras: OSC title, and the |< / >| buttons when the
+    // folder has sibling videos to step through.
+    function playerExtraArgs() {
+        var args = []
+        if (mediaTitle) args.push("--force-media-title=" + mediaTitle)
+        if (siblings.length > 1) args.push("--script-opts-append=episode-nav=1")
+        return args
+    }
+
+    // Save-or-clear the resume position for the current single file (mirrors
+    // onPlaybackEnded's rules) — used before swapping to a sibling.
+    function saveCurrentPosition() {
+        var pos = lastKnownPositionMs
+        var dur = lastKnownDurationMs
+        if (isPlaylist(filePath) || isImage(filePath)) return
+        if (dur > 0 && pos >= dur * 0.95)
+            localFilesBackend.clearPosition(filePath)
+        else if (pos > 5000)
+            localFilesBackend.savePosition(filePath, pos, -1)
+    }
+
     Connections {
         target: mpvController
+
+        // The OSC's |< / >| with sibling videos: save the current position,
+        // swap the player context, and start the sibling from the beginning.
+        // loadAndPlay replaces the running mpv.
+        function onEpisodeNavRequested(direction) {
+            if (siblings.length < 2 || siblingIndex < 0) return
+            var next = siblingIndex + (direction === "next" ? 1 : -1)
+            if (next < 0 || next >= siblings.length) return
+            saveCurrentPosition()
+            siblingIndex = next
+            filePath   = siblings[next].path
+            itemTitle  = siblings[next].name
+            mediaTitle = siblings[next].mediaTitle || siblings[next].name
+            lastKnownPositionMs  = 0
+            lastKnownDurationMs  = 0
+            lastKnownPlaylistPos = -1
+            mpvController.loadAndPlay(filePath, 0.0, 0, subFlag, [], subtitleLangs, loopOn, -1, 0.0, "", false, "", false, [], imageDurationSec, imageContent, playerExtraArgs())
+        }
 
         function onPositionChanged(ms) {
             if (ms > 0) {
@@ -172,7 +217,7 @@ FocusScope {
         // Shuffle wins: a shuffled playlist starts fresh & random; resume position
         // (a sequential item index) is meaningless once order is randomized.
         if (shuffleOn && isPlaylist(filePath)) {
-            mpvController.loadAndPlay(filePath, 0.0, 0, subFlag, [], subtitleLangs, loopOn, -1, 0.0, "", false, "", true, [], imageDurationSec, imageContent)
+            mpvController.loadAndPlay(filePath, 0.0, 0, subFlag, [], subtitleLangs, loopOn, -1, 0.0, "", false, "", true, [], imageDurationSec, imageContent, playerExtraArgs())
             return
         }
 
@@ -180,12 +225,12 @@ FocusScope {
         // resume entirely (no saved-position lookup, no "RESUME PLAYBACK?" overlay).
         // Images inside a playlist still resume via the playlist's item index below.
         if (!isPlaylist(filePath) && isImage(filePath)) {
-            mpvController.loadAndPlay(filePath, 0.0, 0, subFlag, [], subtitleLangs, loopOn, -1, 0.0, "", false, "", false, [], imageDurationSec, imageContent)
+            mpvController.loadAndPlay(filePath, 0.0, 0, subFlag, [], subtitleLangs, loopOn, -1, 0.0, "", false, "", false, [], imageDurationSec, imageContent, playerExtraArgs())
             return
         }
 
         if (resumeSetting === "no") {
-            mpvController.loadAndPlay(filePath, 0.0, 0, subFlag, [], subtitleLangs, loopOn, -1, 0.0, "", false, "", false, [], imageDurationSec, imageContent)
+            mpvController.loadAndPlay(filePath, 0.0, 0, subFlag, [], subtitleLangs, loopOn, -1, 0.0, "", false, "", false, [], imageDurationSec, imageContent, playerExtraArgs())
             return
         }
 
@@ -197,14 +242,14 @@ FocusScope {
             if (savedPos > 0 && savedPl >= 0)
                 resumedFromPlaylistPos = savedPl
             mpvController.loadAndPlay(filePath, savedPos > 0 ? savedPos / 1000.0 : 0.0,
-                                      0, subFlag, [], subtitleLangs, loopOn, savedPos > 0 ? savedPl : -1, 0.0, "", false, "", false, [], imageDurationSec, imageContent)
+                                      0, subFlag, [], subtitleLangs, loopOn, savedPos > 0 ? savedPl : -1, 0.0, "", false, "", false, [], imageDurationSec, imageContent, playerExtraArgs())
         } else {
             if (savedPos > 0) {
                 savedPositionMs  = savedPos
                 savedPlaylistPos = savedPl
                 overlayVisible   = true
             } else {
-                mpvController.loadAndPlay(filePath, 0.0, 0, subFlag, [], subtitleLangs, loopOn, -1, 0.0, "", false, "", false, [], imageDurationSec, imageContent)
+                mpvController.loadAndPlay(filePath, 0.0, 0, subFlag, [], subtitleLangs, loopOn, -1, 0.0, "", false, "", false, [], imageDurationSec, imageContent, playerExtraArgs())
             }
         }
     }
