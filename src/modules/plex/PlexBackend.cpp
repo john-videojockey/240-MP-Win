@@ -625,9 +625,14 @@ QVariantMap PlexBackend::formatItem(const QJsonObject &m) const {
     const QString thumb = !m["thumb"].toString().isEmpty()        ? m["thumb"].toString()
                         : !m["parentThumb"].toString().isEmpty()  ? m["parentThumb"].toString()
                                                                   : m["grandparentThumb"].toString();
+    // Fanart/background: the item's own art, else the show's. Drives the
+    // browse-view hover background and the landscape grid cards.
+    const QString art = !m["art"].toString().isEmpty() ? m["art"].toString()
+                                                       : m["grandparentArt"].toString();
     return QVariantMap{
         {"ratingKey",              m["ratingKey"].toString()},
         {"thumb",                  thumb},
+        {"art",                    art},
         {"title",                  m["title"].toString().toUpper()},
         {"editionTitle",           m["editionTitle"].toString()},
         {"year",                   m["year"].toVariant()},

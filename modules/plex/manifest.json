@@ -69,7 +69,7 @@
     },
     {
       "key": "info_background",
-      "label": "Info Screen Background",
+      "label": "Fanart Background",
       "type": "toggle",
       "default": "ON"
     },

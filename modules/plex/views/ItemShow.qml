@@ -84,10 +84,20 @@ FocusScope {
         showRoot.navigateTo("Item.qml", { item: target, libraryName: libraryName }, {})
     }
 
+    // Fanart background (shared module settings with the info screen)
+    property bool infoBg: true
+    property real infoBgOpacity: 0.3
+
     Component.onCompleted: {
         isLoading = true
         focusRow = 0
         if (item.ratingKey) plexBackend.load_children(item.ratingKey)
+
+        var bg = appCore.get_setting(moduleRoot.moduleId, "info_background")
+        infoBg = (bg === undefined || bg === null || bg === "")
+                 ? true : (bg === true || bg === "ON")
+        var op = parseInt(appCore.get_setting(moduleRoot.moduleId, "info_background_opacity"))
+        if (op > 0) infoBgOpacity = op / 100
     }
 
     focus: true
@@ -134,6 +144,28 @@ FocusScope {
     // ---
     // UI
     // ---
+
+    // Show fanart behind the seasons screen — same treatment as the info screen.
+    Image {
+        id: fanart
+        anchors.fill: parent
+        z: -1
+        visible: showRoot.infoBg && status === Image.Ready
+        opacity: showRoot.infoBgOpacity
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+        source: (showRoot.infoBg && item.art)
+                ? plexBackend.image_url(item.art, Math.round(root.sw), Math.round(root.sh))
+                : ""
+    }
+    Image {
+        anchors.fill: parent
+        z: -1
+        visible: fanart.visible
+        fillMode: Image.Tile
+        source: "../../../assets/images/scanlines.png"
+        opacity: 0.6
+    }
 
     AppBar {
         iconSource: moduleRoot.moduleIcon

@@ -27,18 +27,38 @@ FocusScope {
     property bool letterNavActive: false
     property var letterIndex: []
 
-    // Browse View setting: "Cover" renders movie/show lists as a poster grid
-    // with the highlighted title shown above it; anything containing other
-    // item types (hubs, categories, episodes, …) keeps the title list.
+    // Browse View setting: "Cover" renders media lists as an art grid with the
+    // highlighted title shown above it. Pure movie/show lists use portrait
+    // posters; lists containing episodes (e.g. Continue Watching) use
+    // landscape 16:9 cards instead — episode stills are 16:9, and cropping
+    // them into portrait would discard most of the frame. Structural lists
+    // (hubs, categories, playlists-of-lists, …) keep the title list.
     property string browseView: (appCore.get_setting(moduleRoot.moduleId, "browse_view") || "Title")
     property bool coverMode: browseView === "Cover" && items.length > 0 && itemsAreCovers(items)
+    property bool gridLandscape: coverMode && anyEpisodes(items)
+
+    // Fanart hover background (shared module settings with the info screen)
+    property bool infoBg: true
+    property real infoBgOpacity: 0.3
 
     function itemsAreCovers(arr) {
         for (var i = 0; i < arr.length; i++) {
             var t = arr[i].type
-            if (t !== "movie" && t !== "show") return false
+            if (t !== "movie" && t !== "show" && t !== "episode") return false
         }
         return true
+    }
+
+    function anyEpisodes(arr) {
+        for (var i = 0; i < arr.length; i++) {
+            if (arr[i].type === "episode") return true
+        }
+        return false
+    }
+
+    // The item currently highlighted in whichever view is active.
+    function currentItem() {
+        return items[coverMode ? coverGrid.currentIndex : itemList.currentIndex]
     }
 
     // Shared post-load bookkeeping: both views track the same current index so
@@ -56,6 +76,7 @@ FocusScope {
             coverGrid.currentIndex = idx
             coverGrid.positionViewAtIndex(idx, GridView.Contain)
         }
+        if (infoBg) hoverArtDebounce.restart()
     }
 
     function sortKey(title) {
@@ -224,6 +245,12 @@ FocusScope {
     // ----------------------------------------------------------------
 
     Component.onCompleted: {
+        var bg = appCore.get_setting(moduleRoot.moduleId, "info_background")
+        infoBg = (bg === undefined || bg === null || bg === "")
+                 ? true : (bg === true || bg === "ON")
+        var op = parseInt(appCore.get_setting(moduleRoot.moduleId, "info_background_opacity"))
+        if (op > 0) infoBgOpacity = op / 100
+
         isLoading = true
         errorMessage = ""
         if (listType === "library_all")
@@ -259,6 +286,50 @@ FocusScope {
     // ---
     // UI
     // ---
+
+    // Hover fanart: the highlighted item's background art, debounced so
+    // scrolling a long list doesn't fire a request per step. Same fit-to-
+    // height full-bleed + scanline treatment as the info screen, sharing its
+    // settings. z below every sibling so all content stacks above.
+    Timer {
+        id: hoverArtDebounce
+        interval: 250
+        repeat: false
+        onTriggered: {
+            var it = itemListRoot.currentItem()
+            hoverArt.source = (itemListRoot.infoBg && it && it.art)
+                    ? plexBackend.image_url(it.art, Math.round(root.sw), Math.round(root.sh))
+                    : ""
+        }
+    }
+    // Restart the debounce whenever the highlight moves in either view.
+    Connections {
+        target: itemList
+        function onCurrentIndexChanged() { if (itemListRoot.infoBg) hoverArtDebounce.restart() }
+    }
+    Connections {
+        target: coverGrid
+        function onCurrentIndexChanged() { if (itemListRoot.infoBg) hoverArtDebounce.restart() }
+    }
+
+    Image {
+        id: hoverArt
+        anchors.fill: parent
+        z: -1
+        visible: opacity > 0
+        opacity: (itemListRoot.infoBg && status === Image.Ready) ? itemListRoot.infoBgOpacity : 0
+        Behavior on opacity { NumberAnimation { duration: 200 } }
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+    }
+    Image {
+        anchors.fill: parent
+        z: -1
+        visible: hoverArt.visible
+        opacity: Math.min(1, hoverArt.opacity * 2)
+        fillMode: Image.Tile
+        source: "../../../assets/images/scanlines.png"
+    }
 
     // Header
     AppBar {
@@ -307,7 +378,10 @@ FocusScope {
         text: {
             var it = items[coverGrid.currentIndex]
             if (!it) return ""
-            return it.editionTitle ? (it.title + " (" + it.editionTitle + ")") : (it.title || "")
+            var base = (it.type === "episode" && it.grandparentTitle)
+                       ? (it.grandparentTitle + ": " + (it.title || ""))
+                       : (it.title || "")
+            return it.editionTitle ? (base + " (" + it.editionTitle + ")") : base
         }
         color: root.primaryColor
         font.family: root.globalFont
@@ -334,9 +408,11 @@ FocusScope {
         height: root.sh * 0.525 //252
         clip: true
 
-        // Two poster rows; 2:3 poster aspect gives the column count.
+        // Two rows; cell aspect picks the column count. Portrait 2:3 posters
+        // for movie/show lists, landscape 16:9 cards when episodes are mixed
+        // in (their stills are 16:9; movies then show their fanart instead).
         property real posterH: root.sh * 0.245
-        property real posterW: posterH * 2 / 3
+        property real posterW: posterH * (itemListRoot.gridLandscape ? 16 / 9 : 2 / 3)
         cellHeight: root.sh * 0.2625
         cellWidth: posterW + root.sw * 0.0078125 //5
 
@@ -372,14 +448,23 @@ FocusScope {
                 border.width: coverGrid.currentIndex === index
                               ? Math.max(2, Math.floor(root.sh * 0.00625)) : 1
 
+                // Landscape cards: an episode's still IS 16:9; movies/shows in
+                // the same list use their (16:9) fanart. Portrait cells always
+                // use the poster.
+                property string artPath: itemListRoot.gridLandscape
+                        ? (modelData.type === "episode"
+                           ? (modelData.thumb || modelData.art || "")
+                           : (modelData.art || modelData.thumb || ""))
+                        : (modelData.thumb || "")
+
                 Image {
                     id: posterImage
                     anchors.fill: parent
                     anchors.margins: posterBox.border.width
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
-                    source: modelData.thumb
-                            ? plexBackend.image_url(modelData.thumb,
+                    source: posterBox.artPath
+                            ? plexBackend.image_url(posterBox.artPath,
                                                     Math.round(width), Math.round(height))
                             : ""
                 }
