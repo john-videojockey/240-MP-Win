@@ -120,7 +120,21 @@ FocusScope {
             }
         }
 
+        // Touch: a tap on the version/status area triggers the primary action
+        // (check/download/install) via a synthesized Enter, same as the keyboard.
+        // Sized to stop above the release notes so the Flickable keeps its
+        // native touch scrolling; disabled while the confirm overlay is up.
+        MouseArea {
+            anchors.top: contentColumn.top
+            anchors.left: contentColumn.left
+            width: contentColumn.width
+            height: notesBox.visible ? notesBox.y : contentColumn.height
+            enabled: !updateRoot.confirmOverlayVisible
+            onClicked: inputManager.touchKey("select")
+        }
+
         Column {
+            id: contentColumn
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.topMargin: root.sh * 0.25 //120
@@ -191,6 +205,7 @@ FocusScope {
 
             // Release notes
             Rectangle {
+                id: notesBox
                 visible: updateRoot.releaseNotes !== ""
                 width: parent.width
                 height: root.sh * 0.3291667 //158
@@ -314,6 +329,14 @@ FocusScope {
                                 rightPadding: root.sw * 0.009375 //6
                                 bottomPadding: root.sh * 0.00625 //3
                                 font.pixelSize: root.sh * 0.05 //24
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (confirmChoiceIndex === index) inputManager.touchKey("select")
+                                    else confirmChoiceIndex = index
+                                }
                             }
                         }
                     }

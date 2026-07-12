@@ -499,6 +499,17 @@ FocusScope {
                             width: dialogColumn.width
                             height: root.sh * 0.0583333
 
+                            // Touch: first tap highlights an option, tapping the
+                            // highlighted option confirms it via a synthesized
+                            // Enter (same path as the keyboard).
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (choiceIndex === index) inputManager.touchKey("select")
+                                    else choiceIndex = index
+                                }
+                            }
+
                             Rectangle {
                                 anchors.fill: delegateText
                                 color: root.accentColor

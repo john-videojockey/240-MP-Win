@@ -246,6 +246,22 @@ FocusScope {
                 anchors.fill: parent
                 color: settingsList.currentIndex === index ? root.accentColor : "transparent"
 
+                // Touch: first tap focuses the row; tapping the focused row
+                // activates it (cycles a toggle/list_single forward, opens a
+                // submenu, etc.) via a synthesized key, reusing the keyboard
+                // handlers. Declared before the value Row so its arrows stack on top.
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (settingsList.currentIndex !== index) {
+                            settingsList.currentIndex = index
+                            return
+                        }
+                        var cycled = modelData.type === "toggle" || modelData.type === "list_single"
+                        inputManager.touchKey(cycled ? "right" : "select")
+                    }
+                }
+
                 // Label
                 Text {
                     text: modelData.label || ""
@@ -278,6 +294,17 @@ FocusScope {
                         topPadding: root.sh * 0.0041667 //2
                         bottomPadding: root.sh * 0.00625 //3
                         font.pixelSize: root.sh * 0.0375 //18
+
+                        // Tap \u25C4 to cycle the value backward (row must be focused
+                        // first; a stray tap focuses it instead of changing it).
+                        MouseArea {
+                            anchors.fill: parent
+                            anchors.margins: -root.sh * 0.0125
+                            onClicked: {
+                                if (settingsList.currentIndex === index) inputManager.touchKey("left")
+                                else settingsList.currentIndex = index
+                            }
+                        }
                     }
 
                     // Current value text (cycled types + directory_browser) with marquee scroll

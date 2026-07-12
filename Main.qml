@@ -232,6 +232,40 @@ Window {
         }
     }
 
+    // --- TOUCH BACK BUTTON ---
+    // Floating Escape equivalent so touch users can always navigate back
+    // (on the module list, where the footer documents back as Settings, it
+    // opens Settings — same as the physical key). Views keep handling the
+    // resulting key event exactly as if a keyboard or remote sent it.
+    Rectangle {
+        visible: !screenSaverActive
+        z: 100
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: root.sh * 0.125 //60
+        anchors.rightMargin: root.sw * 0.115625 //74
+        width: backChipLabel.implicitWidth + root.sw * 0.025 //16
+        height: root.sh * 0.0583333 //28
+        color: "transparent"
+        border.color: root.tertiaryColor
+        border.width: Math.max(1, Math.floor(root.sh * 0.003125)) //2
+
+        Text {
+            id: backChipLabel
+            anchors.centerIn: parent
+            text: "◄ BACK"
+            color: root.tertiaryColor
+            font.family: root.globalFont
+            font.pixelSize: root.sh * 0.0333333 //16
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            anchors.margins: -root.sh * 0.0166667 // generous touch target
+            onClicked: inputManager.touchKey("back")
+        }
+    }
+
     // --- SCREEN SAVER (Idle Tracker integration) ---
     Connections {
         target: idleTracker
@@ -305,6 +339,16 @@ Window {
                         bounceLogo.vy = Math.abs(bounceLogo.vy)
                     }
                 }
+            }
+        }
+
+        // A tap dismisses the screen saver just like a keypress; the MouseArea
+        // swallows the tap so nothing underneath is activated by it.
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {
+                screenSaverActive = false
+                moduleLoader.forceActiveFocus()
             }
         }
 

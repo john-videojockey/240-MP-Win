@@ -249,6 +249,16 @@ FocusScope {
                 height: root.sh * 0.1166667 //56
                 border.width: root.sh * 0.003125 //2
 
+                // Touch: first tap focuses the PLAY button, tapping it while focused
+                // activates it via a synthesized Enter (same path as the keyboard).
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (focusRow === 0) inputManager.touchKey("select")
+                        else focusRow = 0
+                    }
+                }
+
                 Text {
                     anchors.centerIn: parent
                     text: (detail && detail.viewOffset > 0) ? "RSUM \u25BA" : "PLAY \u25BA"
@@ -389,6 +399,17 @@ FocusScope {
             anchors.topMargin: root.sh * 0.0145833 //7
             height: root.sh * 0.0583333 //28
 
+            // Touch: first tap focuses the row; tapping the focused row cycles
+            // its value forward, reusing the LEFT/RIGHT keyboard handlers.
+            // Declared before the value Row so its arrows stack on top.
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (focusRow === 1) inputManager.touchKey("right")
+                    else focusRow = 1
+                }
+            }
+
             Rectangle {
                 anchors.fill: parent
                 color: focusRow === 1 ? root.accentColor : "transparent"
@@ -417,6 +438,17 @@ FocusScope {
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
                     font.pixelSize: root.sh * 0.0375 //18
+
+                    // Tap \u25C4 to cycle backward (row must be focused first; a
+                    // stray tap focuses it instead of changing it).
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 1) inputManager.touchKey("left")
+                            else focusRow = 1
+                        }
+                    }
                 }
                 Text {
                     text: (detail && detail.audioStreams && detail.audioStreams[audioIdx])
@@ -433,6 +465,15 @@ FocusScope {
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
                     font.pixelSize: root.sh * 0.0375 //18
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 1) inputManager.touchKey("right")
+                            else focusRow = 1
+                        }
+                    }
                 }
             }
         }
@@ -445,6 +486,14 @@ FocusScope {
             anchors.left: parent.left
             anchors.right: parent.right
             height: root.sh * 0.0583333 //28
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (focusRow === 2) inputManager.touchKey("right")
+                    else focusRow = 2
+                }
+            }
 
             Rectangle {
                 anchors.fill: parent
@@ -474,6 +523,15 @@ FocusScope {
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
                     font.pixelSize: root.sh * 0.0375 //18
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 2) inputManager.touchKey("left")
+                            else focusRow = 2
+                        }
+                    }
                 }
                 Text {
                     text: (detail && detail.subtitleStreams && detail.subtitleStreams[subtitleIdx])
@@ -490,6 +548,15 @@ FocusScope {
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
                     font.pixelSize: root.sh * 0.0375 //18
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 2) inputManager.touchKey("right")
+                            else focusRow = 2
+                        }
+                    }
                 }
             }
         }

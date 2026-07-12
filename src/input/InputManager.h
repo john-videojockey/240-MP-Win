@@ -39,6 +39,13 @@ public:
     // Keyboard input is unaffected. Wired from main.cpp via appSettingChanged.
     void setControllerInputEnabled(bool on);
 
+    // Touch/mouse → keyboard bridge for QML: posts a synthesized press+release
+    // of the named action's key ("select", "back", "up", "down", "left",
+    // "right", "play_pause") to the root window, so taps drive the exact same
+    // Keys.on* handlers as the keyboard and remote. Unlike gamepad input this
+    // does not flip lastInputDevice, so the footer hints stay keyboard-styled.
+    Q_INVOKABLE void touchKey(const QString &action);
+
     bool gamepadConnected() const { return !m_controllers.isEmpty(); }
     QString lastInputDevice() const { return m_lastInputDevice; }
     QVariantMap hints() const { return m_hints; }

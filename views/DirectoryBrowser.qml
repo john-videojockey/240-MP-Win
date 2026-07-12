@@ -111,6 +111,16 @@ FocusScope {
                 anchors.fill: parent
                 color: dirList.currentIndex === index ? root.accentColor : "transparent"
 
+                // Touch: first tap highlights the entry, tapping the highlighted
+                // entry activates it via a synthesized Enter (same path as the keyboard).
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (dirList.currentIndex === index) inputManager.touchKey("select")
+                        else dirList.currentIndex = index
+                    }
+                }
+
                 Text {
                     text: modelData.name || ""
                     color: {

@@ -185,9 +185,6 @@ local function layout()
     g.has_sub  = has_subtitle_tracks()
     g.show_nav = has_playlist() or episode_nav
 
-    -- Close (X) button, top-right, square
-    g.close = { x = g.rm - g.btn_h, y = g.title_y, w = g.btn_h, h = g.btn_h }
-
     -- Seek bar
     g.bar = { x = g.lm, y = g.bar_y, w = g.bar_w, h = g.bar_h, inset = g.border + 2 }
 
@@ -230,19 +227,14 @@ local function draw_menu()
     if not g then return end
     local ass = assdraw.ass_new()
 
-    -- ── Title (top-left) + close X (top-right) ────────────────────
+    -- ── Title (top-left) ──────────────────────────────────────────
     local title = (mp.get_property("media-title", "") or ""):upper()
-    -- VCR OSD Mono is monospace ≈ 0.6em per glyph; keep clear of the X button.
-    local max_chars = math.floor((g.close.x - g.lm - g.btn_gap) / (g.fs * 0.6))
+    -- VCR OSD Mono is monospace ≈ 0.6em per glyph; keep inside the margins.
+    local max_chars = math.floor((g.rm - g.lm) / (g.fs * 0.6))
     if #title > max_chars and max_chars > 3 then
         title = title:sub(1, max_chars - 3) .. "..."
     end
     draw_text(ass, g.lm, g.title_y + g.btn_h / 2, 4, title, g.fs, C_WHITE, A_OPAQUE)
-
-    draw_rect(ass, g.close.x, g.close.y, g.close.w, g.close.h,
-              C_BLACK, A_TRANS, g.border, C_WHITE)
-    draw_text(ass, g.close.x + g.close.w / 2, g.close.y + g.close.h / 2, 5,
-              "X", g.fs, C_WHITE, A_OPAQUE)
 
     -- ── Track info ────────────────────────────────────────────────
     local info_fs  = math.floor(g.fs * 1)
@@ -355,6 +347,8 @@ local function update_nav(action)
     draw_menu()
 end
 
+local menu_shown_at = 0   -- for the touch reveal-gesture window (see osc-click)
+
 local function show_menu(timeout)
     if menu_visible then
         reset_idle_timer(timeout)
@@ -364,6 +358,7 @@ local function show_menu(timeout)
     -- share the same spot and are mutually exclusive.
     mp.commandv("script-message", "240mp-osd-volume-hide")
     menu_visible = true
+    menu_shown_at = mp.get_time()
     focus_row    = 1
     draw_menu()
     update_timer = mp.add_periodic_timer(0.5, draw_menu)
@@ -402,19 +397,27 @@ end
 mp.add_forced_key_binding("MBTN_LEFT", "osc-click", function()
     local mpos = mp.get_property_native("mouse-pos") or {}
     local mx, my = mpos.x or -1, mpos.y or -1
+    mp.msg.verbose(string.format("click at %d,%d visible=%s dt=%.2f",
+        mx, my, tostring(menu_visible), mp.get_time() - menu_shown_at))
 
     if not menu_visible then
         show_menu(MOUSE_TIMEOUT)
         return
     end
 
-    local g = layout()
-    if not g then return end
-
-    if hit(g.close, mx, my) then
-        mp.command("quit")
+    -- Touch taps arrive as a cursor move immediately followed by a click. The
+    -- move opens the menu; without this window the click half of that same tap
+    -- would then land on whatever control happens to be under the finger
+    -- (usually the seek bar). A click this soon after the reveal is therefore
+    -- consumed as part of the reveal gesture — controls take input only from
+    -- a separate, later tap.
+    if mp.get_time() - menu_shown_at < 0.4 then
+        reset_idle_timer(MOUSE_TIMEOUT)
         return
     end
+
+    local g = layout()
+    if not g then return end
 
     if hit(g.bar, mx, my) then
         -- Click-to-seek: map the x position to the displayed timeline, then

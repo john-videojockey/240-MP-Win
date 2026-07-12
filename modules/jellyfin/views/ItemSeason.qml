@@ -157,6 +157,16 @@ FocusScope {
                     font.family: root.globalFont
                     font.pixelSize: root.sh * 0.05 //24
                 }
+
+                // Touch: first tap focuses; tapping the focused control activates
+                // it via a synthesized key, reusing the keyboard handlers.
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (focusRow === 0) inputManager.touchKey("select")
+                        else focusRow = 0
+                    }
+                }
             }
 
             Column {
@@ -219,6 +229,18 @@ FocusScope {
             delegate: Item {
                 width: episodeList.width
                 height: root.sh * 0.0583333 //28
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (episodeList.currentIndex === index && focusRow === 1) {
+                            inputManager.touchKey("select")
+                        } else {
+                            episodeList.currentIndex = index
+                            focusRow = 1
+                        }
+                    }
+                }
 
                 Item {
                     id: textClip

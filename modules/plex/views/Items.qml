@@ -351,6 +351,23 @@ FocusScope {
             width: itemList.width
             height: root.sh * 0.0583333 //28
 
+            // Touch: first tap highlights the row (leaving letter nav if it is
+            // active), tapping the highlighted row activates it via a
+            // synthesized Enter (same path as the keyboard).
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (letterNavActive) {
+                        letterNavActive = false
+                        itemList.forceActiveFocus()
+                        itemList.currentIndex = index
+                        return
+                    }
+                    if (itemList.currentIndex === index) inputManager.touchKey("select")
+                    else itemList.currentIndex = index
+                }
+            }
+
             Item {
                 id: textClip
                 width: Math.min(rowText.implicitWidth, itemList.width)

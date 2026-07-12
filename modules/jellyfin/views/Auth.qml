@@ -172,6 +172,16 @@ FocusScope {
                 font.capitalization: Font.AllUppercase
                 font.pixelSize: root.sh * 0.0375 //18
             }
+
+            // Touch: tap submits via a synthesized Enter (Return submits from
+            // either focus row, so no first-tap-to-focus step is needed).
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    focusIndex = 1
+                    inputManager.touchKey("select")
+                }
+            }
         }
 
         // Loading indicator

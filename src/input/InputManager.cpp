@@ -144,6 +144,17 @@ void InputManager::pollSdl() {
     }
 }
 
+void InputManager::touchKey(const QString &action) {
+    bool ok = false;
+    const Action a = actionFromString(action.toLower(), &ok);
+    if (!ok || a == Action::None) {
+        qWarning("[input] touchKey: unknown action \"%s\"", qPrintable(action));
+        return;
+    }
+    postKey(qtKeyForAction(a), QEvent::KeyPress, false);
+    postKey(qtKeyForAction(a), QEvent::KeyRelease, false);
+}
+
 void InputManager::setControllerInputEnabled(bool on) {
     if (m_controllerInputEnabled == on)
         return;

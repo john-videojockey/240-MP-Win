@@ -17,6 +17,7 @@ The philosophy and module system are untouched (see [ARCHITECTURE.md](ARCHITECTU
 - **Install** is one PowerShell script that also brings in mpv/yt-dlp via winget (or scoop/choco). Optional autostart-at-logon via a Startup shortcut. No admin rights required for any of it.
 - **mpv can be bundled**: drop `mpv.exe` into `<app folder>\mpv\` and 240-MP prefers it over any system install — handy for a fully portable setup.
 - **Directory browser understands drives** — navigate above `C:\` to switch to the drive where your media lives.
+- **Touchscreen support** — tap to highlight, tap again to select, everywhere; a floating ◄ BACK button for navigation; during playback, tap to show the controls, tap them to seek/pause/switch tracks, tap elsewhere to hide.
 - **Logs** land in `%APPDATA%\240-MP\logs\240mp.log` (and in your terminal when launched from one), since Windows GUI apps have no stdout.
 - The display is kept awake while the app runs (it's a TV frontend with its own screen saver); Windows power settings resume control when it exits.
 
@@ -80,7 +81,7 @@ Everything Raspberry-Pi-specific (KMS/DRM hand-off, per-Pi decode profiles, syst
 
 ### Global
 - [Color Schemes](https://github.com/anthonycaccese/240-MP/wiki/Customizations)
-- [Keyboard & Controller](https://github.com/anthonycaccese/240-MP/wiki/Input) input support
+- [Keyboard & Controller](https://github.com/anthonycaccese/240-MP/wiki/Input) input support, plus touchscreen/mouse navigation
 - Media Keys during video playback (volume +/-, mute, play/pause, stop, seek, next chapter, previous chapter)
 - In-app self-update from GitHub Releases
 

@@ -247,6 +247,24 @@ FocusScope {
             width: itemList.width
             height: root.sh * 0.0583333 //28
 
+            // Touch: first tap highlights the row (leaving the letter panel if
+            // active), tapping the highlighted row activates it via a
+            // synthesized Enter (same path as the keyboard).
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (letterNavActive) {
+                        letterNavActive = false
+                        itemList.forceActiveFocus()
+                        itemList.currentIndex = index
+                    } else if (itemList.currentIndex === index) {
+                        inputManager.touchKey("select")
+                    } else {
+                        itemList.currentIndex = index
+                    }
+                }
+            }
+
             Item {
                 id: textClip
                 width: Math.min(rowText.implicitWidth, itemList.width)
@@ -339,6 +357,17 @@ FocusScope {
         delegate: Item {
             width: letterList.width
             height: root.sh * 0.04375 //21
+
+            // Touch: jump straight to this letter (no key equivalent of
+            // jump-to-row, so the indices are set directly).
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    letterList.currentIndex = index
+                    itemList.currentIndex = letterIndex[index].firstIndex
+                    itemList.positionViewAtIndex(itemList.currentIndex, ListView.Beginning)
+                }
+            }
 
             Rectangle {
                 color: root.accentColor

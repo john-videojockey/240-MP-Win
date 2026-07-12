@@ -422,6 +422,16 @@ FocusScope {
                     font.family: root.globalFont
                     font.pixelSize: root.sh * 0.05 //24
                 }
+
+                // Touch: first tap focuses; tapping the focused control activates
+                // it via a synthesized key, reusing the keyboard handlers.
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (focusRow === 0) inputManager.touchKey("select")
+                        else focusRow = 0
+                    }
+                }
             }
 
             Column {
@@ -528,6 +538,14 @@ FocusScope {
                 color: focusRow === 1 ? root.accentColor : "transparent"
             }
 
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (focusRow === 1) inputManager.touchKey("right")
+                    else focusRow = 1
+                }
+            }
+
             Text {
                 text: "Audio"
                 color: focusRow === 1 ? root.surfaceColor : root.primaryColor
@@ -551,6 +569,15 @@ FocusScope {
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
                     font.pixelSize: root.sh * 0.0375 //18
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 1) inputManager.touchKey("left")
+                            else focusRow = 1
+                        }
+                    }
                 }
                 Item {
                     id: audioValueClip
@@ -590,6 +617,15 @@ FocusScope {
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
                     font.pixelSize: root.sh * 0.0375 //18
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 1) inputManager.touchKey("right")
+                            else focusRow = 1
+                        }
+                    }
                 }
             }
         }
@@ -606,6 +642,14 @@ FocusScope {
             Rectangle {
                 anchors.fill: parent
                 color: focusRow === 2 ? root.accentColor : "transparent"
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (focusRow === 2) inputManager.touchKey("right")
+                    else focusRow = 2
+                }
             }
 
             Text {
@@ -631,6 +675,15 @@ FocusScope {
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
                     font.pixelSize: root.sh * 0.0375 //18
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 2) inputManager.touchKey("left")
+                            else focusRow = 2
+                        }
+                    }
                 }
                 Item {
                     id: subtitleValueClip
@@ -674,6 +727,15 @@ FocusScope {
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
                     font.pixelSize: root.sh * 0.0375 //18
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 2) inputManager.touchKey("right")
+                            else focusRow = 2
+                        }
+                    }
                 }
             }
         }

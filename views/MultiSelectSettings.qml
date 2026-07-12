@@ -113,6 +113,16 @@ FocusScope {
                 anchors.fill: parent
                 color: optionsList.currentIndex === index ? root.accentColor : "transparent"
 
+                // Touch: first tap focuses the row, tapping the focused row
+                // toggles it via a synthesized Enter (same path as the keyboard).
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (optionsList.currentIndex === index) inputManager.touchKey("select")
+                        else optionsList.currentIndex = index
+                    }
+                }
+
                 Text {
                     text: modelData.label || ""
                     color: optionsList.currentIndex === index ? root.surfaceColor : root.primaryColor

@@ -251,6 +251,16 @@ FocusScope {
                                 bottomPadding: root.sh * 0.00625
                                 font.pixelSize: root.sh * 0.0416667
                             }
+
+                            // Touch: tap selects the option, tapping the selected
+                            // option confirms it via a synthesized Enter.
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (choiceIndex === index) inputManager.touchKey("select")
+                                    else choiceIndex = index
+                                }
+                            }
                         }
                     }
                 }

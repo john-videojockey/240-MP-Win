@@ -153,6 +153,16 @@ FocusScope {
                 height: root.sh * 0.1166667 //56
                 border.width: root.sh * 0.003125 //2
 
+                // Touch: first tap focuses the PLAY button, tapping it while focused
+                // activates it via a synthesized Enter (same path as the keyboard).
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (focusRow === 0) inputManager.touchKey("select")
+                        else focusRow = 0
+                    }
+                }
+
                 Text {
                     anchors.centerIn: parent
                     text: {
@@ -253,6 +263,18 @@ FocusScope {
             delegate: Item {
                 width: episodeList.width
                 height: root.sh * 0.0583333 //28
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (focusRow === 1 && episodeList.currentIndex === index) {
+                            inputManager.touchKey("select")
+                        } else {
+                            focusRow = 1
+                            episodeList.currentIndex = index
+                        }
+                    }
+                }
 
                 Item {
                     id: textClip

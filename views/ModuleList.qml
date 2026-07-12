@@ -75,6 +75,16 @@ FocusScope {
             width: menuList.width;
             height: root.sh * 0.0583333 //28
 
+            // Touch: first tap highlights the row, tapping the highlighted row
+            // activates it via a synthesized Enter (same path as the keyboard).
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (menuList.currentIndex === index) inputManager.touchKey("select")
+                    else menuList.currentIndex = index
+                }
+            }
+
             Item {
                 id: textClipContainer;
                 width: Math.min(rowText.implicitWidth, menuList.width);

@@ -201,6 +201,16 @@ FocusScope {
             width: itemList.width
             height: root.sh * 0.075 //36
 
+            // Touch: first tap highlights the row, tapping the highlighted row
+            // activates it via a synthesized Enter (same path as the keyboard).
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (itemList.currentIndex === index) inputManager.touchKey("select")
+                    else itemList.currentIndex = index
+                }
+            }
+
             // Full-width background highlight for the active row
             Rectangle {
                 color: root.accentColor
@@ -345,6 +355,14 @@ FocusScope {
                                 rightPadding: root.sw * 0.009375
                                 bottomPadding: root.sh * 0.00625
                                 font.pixelSize: root.sh * 0.0416667
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (wlChoiceIndex === index) inputManager.touchKey("select")
+                                    else wlChoiceIndex = index
+                                }
                             }
                         }
                     }

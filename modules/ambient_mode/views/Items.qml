@@ -130,6 +130,17 @@ FocusScope {
                 color: focusRow === 0 ? root.accentColor : "transparent"
             }
 
+            // Touch: first tap focuses a row; tapping the focused row cycles its
+            // value forward via a synthesized key, reusing the keyboard handlers.
+            // Declared before the arrow Texts so their tap targets stack on top.
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (focusRow === 0) inputManager.touchKey("right")
+                    else focusRow = 0
+                }
+            }
+
             Text {
                 text: "Video"
                 color: focusRow === 0 ? root.surfaceColor : root.primaryColor
@@ -154,6 +165,15 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     font.pixelSize: root.sh * 0.0375 //18
                     visible: videoFiles.length > 1
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 0) inputManager.touchKey("left")
+                            else focusRow = 0
+                        }
+                    }
                 }
                 Text {
                     text: videoFiles[videoIndex].name
@@ -170,6 +190,15 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     font.pixelSize: root.sh * 0.0375 //18
                     visible: videoFiles.length > 1
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 0) inputManager.touchKey("right")
+                            else focusRow = 0
+                        }
+                    }
                 }
             }
         }
@@ -185,6 +214,14 @@ FocusScope {
             Rectangle {
                 anchors.fill: parent
                 color: focusRow === 1 ? root.accentColor : "transparent"
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (focusRow === 1) inputManager.touchKey("right")
+                    else focusRow = 1
+                }
             }
 
             Text {
@@ -211,6 +248,15 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     font.pixelSize: root.sh * 0.0375 //18
                     visible: audioIndex > 0
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 1) inputManager.touchKey("left")
+                            else focusRow = 1
+                        }
+                    }
                 }
                 Text {
                     text: audioIndex === 0 ? "VIDEO AUDIO" : audioFiles[audioIndex - 1].name
@@ -227,6 +273,15 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     font.pixelSize: root.sh * 0.0375 //18
                     visible: audioIndex < audioFiles.length
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 1) inputManager.touchKey("right")
+                            else focusRow = 1
+                        }
+                    }
                 }
             }
         }
@@ -252,6 +307,14 @@ FocusScope {
                     color: focusRow === 2 ? root.surfaceColor : root.primaryColor
                     font.family: root.globalFont
                     font.pixelSize: root.sh * 0.05 //24
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (focusRow === 2) inputManager.touchKey("select")
+                        else focusRow = 2
+                    }
                 }
             }
         }
