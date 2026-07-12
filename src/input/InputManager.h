@@ -33,6 +33,12 @@ public:
 
     void setTargetWindow(QQuickWindow *window);
 
+    // App-level "controller_input" setting (default ON). While OFF, button and
+    // axis events are ignored — a misbehaving pad can't drive the UI — but
+    // hotplug tracking keeps running so re-enabling works without a restart.
+    // Keyboard input is unaffected. Wired from main.cpp via appSettingChanged.
+    void setControllerInputEnabled(bool on);
+
     bool gamepadConnected() const { return !m_controllers.isEmpty(); }
     QString lastInputDevice() const { return m_lastInputDevice; }
     QVariantMap hints() const { return m_hints; }
@@ -104,4 +110,5 @@ private:
 
     QString m_lastInputDevice = "keyboard";
     QVariantMap m_hints;
+    bool m_controllerInputEnabled = true;
 };

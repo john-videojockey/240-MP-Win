@@ -92,6 +92,21 @@ int main(int argc, char *argv[]) {
     QObject::connect(&inputManager, &InputManager::mpvKeyRequested,
                      &mpvController, &MpvController::sendKey);
 
+    // App-level "controller_input" setting (default ON): apply the saved value
+    // now and track live changes from the Settings view. Lets users park a
+    // misbehaving pad without unplugging it.
+    auto applyControllerInputSetting = [&appCore, &inputManager]() {
+        const QString v = appCore.get_setting(QString(), "controller_input").toString();
+        inputManager.setControllerInputEnabled(
+            v.compare(QLatin1String("Off"), Qt::CaseInsensitive) != 0);
+    };
+    applyControllerInputSetting();
+    QObject::connect(&appCore, &AppCore::appSettingChanged, &inputManager,
+                     [applyControllerInputSetting](const QString &key, const QString &) {
+        if (key == QLatin1String("controller_input"))
+            applyControllerInputSetting();
+    });
+
     // Each module backend is wired in one call: stored for action routing, exposed to QML
     // under its context-property name, and its optional signals/slots connected by
     // introspection. The module ID lives in exactly one place per module.

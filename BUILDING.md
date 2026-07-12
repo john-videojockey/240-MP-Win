@@ -96,6 +96,8 @@ USB game controllers should work out of the box: SDL's built-in controller datab
 
 Controllers can be hotplugged at any time and during playback the same buttons drive mpv (seek, pause, quit) exactly like their keyboard equivalents.
 
+Controller input can be turned off entirely in **Settings → Controller Input** (useful for a pad with a stuck button or stick drift that navigates on its own). Keyboard input always works, so the setting can't lock you out; hotplug detection keeps running, so re-enabling takes effect immediately.
+
 **Overriding the mapping**
 
 - Create an `input.cfg` file in `%APPDATA%\240-MP`.

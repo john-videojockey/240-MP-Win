@@ -112,6 +112,19 @@ FocusScope {
             moduleId: ""
         })
 
+        // Controller Input — ignore game controllers entirely while Off (a pad
+        // with a stuck/drifting input can otherwise navigate on its own).
+        // Keyboard input always works, so this can't lock the user out.
+        items.push({
+            type: "list_single",
+            key: "controller_input",
+            label: "Controller Input",
+            options: ["On", "Off"],
+            value: appSettings["controller_input"] || "On",
+            description: "[ON] Navigate with game controllers\n[OFF] Ignore all game controller input (keyboard still works)",
+            moduleId: ""
+        })
+
         // SCREEN SAVER section — single control: OFF disables, a number sets the
         // timeout for both menu idle and playback pause (handled inside mpv).
         items.push({

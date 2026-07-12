@@ -123,20 +123,40 @@ void InputManager::pollSdl() {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         switch (e.type) {
+        // Hotplug is tracked even while controller input is disabled, so the
+        // setting can be flipped back on without replugging or restarting.
         case SDL_CONTROLLERDEVICEADDED:   openController(e.cdevice.which);  break;
         case SDL_CONTROLLERDEVICEREMOVED: closeController(e.cdevice.which); break;
         case SDL_CONTROLLERBUTTONDOWN:
-            handleButton(e.cbutton.which, e.cbutton.button, true);
+            if (m_controllerInputEnabled)
+                handleButton(e.cbutton.which, e.cbutton.button, true);
             break;
         case SDL_CONTROLLERBUTTONUP:
-            handleButton(e.cbutton.which, e.cbutton.button, false);
+            if (m_controllerInputEnabled)
+                handleButton(e.cbutton.which, e.cbutton.button, false);
             break;
         case SDL_CONTROLLERAXISMOTION:
-            handleAxis(e.caxis.which, e.caxis.axis, e.caxis.value);
+            if (m_controllerInputEnabled)
+                handleAxis(e.caxis.which, e.caxis.axis, e.caxis.value);
             break;
         default: break;
         }
     }
+}
+
+void InputManager::setControllerInputEnabled(bool on) {
+    if (m_controllerInputEnabled == on)
+        return;
+    m_controllerInputEnabled = on;
+    if (!on) {
+        // Nothing may stay latched: stop a repeating direction and reset axis
+        // engagement, then hand the footer hints back to the keyboard.
+        if (m_heldDirection != Action::None)
+            releaseAction(m_heldDirection);
+        m_axisState.clear();
+        setLastInputDevice(QStringLiteral("keyboard"));
+    }
+    qInfo("[input] controller input %s", on ? "enabled" : "disabled");
 }
 
 void InputManager::openController(int deviceIndex) {
