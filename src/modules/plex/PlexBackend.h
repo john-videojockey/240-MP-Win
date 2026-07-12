@@ -53,6 +53,9 @@ public:
     // nextEpisodeReady with a full playable detail (same shape as load_item_detail),
     // or an empty map when there is no next episode / on any failure.
     Q_INVOKABLE void load_next_episode(const QString &currentRatingKey);
+    // Sibling episode in either direction (+1 next, -1 previous) for the detail
+    // view's PREV/NEXT; emits adjacentEpisodeReady(direction, detail).
+    Q_INVOKABLE void load_adjacent_episode(const QString &currentRatingKey, int direction);
 
     // Playback
     Q_INVOKABLE void load_item_detail(const QString &ratingKey);
@@ -110,6 +113,7 @@ signals:
     void childrenLoaded(const QVariant &items);
     void inProgressEpisodeLoaded(const QVariant &item);
     void nextEpisodeReady(const QVariant &detail);
+    void adjacentEpisodeReady(int direction, const QVariant &detail);
 
     void liveChannelsLoaded(const QVariant &channels);
 

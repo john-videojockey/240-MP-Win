@@ -141,11 +141,12 @@ local function build_left_btns(has_sub, bar_w)
             mp.commandv("script-message", "skip-segment")
         end}
     end
-    -- |< and >| are always present so the row never changes shape between
-    -- media types: |< restarts the current item everywhere; >| advances when
-    -- there is somewhere to go (mpv playlist or app-provided next episode)
-    -- and is a no-op otherwise (nav_next guards).
-    btns[#btns + 1] = {label="|<", width=math.floor(bar_w * 0.05), action=nav_prev}
+    -- |< / >| appear only when they can actually navigate somewhere (an mpv
+    -- playlist or an app-provided next episode); << / >> are always present.
+    local show_nav = has_playlist() or episode_nav
+    if show_nav then
+        btns[#btns + 1] = {label="|<", width=math.floor(bar_w * 0.05), action=nav_prev}
+    end
     btns[#btns + 1] = {label="<<", width=math.floor(bar_w * 0.05),
                        action=function() mp.command("seek -" .. SEEK_SECONDS) end}
     local paused = mp.get_property_native("pause", false)
@@ -154,7 +155,9 @@ local function build_left_btns(has_sub, bar_w)
                        action=function() mp.command("no-osd cycle pause") end}
     btns[#btns + 1] = {label=">>", width=math.floor(bar_w * 0.05),
                        action=function() mp.command("seek " .. SEEK_SECONDS) end}
-    btns[#btns + 1] = {label=">|", width=math.floor(bar_w * 0.05), action=nav_next}
+    if show_nav then
+        btns[#btns + 1] = {label=">|", width=math.floor(bar_w * 0.05), action=nav_next}
+    end
     btns[#btns + 1] = {label="AUDIO", width=math.floor(bar_w * 0.095),
                        action=function() mp.command("no-osd cycle audio") end}
     if has_sub then

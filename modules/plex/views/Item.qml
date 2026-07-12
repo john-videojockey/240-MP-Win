@@ -32,6 +32,41 @@ FocusScope {
     // transcode session built with the previously selected audio/subtitle.
     property string sessionId: newSessionId()
 
+    // Fanart background (module settings info_background / *_opacity)
+    property bool infoBg: true
+    property real infoBgOpacity: 0.3
+
+    // Column focus inside the button row (focusRow 0): 0=PREV, 1=PLAY, 2=NEXT.
+    // PREV/NEXT swap this screen to the sibling episode; they only exist for
+    // episodes, so non-episode items never leave column 1.
+    property int  playCol: 1
+    property bool episodeItem: (detail && detail.type === "episode") || item.type === "episode"
+    property bool adjacentPending: false
+
+    function requestAdjacent(direction) {
+        if (adjacentPending || !detail || !detail.ratingKey) return
+        adjacentPending = true
+        plexBackend.load_adjacent_episode(detail.ratingKey, direction)
+    }
+
+    // Shared by the initial load and the PREV/NEXT swap: install a detail map
+    // and re-derive the audio/subtitle selection indices from it.
+    function applyDetail(d) {
+        detail = d
+        audioIdx = 0
+        subtitleIdx = 0
+        if (d.audioStreams) {
+            for (var i = 0; i < d.audioStreams.length; i++) {
+                if (d.audioStreams[i].id === d.selectedAudioId) { audioIdx = i; break }
+            }
+        }
+        if (d.subtitleStreams) {
+            for (var j = 0; j < d.subtitleStreams.length; j++) {
+                if (d.subtitleStreams[j].id === d.selectedSubtitleId) { subtitleIdx = j; break }
+            }
+        }
+    }
+
     function newSessionId() {
         var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         var id = ""
@@ -52,20 +87,26 @@ FocusScope {
         target: plexBackend
 
         function onItemLoaded(d) {
-            detailRoot.detail = d
-            // Set initial stream indices
-            detailRoot.audioIdx = 0
-            detailRoot.subtitleIdx = 0
-            if (d.audioStreams) {
-                for (var i = 0; i < d.audioStreams.length; i++) {
-                    if (d.audioStreams[i].id === d.selectedAudioId) { detailRoot.audioIdx = i; break }
-                }
+            detailRoot.applyDetail(d)
+        }
+
+        // PREV/NEXT resolved a sibling episode: swap this screen to it in
+        // place (no navigation, so BACK still returns to the episode list).
+        function onAdjacentEpisodeReady(direction, d) {
+            if (!detailRoot.adjacentPending) return
+            detailRoot.adjacentPending = false
+            if (!d || !d.ratingKey) return   // no sibling that way — stay put
+            detailRoot.item = {
+                ratingKey: d.ratingKey,
+                type: d.type || "episode",
+                title: d.title || "",
+                grandparentTitle: d.grandparentTitle || "",
+                parentIndex: d.parentIndex,
+                index: d.index,
+                thumb: d.thumb || "",
+                viewOffset: d.viewOffset || 0
             }
-            if (d.subtitleStreams) {
-                for (var j = 0; j < d.subtitleStreams.length; j++) {
-                    if (d.subtitleStreams[j].id === d.selectedSubtitleId) { detailRoot.subtitleIdx = j; break }
-                }
-            }
+            detailRoot.applyDetail(d)
         }
 
         function onStreamUrlReady(url, plexToken) {
@@ -126,6 +167,12 @@ FocusScope {
     Component.onCompleted: {
         if (item.ratingKey) plexBackend.load_item_detail(item.ratingKey)
         focusRow = 0
+
+        var bg = appCore.get_setting(moduleRoot.moduleId, "info_background")
+        infoBg = (bg === undefined || bg === null || bg === "")
+                 ? true : (bg === true || bg === "ON")
+        var op = parseInt(appCore.get_setting(moduleRoot.moduleId, "info_background_opacity"))
+        if (op > 0) infoBgOpacity = op / 100
     }
 
     focus: true
@@ -146,7 +193,9 @@ FocusScope {
     Keys.onLeftPressed: {
         if (isLaunching) return
         if (!detail) return
-        if (focusRow === 1 && detail.audioStreams && detail.audioStreams.length > 1)
+        if (focusRow === 0) {
+            if (episodeItem && playCol > 0) playCol--
+        } else if (focusRow === 1 && detail.audioStreams && detail.audioStreams.length > 1)
             audioIdx = (audioIdx - 1 + detail.audioStreams.length) % detail.audioStreams.length
         else if (focusRow === 2 && detail.subtitleStreams && detail.subtitleStreams.length > 1)
             subtitleIdx = (subtitleIdx - 1 + detail.subtitleStreams.length) % detail.subtitleStreams.length
@@ -154,13 +203,20 @@ FocusScope {
     Keys.onRightPressed: {
         if (isLaunching) return
         if (!detail) return
-        if (focusRow === 1 && detail.audioStreams && detail.audioStreams.length > 1)
+        if (focusRow === 0) {
+            if (episodeItem && playCol < 2) playCol++
+        } else if (focusRow === 1 && detail.audioStreams && detail.audioStreams.length > 1)
             audioIdx = (audioIdx + 1) % detail.audioStreams.length
         else if (focusRow === 2 && detail.subtitleStreams && detail.subtitleStreams.length > 1)
             subtitleIdx = (subtitleIdx + 1) % detail.subtitleStreams.length
     }
     Keys.onReturnPressed: {
         if (isLaunching) return
+        if (focusRow === 0 && detail && episodeItem && playCol !== 1) {
+            // PREV/NEXT: swap this screen to the sibling episode in place.
+            requestAdjacent(playCol === 0 ? -1 : 1)
+            return
+        }
         if (focusRow === 0 && detail) {
             // Show the loading overlay immediately; clears on navigate or error.
             isLaunching = true
@@ -203,6 +259,30 @@ FocusScope {
     // UI
     // ---
 
+    // Fanart background — fit to height, full-bleed (aspect-preserving crop,
+    // centered), dimmed by the info_background_opacity setting and overlaid
+    // with CRT scanlines. z below every sibling so all content stacks above.
+    Image {
+        id: fanart
+        anchors.fill: parent
+        z: -1
+        visible: detailRoot.infoBg && status === Image.Ready
+        opacity: detailRoot.infoBgOpacity
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+        source: (detailRoot.infoBg && detail && detail.art)
+                ? plexBackend.image_url(detail.art, Math.round(root.sw), Math.round(root.sh))
+                : ""
+    }
+    Image {
+        anchors.fill: parent
+        z: -1
+        visible: fanart.visible
+        fillMode: Image.Tile
+        source: "../../../assets/images/scanlines.png"
+        opacity: 0.6
+    }
+
     // Header
     AppBar {
         iconSource: moduleRoot.moduleIcon
@@ -240,31 +320,99 @@ FocusScope {
             height: root.sh * 0.35 //168
             spacing: root.sw * 0.0375 //24
 
-            // PLAY / RSUM button
-            Rectangle {
-                id: playButton
-                color: focusRow === 0 ? root.accentColor : root.surfaceColor
-                border.color: focusRow === 0 ? root.accentColor : root.tertiaryColor
+            // PREV / PLAY / NEXT cluster \u2014 same footprint as the old lone PLAY
+            // button. PREV/NEXT appear for episodes only and swap this screen
+            // to the sibling episode; PLAY behaves exactly as before.
+            Item {
+                id: playCluster
                 width: root.sw * 0.1875 //120
                 height: root.sh * 0.1166667 //56
-                border.width: root.sh * 0.003125 //2
 
-                // Touch: first tap focuses the PLAY button, tapping it while focused
-                // activates it via a synthesized Enter (same path as the keyboard).
-                MouseArea {
+                Row {
                     anchors.fill: parent
-                    onClicked: {
-                        if (focusRow === 0) inputManager.touchKey("select")
-                        else focusRow = 0
-                    }
-                }
+                    spacing: root.sw * 0.0046875 //3
 
-                Text {
-                    anchors.centerIn: parent
-                    text: (detail && detail.viewOffset > 0) ? "RSUM \u25BA" : "PLAY \u25BA"
-                    color: focusRow === 0 ? root.surfaceColor : root.primaryColor
-                    font.family: root.globalFont
-                    font.pixelSize: root.sh * 0.05 //24
+                    Rectangle {
+                        id: prevButton
+                        visible: detailRoot.episodeItem
+                        property bool sel: focusRow === 0 && playCol === 0
+                        color: sel ? root.accentColor : root.surfaceColor
+                        border.color: sel ? root.accentColor : root.tertiaryColor
+                        width: root.sw * 0.0375 //24
+                        height: parent.height
+                        border.width: root.sh * 0.003125 //2
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (prevButton.sel) inputManager.touchKey("select")
+                                else { focusRow = 0; playCol = 0 }
+                            }
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "\u25C4"
+                            color: prevButton.sel ? root.surfaceColor : root.primaryColor
+                            font.family: root.globalFont
+                            font.pixelSize: root.sh * 0.0416667 //20
+                        }
+                    }
+
+                    Rectangle {
+                        id: playButton
+                        property bool sel: focusRow === 0 && (!detailRoot.episodeItem || playCol === 1)
+                        color: sel ? root.accentColor : root.surfaceColor
+                        border.color: sel ? root.accentColor : root.tertiaryColor
+                        width: detailRoot.episodeItem ? root.sw * 0.1 : root.sw * 0.1875
+                        height: parent.height
+                        border.width: root.sh * 0.003125 //2
+
+                        // Touch: first tap focuses the PLAY button, tapping it while
+                        // focused activates it via a synthesized Enter.
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (playButton.sel) inputManager.touchKey("select")
+                                else { focusRow = 0; playCol = 1 }
+                            }
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: (detail && detail.viewOffset > 0) ? "RSUM \u25BA" : "PLAY \u25BA"
+                            color: playButton.sel ? root.surfaceColor : root.primaryColor
+                            font.family: root.globalFont
+                            font.pixelSize: detailRoot.episodeItem ? root.sh * 0.0375 : root.sh * 0.05
+                        }
+                    }
+
+                    Rectangle {
+                        id: nextButton
+                        visible: detailRoot.episodeItem
+                        property bool sel: focusRow === 0 && playCol === 2
+                        color: sel ? root.accentColor : root.surfaceColor
+                        border.color: sel ? root.accentColor : root.tertiaryColor
+                        width: root.sw * 0.0375 //24
+                        height: parent.height
+                        border.width: root.sh * 0.003125 //2
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (nextButton.sel) inputManager.touchKey("select")
+                                else { focusRow = 0; playCol = 2 }
+                            }
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "\u25BA"
+                            color: nextButton.sel ? root.surfaceColor : root.primaryColor
+                            font.family: root.globalFont
+                            font.pixelSize: root.sh * 0.0416667 //20
+                        }
+                    }
                 }
             }
 

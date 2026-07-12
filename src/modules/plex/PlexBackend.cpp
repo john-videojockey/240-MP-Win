@@ -1674,7 +1674,84 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
         {"thumb",            !meta["thumb"].toString().isEmpty()       ? meta["thumb"].toString()
                            : !meta["parentThumb"].toString().isEmpty() ? meta["parentThumb"].toString()
                                                                        : meta["grandparentThumb"].toString()},
+        // Fanart/background: the item's own art, else the show's.
+        {"art",              !meta["art"].toString().isEmpty() ? meta["art"].toString()
+                                                               : meta["grandparentArt"].toString()},
     };
+}
+
+// Generalized sibling-episode lookup for the detail view's PREV/NEXT buttons:
+// direction +1 resolves the next episode in the season, -1 the previous one
+// (same stacked-file skipping as load_next_episode). Emits
+// adjacentEpisodeReady(direction, detail) — empty detail when there is no
+// sibling in that direction or on any failure.
+void PlexBackend::load_adjacent_episode(const QString &currentRatingKey, int direction) {
+    QString uri = serverUrl(), token = serverToken();
+    auto *reply = plexGet(QUrl(uri + "/library/metadata/" + currentRatingKey), token);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, currentRatingKey, direction, uri, token]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 498) {
+                handle498([this, currentRatingKey, direction]{ load_adjacent_episode(currentRatingKey, direction); }); return;
+            }
+            emit adjacentEpisodeReady(direction, QVariantMap{}); return;
+        }
+        QJsonArray metaArr = QJsonDocument::fromJson(reply->readAll())
+                             .object()["MediaContainer"].toObject()["Metadata"].toArray();
+        if (metaArr.isEmpty()) { emit adjacentEpisodeReady(direction, QVariantMap{}); return; }
+        QJsonObject meta = metaArr[0].toObject();
+
+        const QString seasonKey    = meta["parentRatingKey"].toString();
+        const int     currentIndex = meta["index"].toInt();
+        const QString currentFile  = mediaFilePath(meta);
+        if (meta["type"].toString() != "episode" || seasonKey.isEmpty()) {
+            emit adjacentEpisodeReady(direction, QVariantMap{}); return;
+        }
+
+        auto *childReply = plexGet(QUrl(uri + "/library/metadata/" + seasonKey + "/children"), token);
+        connect(childReply, &QNetworkReply::finished, this,
+                [this, childReply, currentRatingKey, currentIndex, currentFile, direction, uri, token]() {
+            childReply->deleteLater();
+            if (childReply->error() != QNetworkReply::NoError) {
+                if (childReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 498) {
+                    handle498([this, currentRatingKey, direction]{ load_adjacent_episode(currentRatingKey, direction); }); return;
+                }
+                emit adjacentEpisodeReady(direction, QVariantMap{}); return;
+            }
+            QJsonArray eps = QJsonDocument::fromJson(childReply->readAll())
+                             .object()["MediaContainer"].toObject()["Metadata"].toArray();
+            // Nearest sibling in the requested direction, skipping entries
+            // backed by the same physical file (stacked multi-episode files).
+            QString bestKey;
+            int bestIndex = 0;
+            for (const auto &ev : eps) {
+                QJsonObject e = ev.toObject();
+                int idx = e["index"].toInt();
+                const QString file = mediaFilePath(e);
+                const bool sameFile = (!currentFile.isEmpty() && file == currentFile);
+                if (sameFile) continue;
+                const bool candidate = (direction > 0) ? idx > currentIndex : idx < currentIndex;
+                if (!candidate) continue;
+                const bool better = bestKey.isEmpty()
+                                    || ((direction > 0) ? idx < bestIndex : idx > bestIndex);
+                if (better) { bestIndex = idx; bestKey = e["ratingKey"].toString(); }
+            }
+            if (bestKey.isEmpty()) { emit adjacentEpisodeReady(direction, QVariantMap{}); return; }
+
+            auto *detailReply = plexGet(QUrl(uri + "/library/metadata/" + bestKey), token);
+            connect(detailReply, &QNetworkReply::finished, this,
+                    [this, detailReply, direction]() {
+                detailReply->deleteLater();
+                if (detailReply->error() != QNetworkReply::NoError) {
+                    emit adjacentEpisodeReady(direction, QVariantMap{}); return;
+                }
+                QJsonArray arr = QJsonDocument::fromJson(detailReply->readAll())
+                                 .object()["MediaContainer"].toObject()["Metadata"].toArray();
+                if (arr.isEmpty()) { emit adjacentEpisodeReady(direction, QVariantMap{}); return; }
+                emit adjacentEpisodeReady(direction, buildItemDetail(arr[0].toObject()));
+            });
+        });
+    });
 }
 
 // Fetchable URL for a server-relative image path (item "thumb"/"art"), sized

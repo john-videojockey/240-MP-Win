@@ -6,8 +6,10 @@ Window {
     id: root
     // Borderless window covering the whole screen — the Windows equivalent of
     // the kiosk-style fullscreen the app uses everywhere. mpv opens its own
-    // fullscreen window on top of this one during playback.
-    flags: Qt.FramelessWindowHint | Qt.Window
+    // fullscreen window on top of this one during playback. The minimize hint
+    // lets the taskbar button and the on-screen chip minimize it despite the
+    // missing title bar.
+    flags: Qt.FramelessWindowHint | Qt.Window | Qt.WindowMinimizeButtonHint
     x:      Screen.virtualX
     y:      Screen.virtualY
     width:  Screen.width
@@ -232,12 +234,13 @@ Window {
         }
     }
 
-    // --- TOUCH BACK BUTTON ---
+    // --- TOUCH BACK + MINIMIZE BUTTONS ---
     // Floating Escape equivalent so touch users can always navigate back
     // (on the module list, where the footer documents back as Settings, it
     // opens Settings — same as the physical key). Views keep handling the
     // resulting key event exactly as if a keyboard or remote sent it.
     Rectangle {
+        id: backChip
         visible: !screenSaverActive
         z: 100
         anchors.top: parent.top
@@ -263,6 +266,35 @@ Window {
             anchors.fill: parent
             anchors.margins: -root.sh * 0.0166667 // generous touch target
             onClicked: inputManager.touchKey("back")
+        }
+    }
+
+    // Minimize chip beside BACK — the window is borderless, so this (and the
+    // taskbar button) stand in for the missing title-bar control.
+    Rectangle {
+        visible: !screenSaverActive
+        z: 100
+        anchors.verticalCenter: backChip.verticalCenter
+        anchors.right: backChip.left
+        anchors.rightMargin: root.sw * 0.0125 //8
+        width: height
+        height: backChip.height
+        color: "transparent"
+        border.color: root.tertiaryColor
+        border.width: Math.max(1, Math.floor(root.sh * 0.003125)) //2
+
+        Text {
+            anchors.centerIn: parent
+            text: "_"
+            color: root.tertiaryColor
+            font.family: root.globalFont
+            font.pixelSize: root.sh * 0.0333333 //16
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            anchors.margins: -root.sh * 0.0166667
+            onClicked: root.showMinimized()
         }
     }
 
