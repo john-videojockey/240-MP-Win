@@ -52,8 +52,20 @@ target_include_directories(240mp PRIVATE
 )
 
 # ── Dev-run convenience ────────────────────────────────────────────────────────
-# Copy the non-Qt runtime DLLs next to the built exe so a build can run without
-# an install step (Qt DLLs come from PATH via scripts/run-local.ps1).
+# Make the freshly built exe directly runnable (double-click included): deploy
+# the Qt runtime beside it, then copy the non-Qt DLLs. Without this, launching
+# build/240mp.exe outside a Qt-on-PATH shell dies with a "Qt6Quick.dll not
+# found" loader error.
+find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${Qt6_DIR}/../../../bin")
+if(WINDEPLOYQT_EXECUTABLE)
+    add_custom_command(TARGET 240mp POST_BUILD
+        COMMAND "${WINDEPLOYQT_EXECUTABLE}" --qmldir "${CMAKE_SOURCE_DIR}"
+            --no-translations $<TARGET_FILE:240mp>
+        COMMENT "Deploying Qt runtime beside the executable (windeployqt)"
+    )
+else()
+    message(WARNING "windeployqt not found — build/240mp.exe will need Qt's bin dir on PATH to run (scripts/run-local.ps1 handles that)")
+endif()
 add_custom_command(TARGET 240mp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:SDL2::SDL2>" "$<TARGET_FILE_DIR:240mp>"

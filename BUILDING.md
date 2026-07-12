@@ -63,12 +63,10 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
     -DOPENSSL_ROOT_DIR="C:\Qt\Tools\OpenSSLv3\Win_x64"
 cmake --build build
 
-$env:PATH = "C:\Qt\6.10.3\msvc2022_64\bin;$env:PATH"   # Qt DLLs for the dev run
-$env:APP_ROOT = (Get-Location)                          # point the exe at the repo's QML
-.\build\240mp.exe
+.\build\240mp.exe    # or double-click it
 ```
 
-`Ctrl+Q` quits.
+The build runs `windeployqt` as a post-build step, so `build\240mp.exe` is directly runnable — no PATH setup needed. (The exe finds the repo's QML by walking up from its own folder; set `APP_ROOT` only to point it somewhere else.) `Ctrl+Q` quits.
 
 ## Configuration
 
