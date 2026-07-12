@@ -183,10 +183,13 @@ QVariantList LocalFilesBackend::getItems(const QString &path) {
     // Validate against the media root lexically (absolutePath cleans "." / ".."
     // without resolving symlinks) so intentional symlinks placed inside the media
     // root are followed, while ".." traversal out of the root is still blocked.
+    // Case-insensitive: NTFS paths compare equal regardless of case, and QML
+    // navigation can hand back a differently-cased drive letter.
     QString clean = QDir(path).absolutePath();
     QString root  = QDir(m_mediaRoot).absolutePath();
-    bool inside = (clean == root) ||
-                  clean.startsWith(root.endsWith('/') ? root : root + '/');
+    bool inside = (clean.compare(root, Qt::CaseInsensitive) == 0) ||
+                  clean.startsWith(root.endsWith('/') ? root : root + '/',
+                                   Qt::CaseInsensitive);
     if (!inside) {
         qWarning("[LocalFiles] path escapes media root: %s", qPrintable(path));
         return result;

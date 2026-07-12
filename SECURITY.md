@@ -19,7 +19,7 @@ When reporting, please include:
 
 - What the issue is and the potential impact
 - Steps to reproduce (and a proof of concept if you have one)
-- The affected version / commit, and your platform (Raspberry Pi model or macOS)
+- The affected version / commit, and your Windows version
 
 You'll get an acknowledgement as soon as I can verify. Once a fix is ready it will go out in a new release, and i'll gladly credit you if you are ok with it.
 

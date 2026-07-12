@@ -1,5 +1,5 @@
 name: Bug report
-description: Report something broken in 240-MP
+description: Report something broken in 240-MP for Windows
 title: "[Bug]: "
 labels: ["bug"]
 body:
@@ -12,7 +12,7 @@ body:
     attributes:
       label: Before you file
       options:
-        - label: I checked the [Wiki](https://github.com/anthonycaccese/240-MP/wiki) and existing [issues](https://github.com/anthonycaccese/240-MP/issues) and didn't find this.
+        - label: I checked the [Wiki](https://github.com/anthonycaccese/240-MP/wiki) and existing issues and didn't find this.
           required: true
   - type: dropdown
     id: module
@@ -22,34 +22,37 @@ body:
       options:
         - Local Files module
         - Plex module
+        - Jellyfin module
+        - YouTube module
         - Ambient Mode module
         - App shell (browsing, settings, navigation)
+        - Playback (mpv hand-off, video/audio)
+        - Update (in-app self-update)
         - Build (compiling from source)
-        - Install (install.sh / DMG / setup)
+        - Install (install.ps1 / zip)
         - Not sure
     validations:
       required: true
-  - type: dropdown
-    id: platform
+  - type: input
+    id: windows_version
     attributes:
-      label: Platform
-      options:
-        - Raspberry Pi 4
-        - Raspberry Pi 3B+
-        - Raspberry Pi 3B
-        - Other Raspberry Pi model
-        - macOS (Apple Silicon)
+      label: Windows version
+      description: Settings → System → About, e.g. "Windows 11 24H2"
     validations:
       required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU
+      description: Helps with playback/decode issues, e.g. "NVIDIA RTX 3060" or "Intel UHD 630"
   - type: dropdown
     id: display
     attributes:
       label: Display & output
-      description: Overscan and config.txt differences are common culprits, so this helps a lot.
       options:
-        - CRT via composite (NTSC)
-        - CRT via composite (PAL)
-        - HDMI (TV / monitor)
+        - TV over HDMI
+        - Desktop monitor
+        - CRT (via HDMI-to-analog converter)
         - Other
     validations:
       required: true
@@ -58,8 +61,8 @@ body:
     attributes:
       label: Install method
       options:
-        - Release install.sh (Raspberry Pi)
-        - macOS DMG
+        - install.ps1 (release)
+        - Release zip, extracted manually
         - Built from source
     validations:
       required: true
@@ -90,6 +93,6 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: Logs / terminal output
-      description: Any output from running the app. This is rendered as code, so no backticks needed.
+      label: Logs
+      description: "Paste from %APPDATA%\\240-MP\\logs\\240mp.log (and %TEMP%\\240mp-mpv.log for playback issues). Rendered as code, no backticks needed."
       render: shell

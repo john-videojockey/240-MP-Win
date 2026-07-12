@@ -16,19 +16,9 @@
 namespace {
 
 const QString kDefaultFeedUrl =
-    QStringLiteral("https://api.github.com/repos/anthonycaccese/240-mp/releases/latest");
+    QStringLiteral("https://api.github.com/repos/anthonycaccese/240-mp-win/releases/latest");
 
-#ifdef Q_OS_MAC
-const QString kAssetSuffix = QStringLiteral("-macOS-arm64.dmg");
-#else
-const QString kAssetSuffix = QStringLiteral("-linux-arm64.tar.gz");
-#endif
-
-// "Apply & Restart" under the autostart service: 240mp-stop (scripts/install.sh)
-// treats exit 11 as a no-op so Restart=on-failure relaunches through the
-// launcher, which applies the staged tarball. Sibling of Qt.exit(10) ("Exit to
-// Terminal") in views/Settings.qml.
-constexpr int kExitCodeUpdateRestart = 11;
+const QString kAssetSuffix = QStringLiteral("-windows-x64.zip");
 
 QString feedUrl() {
     const QString env = qEnvironmentVariable("MP240_UPDATE_FEED_URL");
@@ -45,16 +35,6 @@ QNetworkRequest githubRequest(const QUrl &url) {
     return req;
 }
 
-#ifdef Q_OS_MAC
-// Bundle root ("/Applications/240mp.app") when running from a bundle, else empty.
-QString macBundlePath() {
-    const QString binDir = QCoreApplication::applicationDirPath();
-    if (!binDir.endsWith(QStringLiteral(".app/Contents/MacOS")))
-        return QString();
-    return QFileInfo(binDir + QStringLiteral("/../..")).canonicalFilePath();
-}
-#endif
-
 } // namespace
 
 UpdateManager::UpdateManager(const QString &appRoot, const QString &dataRoot, QObject *parent)
@@ -69,7 +49,6 @@ QString UpdateManager::currentVersion() const {
 
 QString UpdateManager::updatesDir() const { return m_dataRoot + QStringLiteral("/updates"); }
 QString UpdateManager::stagedJsonPath() const { return updatesDir() + QStringLiteral("/staged.json"); }
-QString UpdateManager::stagedSha256Path() const { return updatesDir() + QStringLiteral("/staged.sha256"); }
 
 void UpdateManager::setState(const QString &state, const QString &error) {
     m_state = state;
@@ -78,35 +57,19 @@ void UpdateManager::setState(const QString &state, const QString &error) {
 }
 
 void UpdateManager::evaluateApplyCapability() {
-#ifdef Q_OS_MAC
-    const QString bundle = macBundlePath();
-    if (bundle.startsWith(QStringLiteral("/Applications/"))
-        && QFileInfo(bundle).isWritable()
-        && QFileInfo(QFileInfo(bundle).absolutePath()).isWritable()) {
+    // The helper swaps the whole install folder (the appRoot: 240mp.exe + QML +
+    // assets), so both the folder and its parent must be writable without
+    // elevation. True for the install.ps1 default (%LOCALAPPDATA%\Programs\240-MP)
+    // and any other per-user location; false under Program Files.
+    const QFileInfo installDir(m_appRoot);
+    const QFileInfo parentDir(installDir.absolutePath());
+    if (installDir.isWritable() && parentDir.isWritable()) {
         m_canApply = true;
     } else {
         m_canApply = false;
-        m_applyHint = QStringLiteral("This copy of 240-MP is not in /Applications — "
-                                     "240-MP will quit and open the disk image for manual install.");
+        m_applyHint = QStringLiteral("This copy of 240-MP is not in a user-writable folder — "
+                                     "240-MP will quit and show the downloaded zip for manual install.");
     }
-#else
-    // The launcher exports MP240_LAUNCHER_API when it knows how to apply staged
-    // updates (see scripts/install.sh). Older installs must re-run the installer
-    // once; non-standard installs (dev builds, custom prefixes) are not managed.
-    const bool standardInstall =
-        QCoreApplication::applicationDirPath() == QStringLiteral("/opt/240mp/bin");
-    if (!standardInstall) {
-        m_canApply = false;
-        m_applyHint = QStringLiteral("Not a standard install — update manually.");
-    } else if (!qEnvironmentVariableIsSet("MP240_LAUNCHER_API")) {
-        m_canApply = false;
-        m_applyHint = QStringLiteral("This install predates in-app updates. Re-run the "
-                                     "installer once:\nbash <(curl -fsSL https://github.com/"
-                                     "anthonycaccese/240-mp/releases/latest/download/install.sh)");
-    } else {
-        m_canApply = true;
-    }
-#endif
 }
 
 // Startup pass over DATA_ROOT/updates: drop half-finished downloads, and restore
@@ -132,9 +95,7 @@ void UpdateManager::reconcileStagingDir() {
     const QFileInfo payload(dir.filePath(asset));
 
     // Version matching the running app means the update was already applied (or
-    // installed another way); a size mismatch means a corrupt stage. The sha is
-    // not recomputed here — the RPi launcher re-verifies it before swapping, and
-    // hashing a full tarball on every boot is wasted Pi CPU.
+    // installed another way); a size mismatch means a corrupt stage.
     if (version.isEmpty() || asset.isEmpty() || version == currentVersion()
         || !payload.exists() || payload.size() != size) {
         clearStagingFiles();
@@ -192,14 +153,15 @@ void UpdateManager::handleReleaseInfo(const QByteArray &json) {
         return;
     }
 
-#ifndef Q_OS_MAC
-    if (QSysInfo::currentCpuArchitecture() != QStringLiteral("arm64")) {
+    // Release zips are built for x64; a different-architecture Windows (arm64)
+    // could run this x64 binary under emulation, but a self-update would keep
+    // installing x64 anyway, so just gate on what the release actually ships.
+    if (QSysInfo::currentCpuArchitecture() != QStringLiteral("x86_64")) {
         setState(QStringLiteral("error"),
                  QStringLiteral("No update package for this architecture (%1).")
                      .arg(QSysInfo::currentCpuArchitecture()));
         return;
     }
-#endif
 
     m_assetName.clear();
     m_assetUrl.clear();
@@ -257,7 +219,7 @@ void UpdateManager::download() {
                  QStringLiteral("Dev build — self-update is disabled."));
         return;
     }
-    // 3x headroom: tarball + extracted .new tree share the same filesystem.
+    // 3x headroom: zip + extracted .new tree share the same filesystem.
     if (m_assetSize > 0
         && QStorageInfo(updatesDir()).bytesAvailable() < 3 * m_assetSize) {
         setState(QStringLiteral("error"),
@@ -330,11 +292,9 @@ void UpdateManager::finishDownload() {
     setState(QStringLiteral("readyToApply"));
 }
 
-// Download-time marker only. The launcher-facing staged.sha256 is deliberately
-// NOT written here — the launcher applies any stage that file blesses, so it is
-// only created at the commitment point in applyLinux(). Until then a downloaded
-// update is inert: backing out and rebooting runs the old version, and the page
-// just re-offers Install.
+// Download-time marker only. A downloaded update is inert until the user picks
+// Install: backing out and relaunching runs the old version, and the page just
+// re-offers Install (restored by reconcileStagingDir).
 void UpdateManager::writeStagedMarkers(const QString &sha256Hex) {
     QJsonObject staged{
         {QStringLiteral("version"), m_latestVersion},
@@ -352,10 +312,8 @@ void UpdateManager::clearStagingFiles() {
     if (!m_assetName.isEmpty())
         dir.remove(m_assetName);
     dir.remove(QStringLiteral("staged.json"));
-    dir.remove(QStringLiteral("staged.sha256"));
     // Plus whatever payload an older run left behind
-    const QStringList leftovers =
-        dir.entryList({QStringLiteral("*.tar.gz"), QStringLiteral("*.dmg")}, QDir::Files);
+    const QStringList leftovers = dir.entryList({QStringLiteral("*.zip")}, QDir::Files);
     for (const QString &f : leftovers)
         dir.remove(f);
 }
@@ -370,90 +328,70 @@ void UpdateManager::discardStagedUpdate() {
 void UpdateManager::applyAndRestart() {
     if (m_state != QStringLiteral("readyToApply"))
         return;
-#ifdef Q_OS_MAC
-    applyMacos();
-#else
-    applyLinux();
-#endif
+    applyWindows();
 }
 
-void UpdateManager::applyLinux() {
-    // Commitment point: writing staged.sha256 (coreutils format, verified by
-    // the launcher with `sha256sum -c`) is what arms the stage — the launcher
-    // swaps it in on its next run. The sha comes from staged.json so this works
-    // both right after a download and after an app restart. Under autostart,
-    // exit 11 makes systemd relaunch immediately; a manual session just quits
-    // and the update applies on the next launch.
-    QFile marker(stagedJsonPath());
-    if (!marker.open(QIODevice::ReadOnly)) {
-        setState(QStringLiteral("error"), QStringLiteral("Staged update is missing — please download again."));
-        return;
-    }
-    const QJsonObject staged = QJsonDocument::fromJson(marker.readAll()).object();
-    const QString sha256 = staged.value(QStringLiteral("sha256")).toString();
-    const QString asset  = staged.value(QStringLiteral("asset")).toString();
-    if (sha256.isEmpty() || asset.isEmpty()) {
-        clearStagingFiles();
-        setState(QStringLiteral("error"), QStringLiteral("Staged update is invalid — please download again."));
-        return;
-    }
-    QFile sums(stagedSha256Path());
-    if (!sums.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        setState(QStringLiteral("error"), QStringLiteral("Could not write to the updates folder."));
-        return;
-    }
-    sums.write(QStringLiteral("%1  %2\n").arg(sha256, asset).toUtf8());
-    sums.close();
+void UpdateManager::applyWindows() {
+    const QString zipPath = QDir::toNativeSeparators(updatesDir() + QStringLiteral("/") + m_assetName);
 
-    if (qEnvironmentVariableIsSet("MP240_AUTOSTART"))
-        QTimer::singleShot(0, qApp, []() { QCoreApplication::exit(kExitCodeUpdateRestart); });
-    else
-        QTimer::singleShot(0, qApp, &QCoreApplication::quit);
-}
-
-void UpdateManager::applyMacos() {
-#ifdef Q_OS_MAC
-    const QString dmgPath = updatesDir() + QStringLiteral("/") + m_assetName;
     if (!m_canApply) {
-        // Manual fallback: hand the DMG to Finder and quit — the fullscreen
-        // window otherwise sits over/behind Finder looking frozen. The user
-        // drags the app into place and reopens it; the stage is cleaned up by
-        // startup reconciliation once the running version matches.
-        QProcess::startDetached(QStringLiteral("/usr/bin/open"), {dmgPath});
+        // Manual fallback: reveal the zip in Explorer and quit — the fullscreen
+        // window otherwise sits over Explorer looking frozen. The user extracts
+        // it over the install by hand; the stage is cleaned up by startup
+        // reconciliation once the running version matches.
+        QProcess::startDetached(QStringLiteral("explorer.exe"),
+                                {QStringLiteral("/select,") + zipPath});
         QTimer::singleShot(200, qApp, &QCoreApplication::quit);
         return;
     }
 
-    static const char kHelper[] = R"HELPER(#!/bin/bash
-# apply-macos.sh <pid> <dmg> <bundle> — spawned detached by 240-MP before it quits.
-exec >>"$(dirname "$0")/apply.log" 2>&1
-echo "=== $(date) apply $2 -> $3"
-PID="$1"; DMG="$2"; BUNDLE="$3"
-for i in $(seq 1 150); do kill -0 "$PID" 2>/dev/null || break; sleep 0.2; done
-MOUNT=$(hdiutil attach -nobrowse -readonly "$DMG" | awk -F'\t' '/\/Volumes\//{print $NF; exit}')
-[ -d "$MOUNT" ] || { echo "mount failed"; open "$DMG"; exit 1; }
-SRC=$(/bin/ls -d "$MOUNT"/*.app 2>/dev/null | head -1)
-OK=0
-if [ -d "$SRC" ]; then
-    rm -rf "$BUNDLE.new"
-    if ditto "$SRC" "$BUNDLE.new"; then
-        rm -rf "$BUNDLE.old"
-        mv "$BUNDLE" "$BUNDLE.old" && mv "$BUNDLE.new" "$BUNDLE" && rm -rf "$BUNDLE.old" && OK=1
-    fi
-fi
-hdiutil detach "$MOUNT" -quiet
-if [ "$OK" = "1" ]; then
-    xattr -dr com.apple.quarantine "$BUNDLE" 2>/dev/null || true
-    rm -f "$DMG" "$(dirname "$0")/staged.json"
-    echo "swap ok, relaunching"
-    open -n "$BUNDLE"
-else
-    echo "swap failed, opening DMG for manual install"
-    open "$DMG"
-fi
+    // apply-windows.ps1 <pid> <zip> <installDir> — spawned detached before the
+    // app quits. Waits for the process to exit, extracts the zip beside the
+    // install folder, swaps the folders, and relaunches. On any failure it puts
+    // the old folder back and opens the zip in Explorer for a manual install.
+    static const char kHelper[] = R"HELPER(param([int]$AppPid, [string]$Zip, [string]$InstallDir)
+$ErrorActionPreference = 'Stop'
+$log = Join-Path (Split-Path $Zip) 'apply.log'
+Start-Transcript -Path $log -Append | Out-Null
+try {
+    Write-Output "=== $(Get-Date) apply $Zip -> $InstallDir"
+    try { Wait-Process -Id $AppPid -Timeout 30 -ErrorAction Stop } catch {}
+    Start-Sleep -Milliseconds 500
+
+    $new = "$InstallDir.new"; $old = "$InstallDir.old"
+    Remove-Item $new, $old -Recurse -Force -ErrorAction SilentlyContinue
+    Expand-Archive -LiteralPath $Zip -DestinationPath $new -Force
+
+    # Zips may wrap everything in a single top-level folder — hoist it.
+    $entries = Get-ChildItem $new
+    if ($entries.Count -eq 1 -and $entries[0].PSIsContainer) {
+        $inner = $entries[0].FullName
+        Get-ChildItem $inner -Force | Move-Item -Destination $new
+        Remove-Item $inner -Recurse -Force
+    }
+    if (-not (Test-Path (Join-Path $new '240mp.exe'))) { throw '240mp.exe missing from update package' }
+
+    Move-Item $InstallDir $old
+    try {
+        Move-Item $new $InstallDir
+    } catch {
+        Move-Item $old $InstallDir   # roll back
+        throw
+    }
+    Remove-Item $old -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $Zip -Force -ErrorAction SilentlyContinue
+    Remove-Item (Join-Path (Split-Path $Zip) 'staged.json') -Force -ErrorAction SilentlyContinue
+    Write-Output 'swap ok, relaunching'
+    Start-Process (Join-Path $InstallDir '240mp.exe')
+} catch {
+    Write-Output "swap failed: $_"
+    Start-Process explorer.exe "/select,$Zip"
+} finally {
+    Stop-Transcript | Out-Null
+}
 )HELPER";
 
-    const QString scriptPath = updatesDir() + QStringLiteral("/apply-macos.sh");
+    const QString scriptPath = updatesDir() + QStringLiteral("/apply-windows.ps1");
     QFile script(scriptPath);
     if (!script.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         setState(QStringLiteral("error"), QStringLiteral("Could not write the update helper."));
@@ -461,14 +399,17 @@ fi
     }
     script.write(kHelper);
     script.close();
-    script.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner
-                          | QFile::ReadGroup | QFile::ExeGroup);
 
-    QProcess::startDetached(QStringLiteral("/bin/bash"),
-                            {scriptPath,
+    // powershell.exe (Windows PowerShell 5.1) ships with every Windows — no
+    // dependency on pwsh being installed.
+    QProcess::startDetached(QStringLiteral("powershell.exe"),
+                            {QStringLiteral("-NoProfile"),
+                             QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+                             QStringLiteral("-WindowStyle"), QStringLiteral("Hidden"),
+                             QStringLiteral("-File"), QDir::toNativeSeparators(scriptPath),
                              QString::number(QCoreApplication::applicationPid()),
-                             dmgPath, macBundlePath()});
+                             zipPath,
+                             QDir::toNativeSeparators(m_appRoot)});
     // Give the detached helper a beat to start before the app exits.
     QTimer::singleShot(200, qApp, &QCoreApplication::quit);
-#endif
 }

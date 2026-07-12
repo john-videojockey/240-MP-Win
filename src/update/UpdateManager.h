@@ -8,15 +8,14 @@
 class QNetworkReply;
 
 // In-app self-update: checks GitHub Releases for a newer version, downloads the
-// platform asset into DATA_ROOT/updates, and applies it.
-//   - Linux (RPi): download stages the tarball; choosing Apply writes the
-//     staged.sha256 marker that arms it — the launcher (/usr/local/bin/240mp,
-//     written by scripts/install.sh) verifies and swaps an armed stage into
-//     /opt/240mp before the next exec. Under the autostart service, "Apply &
-//     Restart" exits with code 11 so systemd relaunches immediately (see
-//     240mp-stop); otherwise the update applies on the next manual launch.
-//   - macOS: spawns a detached helper script that waits for the app to quit,
-//     mounts the DMG, swaps /Applications/240mp.app, and relaunches.
+// Windows zip into DATA_ROOT/updates, and applies it.
+//   Choosing Install spawns a detached PowerShell helper that waits for the app
+//   to quit, extracts the zip next to the install folder, swaps the folders,
+//   and relaunches. This works without elevation when the app lives in a
+//   user-writable location (the install.ps1 default is
+//   %LOCALAPPDATA%\Programs\240-MP). For non-writable installs (e.g. Program
+//   Files) the fallback opens the downloaded zip in Explorer and quits so the
+//   user can update by hand.
 class UpdateManager : public QObject {
     Q_OBJECT
     // idle | checking | upToDate | updateAvailable | downloading | readyToApply | error
@@ -58,13 +57,10 @@ private:
     void reconcileStagingDir();
     void handleReleaseInfo(const QByteArray &json);
     void fetchChecksums(const QString &url);
-    void startAssetDownload();
     void finishDownload();
-    void applyLinux();
-    void applyMacos();
+    void applyWindows();
     QString updatesDir() const;
     QString stagedJsonPath() const;
-    QString stagedSha256Path() const;
     void writeStagedMarkers(const QString &sha256Hex);
     void clearStagingFiles();
 

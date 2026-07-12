@@ -1,166 +1,92 @@
-# Building 240-MP
+# Building 240-MP for Windows
 
-If you are interested in building your own version of 240-MP and adding things to it then this page should hopefully cover what you would need to get an environment set up.  I've included details for macOS on ARM (where I primarily build) and Raspberry Pi OS.  And if you create a feature you would like to contribute back to this repo please open a PR, I'd be glad to talk through it.
+If you are interested in building your own version of 240-MP and adding things to it then this page covers what you need to get an environment set up. If you create a feature you would like to contribute back, please open a PR.
 
-## macOS (ARM)
+## Prerequisites (one-time)
 
-### Prerequisites (one-time)
+**Visual Studio 2022 or later** with the *Desktop development with C++* workload (the Community edition is fine). This provides MSVC, CMake, and Ninja — no separate CMake install needed.
 
-**Set up Build tools:**
+**Qt 6.10+ (MSVC x64).** Either the [Qt Online Installer](https://www.qt.io/download-open-source) or, much lighter, [aqtinstall](https://github.com/miurahr/aqtinstall) from any Python:
 
-```bash
-brew install cmake
+```powershell
+pip install aqtinstall
+python -m aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -O C:\Qt
 ```
 
-**Install Qt 6.*:**
+**SDL2 (gamepad input — build-time dependency).** The prebuilt VC development package is all you need:
 
-- Download from [qt.io/download](https://qt.io/download) or `brew install qt@6`.
-- Install to `~/Qt/`
-
-**Install mpv (required for playback):**
-
-```bash
-brew install mpv
+```powershell
+irm https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-devel-2.32.10-VC.zip -OutFile $env:TEMP\sdl2.zip
+Expand-Archive $env:TEMP\sdl2.zip C:\Qt\SDL2
 ```
 
-Note: 240-MP uses mpv as an external subprocess for video playback. It does not link against libmpv at build time, so mpv only needs to be on your `PATH` when running the app.
+**OpenSSL 3 (MSVC x64).** Used by the Plex module for Ed25519 device tokens (Windows CNG doesn't offer Ed25519, which is why this is a dependency at all). Qt distributes prebuilt binaries:
 
-**Install yt-dlp (optional, required only for the YouTube module):**
-
-```bash
-brew install yt-dlp
+```powershell
+python -m aqt install-tool windows desktop tools_opensslv3_x64 -O C:\Qt
 ```
 
-mpv's ytdl hook uses `yt-dlp` to resolve YouTube URLs at playback time. The YouTube module also expects at least one of two files in the data directory (`#` comments allowed in both; each file only gates its own menu entries): `youtube_subscriptions.txt` (one channel ID per line — enables Subscriptions/Channels; see [INSTALL.md](INSTALL.md)) and/or `youtube_playlists.txt` (one playlist URL or ID per line, optional `My Name | <url>` display-name prefix — enables Playlists; contents are fetched by running `yt-dlp` directly).
+**mpv (runtime only — required for playback).** 240-MP launches mpv as a subprocess; it is not linked at build time:
 
-**Install SDL2 (required, gamepad input):**
-
-```bash
-brew install sdl2
+```powershell
+winget install shinchiro.mpv
 ```
 
-SDL2 is a build-time dependency — `InputManager` links against it for USB game controller support (see [Gamepad input](#gamepad-input-inputcfg)).
+…or drop a portable `mpv.exe` into `<repo>\mpv\` — the app checks that folder first (the folder is gitignored).
 
-### Get the source
+**yt-dlp (runtime, optional — YouTube module only):** `winget install yt-dlp.yt-dlp`. The YouTube module also expects `youtube_subscriptions.txt` and/or `youtube_playlists.txt` in the data directory — see the [upstream wiki](https://github.com/anthonycaccese/240-MP/wiki/Module:-YouTube).
 
-```bash
-git clone https://github.com/anthonycaccese/240-mp.git
-cd 240-mp
+## Get the source
+
+```powershell
+git clone https://github.com/anthonycaccese/240-mp-win.git
+cd 240-mp-win
 ```
 
-### Build
+## Build & run
 
-**First time, and after any CMakeLists.txt changes:**
+The all-in-one dev script (configures on first run, builds, runs):
 
-```bash
-cmake -B build -DCMAKE_PREFIX_PATH=~/Qt/6.11.0/macos . && cmake --build build
+```powershell
+.\scripts\run-local.ps1               # build + run
+.\scripts\run-local.ps1 -BuildOnly    # just build
+.\scripts\run-local.ps1 -Reconfigure  # wipe the CMake cache first
 ```
 
-**For incremental builds:**
+If your dependencies aren't in the default `C:\Qt\...` locations, pass `-QtDir/-Sdl2Dir/-OpenSslDir` or set the `QT_DIR/SDL2_DIR/OPENSSL_DIR` environment variables.
 
-```bash
+Or by hand from a *Developer PowerShell for VS* prompt:
+
+```powershell
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `
+    -DCMAKE_PREFIX_PATH="C:\Qt\6.10.3\msvc2022_64;C:\Qt\SDL2\SDL2-2.32.10" `
+    -DOPENSSL_ROOT_DIR="C:\Qt\Tools\OpenSSLv3\Win_x64"
 cmake --build build
+
+$env:PATH = "C:\Qt\6.10.3\msvc2022_64\bin;$env:PATH"   # Qt DLLs for the dev run
+$env:APP_ROOT = (Get-Location)                          # point the exe at the repo's QML
+.\build\240mp.exe
 ```
 
-### Run
+`Ctrl+Q` quits.
 
-You can either double-click `build/240mp.app` in Finder, or run from the terminal:
+## Configuration
 
-```bash
-APP_ROOT=$(pwd) ./build/240mp.app/Contents/MacOS/240mp
-```
-
-### Configuration
-
-On macOS all user configuration is stored at:
+All user configuration is stored at:
 
 ```
-~/Library/Application Support/240-MP/
+%APPDATA%\240-MP\
   config.json       ← app and module settings
   plex_auth.json    ← plex auth
   input.cfg         ← optional gamepad mapping overrides (see Gamepad input below)
-```
-
-This directory is created automatically on first run. It is separate from the app itself, so deleting or rebuilding the app will not wipe your settings.
-
-## Raspberry Pi OS (arm64)
-
-### Prerequisites (one-time)
-
-Run on the Pi with RPi OS Trixie (Debian 13):
-
-```bash
-sudo apt-get update
-sudo apt-get install -y \
-  build-essential cmake \
-  qt6-base-dev qt6-declarative-dev \
-  qml6-module-qtquick qml6-module-qtquick-controls \
-  qml6-module-qtquick-window \
-  libqt6svg6 qt6-svg-dev qt6-svg-plugins qt6-wayland \
-  libdrm-dev libxkbcommon-dev libssl-dev \
-  libsdl2-dev \
-  mpv
-```
-
-`mpv` is the playback engine — 240-MP launches it as a subprocess. No libmpv build dependency is required.
-
-For the YouTube module, additionally install `yt-dlp` (`sudo apt-get install -y yt-dlp`) — mpv's ytdl hook uses it to resolve YouTube URLs at playback time.
-
-### Get the source
-
-```bash
-git clone https://github.com/anthonycaccese/240-mp.git
-cd 240-mp
-```
-
-### Build
-
-**First time, and after any CMakeLists.txt changes:**
-
-```bash
-cmake -B build
-```
-
-**For incremental builds:**
-
-```bash
-cmake --build build
-```
-
-No `CMAKE_PREFIX_PATH` needed — Qt 6 from apt is found automatically.
-
-### Run
-
-**With a desktop** (RPi OS Full with a display server):
-
-```bash
-APP_ROOT=$(pwd) ./build/240mp
-```
-
-**Without a Desktop** (RPi OS Lite with no display server):
-
-```bash
-APP_ROOT=$(pwd) QT_QPA_PLATFORM=eglfs ./build/240mp
-```
-
-`eglfs` uses the KMS/DRM framebuffer directly without X11 or Wayland.
-
-### Configuration
-
-On Raspberry Pi OS all user configuration is stored at:
-
-```
-~/.local/share/240-MP/
-  config.json      ← app and module settings
-  plex_auth.json   ← plex auth
-  input.cfg        ← optional gamepad mapping overrides (see Gamepad input below)
+  logs\240mp.log    ← app log (see Debugging below)
 ```
 
 This directory is created automatically on first run. It is separate from the app itself, so deleting or rebuilding the app will not wipe your settings.
 
 ## Gamepad input (input.cfg)
 
-USB game controllers should work out of the box as SDL's built-in controller database normalizes most pads (Xbox, PlayStation, 8BitDo, NES-style clones etc...) to a standard layout. 240-MP maps that stanard layout to its navigation actions:
+USB game controllers should work out of the box: SDL's built-in controller database normalizes most pads (Xbox, PlayStation, 8BitDo, NES-style clones etc...) to a standard layout — on Windows this covers both XInput and DirectInput devices. 240-MP maps that standard layout to its navigation actions:
 
 | Controller input | Action |
 |---|---|
@@ -174,16 +100,16 @@ Controllers can be hotplugged at any time and during playback the same buttons d
 
 **Overriding the mapping**
 
-- Create an `input.cfg` file in the configuration directory. 
-- Add one binding per line, `<input> <action>`; 
-- Use `#` to start a comment, data is case-insensitive and you only need to include the things you want to change (anything not defined will fall back to defaults) 
-- The file is also live-reloaded while the app runs, so you can tune bindings without restarting.
+- Create an `input.cfg` file in `%APPDATA%\240-MP`.
+- Add one binding per line, `<input> <action>`;
+- Use `#` to start a comment, data is case-insensitive and you only need to include the things you want to change (anything not defined will fall back to defaults)
+- The file is live-reloaded while the app runs, so you can tune bindings without restarting.
 
 Inputs use SDL controller names — short (`a`, `b`, `x`, `y`, `back`, `start`, `leftshoulder`, `rightshoulder`, `dpup`, `dpdown`, `dpleft`, `dpright`, ...) or the long `SDL_CONTROLLER_BUTTON_*` forms. Analog axes take a `+`/`-` direction suffix (`lefty-`, `triggerright+`). Actions: `up`, `down`, `left`, `right`, `select`, `back`, `play_pause`, and `none` to unbind a default.
 
-**Button names are positional**, following an Xbox reference layout: `a` means the *south* face button, `b` east, `x` west, `y` north, no matter what's "printed" on the buttons on your pad. Because of that you can also write the positions directly: `south`, `east`, `west`, `north`. So `south select` makes the bottom face button select on an Xbox pad, an 8BitDo, and a PlayStation pad alike.
+**Button names are positional**, following an Xbox reference layout: `a` means the *south* face button, `b` east, `x` west, `y` north, no matter what's printed on your pad. You can also write the positions directly: `south`, `east`, `west`, `north`.
 
-**Footer labels** will attempt to adapt automatically and the on-screen hints show what's printed on the controller you touched last (Nintendo-type pads show B at south, PlayStation pads show X/O/SQ/TR). If your controller reports the wrong type (which is common for pads with Nintendo-style labels running in X-input mode) you can define the label you see with a `label` line in the input.cfg
+**Footer labels** adapt automatically to the controller you touched last (Nintendo-type pads show B at south, PlayStation pads show X/O/SQ/TR). If your controller reports the wrong type (common for pads with Nintendo-style labels running in XInput mode) you can force labels with a `label` line:
 
 ```
 # input.cfg — example overrides
@@ -194,88 +120,58 @@ x                        play_pause
 rightshoulder            none         # unbind a default
 lefty-                   up           # axes take a +/- suffix
 triggerright+            play_pause
-label south B                         # force the footer label to display "B" for the south button
-label east  A                         # force the footer label to display "B" for the east button
+label south B                         # force the footer label for the south button
+label east  A
 ```
 
-Any bad lines are skipped with a warning in the log (line number included)
+Bad lines are skipped with a warning in the log (line number included).
 
-**Exotic controllers** — if SDL doesn't recognize your pad at all, drop a community [gamecontrollerdb.txt](https://github.com/mdqinc/SDL_GameControllerDB) into the configuration directory; it will be loaded at startup before controllers are opened.
+**Exotic controllers** — if SDL doesn't recognize your pad at all, drop a community [gamecontrollerdb.txt](https://github.com/mdqinc/SDL_GameControllerDB) into `%APPDATA%\240-MP`; it is loaded at startup before controllers are opened.
 
 ## Video decode tuning (mpv_video_args)
 
-240-MP detects your device at startup and attempts to launch with the most efficient video-output and hardware-decode flags for it. Currently the Pi 3 uses a low-CPU overlay path, the Pi 4 a hardware-decode + copy path, the Pi 5 the V3D Vulkan path, and macOS VideoToolbox. The exact flags and the reasoning per board are in [ARCHITECTURE.md → Per-device video decode profiles](ARCHITECTURE.md#per-device-video-decode-profiles).
+On Windows 240-MP launches mpv with `--hwdec=auto-safe`, which selects D3D11VA hardware decode on any reasonably modern GPU and falls back to software decode when unavailable. The video output stays on mpv's default (`gpu-next`), which renders through the D3D11 swapchain — crop/zoom always works.
 
 **Overriding the decode flags**
 
-If you find the need to tune for your hardware, you can add an `mpv_video_args` string under `"app"` in `config.json`.  It accepts a a space-separated list of mpv flags to replace the auto-detected `--vo` / `--hwdec` params that 240-MP sets.
+If you need to tune for your hardware, add an `mpv_video_args` string under `"app"` in `config.json`. It accepts a space-separated list of mpv flags that replaces the flags 240-MP sets:
 
 ```json
 {
   "app": {
-    "mpv_video_args": "--vo=drm --hwdec=v4l2m2m-copy"
+    "mpv_video_args": "--hwdec=d3d11va --d3d11-adapter=1"
   }
 }
 ```
 
-This config is read at each playback event, so a change applies on the next playback (no rebuild or restart needed). Only set video-output/decode flags here though; the app owns the rest (the IPC control channel, OSC, input) and for other mpv preferences (things like deinterlace, cache, subtitle styling...) please just create a standard `~/.config/mpv/mpv.conf`. MPV will read that automatically every launch. Please check out [ARCHITECTURE.md → How mpv flags are layered](ARCHITECTURE.md#how-mpv-flags-are-layered-the-precedence-cascade) if you are interested in the background on this approach.
-
-**Enabling crop on a Pi 3** — the Pi 3 default uses a zero-copy overlay path for performance, and a hardware overlay plane can't zoom/crop, so the OSC crop button blanks the video there. To allow crop to work on the Pi3 you can override to the copy path (so frames go through the scaler, where crop works):
-
-```json
-"mpv_video_args": "--vo=drm --hwdec=v4l2m2m-copy"
-```
-
-The trade-off with this approach: the copy path didn't look like it could reliabilty play back 1080p on the Pi 3 in my testing. I found it can easily peg the CPU and cause stuttering. So enabling crop on a Pi 3 means keeping your source content to **720p and below**. Ultimately its your call: smooth 1080p without crop (keep the default), or enable crop with a 720p ceiling using --hwdec=v4l2m2m-copy.
+This config is read at each playback event, so a change applies on the next playback (no rebuild or restart needed). Only set video-output/decode flags here; the app owns the rest (the IPC control channel, OSC, input). For other mpv preferences (deinterlace, cache, subtitle styling...) create a standard `%APPDATA%\mpv\mpv.conf` — mpv reads it automatically every launch, and everything the app doesn't set on the command line is yours to configure there.
 
 ## Debugging & logs
 
-240-MP logs to **stdout/stderr** via Qt's `qDebug` / `qWarning` (used throughout `AppCore`, `MpvController`, and the module backends). The trick is knowing where that output goes depending on how you launched the app.
+240-MP builds as a GUI-subsystem app, so there is no console by default. Logs are always written to:
 
-### Option 1: Running from source
-
-Just run the binary in a terminal and the logs will print right there:
-
-```bash
-# macOS
-APP_ROOT=$(pwd) ./build/240mp.app/Contents/MacOS/240mp
-
-# Raspberry Pi
-APP_ROOT=$(pwd) ./build/240mp                         # with a desktop
-APP_ROOT=$(pwd) QT_QPA_PLATFORM=eglfs ./build/240mp   # headless / Lite
+```
+%APPDATA%\240-MP\logs\240mp.log     (rotated to 240mp.prev.log at ~1 MB)
 ```
 
-### Option 2: Raspberry Pi installed via `install.sh`
-
-How you read logs depends on whether you installed the autostart service:
-
-- **Run it by hand** — type `240mp` over SSH and logs print to that terminal. Use this while debugging. (Note: the launcher does **not** power off on exit, unlike the service.)
-- **Via the systemd service** — the service sends output to the journal, so:
-    ```bash
-    journalctl -u 240mp -b        # logs from this boot
-    journalctl -u 240mp -f        # follow live
-    ```
-    Heads-up: the autostart service runs `ExecStopPost=240mp-stop`, which **powers the Pi off when you quit** (exit 0) — the console disappears with it. To debug without powering off, either pick **Exit to Terminal** in the Quit dialog (drops to a login shell on `tty1` without removing the service — `sudo systemctl start 240mp` or `sudo reboot` to return to the service), or stop the service and run the binary directly:
-    ```bash
-    sudo systemctl stop 240mp
-    240mp
-    ```
+Run the exe from a terminal and the same log lines print there too (the app attaches to the parent console).
 
 ### mpv playback logs
 
-During playback the app hands off to mpv as a subprocess (see [ARCHITECTURE.md → Playback Hand-off](ARCHITECTURE.md#playback-hand-off-mpvcontroller)). `MpvController` writes mpv's own output to a log file in the temp dir alongside its IPC socket (`/tmp/240mp-mpv.sock`) — useful when a video won't play or transcoding misbehaves.
+During playback the app hands off to mpv as a subprocess (see [ARCHITECTURE.md → Playback Hand-off](ARCHITECTURE.md#playback-hand-off-mpvcontroller)). `MpvController` writes mpv's own output to `%TEMP%\240mp-mpv.log` — useful when a video won't play or transcoding misbehaves.
+
+### Testing the playback hand-off without mpv
+
+`tests\mock-mpv\` contains a scripted mpv stand-in that serves the `\\.\pipe\240mp-mpv` IPC pipe, streams position updates for ~8 s, then reports a natural end-of-file. Copy both files into `<repo>\mpv\` and the app will pick it up as "mpv"; delete the folder to go back to the real player. Its log lands in `%TEMP%\mock-mpv.log`.
 
 ### Qt / QML debugging knobs
 
-These environment variables help when the UI itself is misbehaving:
-
-```bash
-QT_LOGGING_RULES="qt.qml.*=true"   # verbose QML engine logging
-QML_IMPORT_TRACE=1                 # trace QML import resolution (missing modules/components)
-QT_QPA_EGLFS_DEBUG=1               # EGLFS/DRM detail on Raspberry Pi headless
+```powershell
+$env:QT_LOGGING_RULES = "qt.qml.*=true"   # verbose QML engine logging
+$env:QML_IMPORT_TRACE = "1"               # trace QML import resolution
 ```
 
-Set them inline, e.g. `QML_IMPORT_TRACE=1 APP_ROOT=$(pwd) ./build/240mp`.
+Set them before launching from the same terminal.
 
 ## GitHub Actions
 
@@ -283,41 +179,19 @@ Set them inline, e.g. `QML_IMPORT_TRACE=1 APP_ROOT=$(pwd) ./build/240mp`.
 
 Releases are built automatically when you push a version tag:
 
-```bash
-git tag v2026.06.04
-git push origin v2026.06.04
+```powershell
+git tag v2026.07.12
+git push origin v2026.07.12
 ```
 
-And you can use pre-release tags to test CI without making a public release:
-
-```bash
-git tag v1.0.0-rc1
-git push origin v1.0.0-rc1
-```
-
-Tags containing `-rc`, `-beta`, or `-alpha` are published as GitHub pre-releases.
+Pre-release tags (`-rc`, `-beta`, `-alpha`) are published as GitHub pre-releases.
 
 ### What the workflow does
 
-These build jobs run in parallel:
-
 | Job | Runner | Output |
 |---|---|---|
-| `build-macos-arm64` | `macos-latest` (Apple Silicon) | `240-MP-<tag>-macOS-arm64.dmg` |
-| `build-linux-arm64` | `ubuntu-24.04-arm` (native arm64) | `240-MP-<tag>-linux-arm64.tar.gz` |
+| `build-windows-x64` | `windows-latest` | `240-MP-<tag>-windows-x64.zip` |
 
-macOS jobs: installs Qt via the Qt CDN, builds, runs `macdeployqt` to embed Qt frameworks (including `libSDL2.dylib`), ad-hoc codesign, package as `.dmg`. mpv is not bundled — users install it via `brew install mpv`.
+The job installs Qt via the Qt CDN, downloads the SDL2 VC devel package and Qt's OpenSSL tool, builds with MSVC + Ninja, stages the install, runs `windeployqt` to embed the Qt runtime (plus SDL2 and OpenSSL DLLs), and zips the folder. mpv is not bundled — the release's `install.ps1` installs it via winget.
 
-Linux arm64 job: installs Qt from apt, builds, package as `.tar.gz`. mpv and SDL2 are not bundled — end users install them via `apt install mpv libsdl2-2.0-0` or by running the `install.sh` that is bundled with each release where they are installed as part of the dependency list.
-
-A final `release` job waits for all three builds, then creates a GitHub Release with all artifacts attached (including `install.sh`).
-
-### Output
-
-**While the workflow is running:**
-
-Go to **Actions** → select the workflow run → each build job has an **Artifacts** section at the bottom where you can download that job's output before the release is published.
-
-**After the workflow completes:**
-
-Go to the repository on GitHub → **Releases** → select the release for the tag you set. All three artifacts are listed under Assets.
+A final `release` job creates a GitHub Release with the zip, a `SHA256SUMS` file (verified by both `install.ps1` and the in-app updater), and `install.ps1` itself attached.

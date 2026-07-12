@@ -1,6 +1,7 @@
 #include "AppCore.h"
 #include <QDir>
 #include <QFile>
+#include <QStorageInfo>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QUrl>
@@ -362,6 +363,26 @@ QVariantMap AppCore::getCustomColorSchemes() const {
 
 QVariantList AppCore::listDirectories(const QString &path) {
     QVariantList result;
+
+    // Empty path = the "computer" level: list drive roots so the directory
+    // browser can cross drives (media libraries often live on D:, E:, …).
+    if (path.isEmpty()) {
+        const QFileInfoList drives = QDir::drives();
+        for (const QFileInfo &d : drives) {
+            const QString rootPath = d.absoluteFilePath();          // "C:/"
+            QString name = rootPath;
+            name.chop(1);                                           // "C:"
+            const QString label = QStorageInfo(rootPath).displayName();
+            if (!label.isEmpty() && label != rootPath)
+                name += QStringLiteral(" (%1)").arg(label);
+            QVariantMap item;
+            item["name"] = name;
+            item["path"] = rootPath;
+            result.append(item);
+        }
+        return result;
+    }
+
     QDir dir(path);
     if (!dir.exists()) return result;
     const QStringList names = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden, QDir::Name);
@@ -375,7 +396,11 @@ QVariantList AppCore::listDirectories(const QString &path) {
 }
 
 QString AppCore::parentDirectory(const QString &path) {
+    if (path.isEmpty()) return path;
     QDir dir(path);
+    // Going up from a drive root ("C:/") lands on the computer level (empty
+    // path), where listDirectories enumerates the drives.
+    if (dir.isRoot()) return QString();
     if (!dir.cdUp()) return path;
     return dir.absolutePath();
 }

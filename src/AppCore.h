@@ -25,9 +25,11 @@ public:
 
     QString appVersion() const { return QCoreApplication::applicationVersion(); }
 
-    // True when launched by the autostart systemd service (which injects MP240_AUTOSTART=1).
-    // Gates the quit overlay's "Exit to Terminal" option, which only makes sense on a
-    // headless RPi running under the service. See scripts/install.sh and 240mp-stop.
+    // True when launched with MP240_AUTOSTART set. Upstream's headless-RPi
+    // autostart service injects it to unlock extra quit-menu options; the
+    // Windows Startup shortcut written by install.ps1 does not set it, so the
+    // quit overlay stays the simple Yes/No dialog here. Kept for view parity
+    // with upstream.
     Q_INVOKABLE bool isAutostartSession() const {
         return qEnvironmentVariableIsSet("MP240_AUTOSTART");
     }

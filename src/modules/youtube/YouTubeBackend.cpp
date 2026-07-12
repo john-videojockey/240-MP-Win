@@ -380,18 +380,9 @@ void YouTubeBackend::load_playlist_videos(const QString &playlistId, bool forceR
 }
 
 // mpv resolves yt-dlp itself at playback time; this is for the app's own
-// browse-time subprocesses.
+// browse-time subprocesses. PATH already covers the app-bundled mpv folder and
+// WinGet/Scoop/Chocolatey install dirs (win_utils prependToolDirsToPath).
 static QString ytDlpExecutable() {
-#ifdef Q_OS_MACOS
-    // .app bundles launched via double-click get a minimal PATH that excludes
-    // Homebrew. Prepend known install locations so findExecutable works.
-    const QStringList extraPaths = { "/opt/homebrew/bin", "/usr/local/bin" };
-    const QStringList currentPath = qEnvironmentVariable("PATH").split(":");
-    for (const QString &p : extraPaths) {
-        if (!currentPath.contains(p))
-            qputenv("PATH", (p + ":" + qEnvironmentVariable("PATH")).toUtf8());
-    }
-#endif
     return QStandardPaths::findExecutable(QStringLiteral("yt-dlp"));
 }
 

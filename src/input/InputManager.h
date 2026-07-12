@@ -7,6 +7,9 @@
 #include <QDateTime>
 #include <QVariantMap>
 #include <QFileSystemWatcher>
+// On Windows SDL.h #defines main to SDL_main unless told the app owns its own
+// entry point — without this the real main() vanishes and the link fails.
+#define SDL_MAIN_HANDLED
 #include <SDL.h>
 
 class QQuickWindow;

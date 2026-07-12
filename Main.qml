@@ -4,11 +4,14 @@ import QtQuick.Window
 
 Window {
     id: root
+    // Borderless window covering the whole screen — the Windows equivalent of
+    // the kiosk-style fullscreen the app uses everywhere. mpv opens its own
+    // fullscreen window on top of this one during playback.
     flags: Qt.FramelessWindowHint | Qt.Window
-    x:      Qt.platform.os === "osx" ? macScreenX      : Screen.virtualX
-    y:      Qt.platform.os === "osx" ? macScreenY      : Screen.virtualY
-    width:  Qt.platform.os === "osx" ? macScreenWidth  : Screen.width
-    height: Qt.platform.os === "osx" ? macScreenHeight : Screen.height
+    x:      Screen.virtualX
+    y:      Screen.virtualY
+    width:  Screen.width
+    height: Screen.height
     visible: true
     color: root.surfaceColor
 
@@ -135,15 +138,6 @@ Window {
         if (ssSec > 0) {
             idleTracker.threshold = ssSec
             idleTracker.enabled = true
-        }
-
-        // Break declarative bindings on macOS so the C++ NSWindow override
-        // in forceWindowFullScreen() isn't immediately re-fought by QML.
-        if (Qt.platform.os === "osx") {
-            root.x = macScreenX
-            root.y = macScreenY
-            root.width = macScreenWidth
-            root.height = macScreenHeight
         }
     }
     

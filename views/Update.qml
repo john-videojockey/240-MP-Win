@@ -28,10 +28,10 @@ FocusScope {
     readonly property bool canApply: updateManager ? updateManager.canApply : false
     readonly property bool devBuild: root.appVersion === "dev"
 
-    // Dev builds can check (to read the notes) but not download; on the Pi a
-    // download is pointless unless the launcher can actually apply it. macOS
-    // always allows download — the no-canApply fallback opens the DMG manually.
-    readonly property bool canDownload: !devBuild && (Qt.platform.os === "osx" || canApply)
+    // Dev builds can check (to read the notes) but not download. A download is
+    // always useful otherwise — when the helper can't swap the install folder
+    // (no-canApply), the fallback shows the downloaded zip for a manual update.
+    readonly property bool canDownload: !devBuild
 
     readonly property string actionLabel: {
         switch (updState) {
@@ -64,11 +64,8 @@ FocusScope {
         return ""
     }
 
-    readonly property string applyActionLabel: {
-        if (Qt.platform.os === "osx")
-            return canApply ? "Apply & Relaunch" : "Quit & Open Disk Image"
-        return updateRoot.autostartSession ? "Apply & Restart" : "Quit & Apply on Next Launch"
-    }
+    readonly property string applyActionLabel:
+        canApply ? "Apply & Relaunch" : "Quit & Show Downloaded Zip"
     // No "Cancel": Back/Escape dismisses the overlay instead. A downloaded
     // update stays inert until Apply is chosen (that's when the launcher-facing
     // marker is written), so backing out truly means "not now".
@@ -254,9 +251,8 @@ FocusScope {
             var act = confirmOptions[confirmChoiceIndex].action
             confirmOverlayVisible = false
             if (act === "apply" && updateManager) {
-                // Linux exits with code 11 under autostart (see 240mp-stop in
-                // scripts/install.sh) or quits for apply-on-next-launch; macOS
-                // spawns the swap helper and quits.
+                // Spawns the detached PowerShell swap helper and quits; the
+                // helper waits for exit, swaps the install folder, relaunches.
                 updateManager.applyAndRestart()
             } else if (act === "discard" && updateManager) {
                 updateManager.discardStagedUpdate()

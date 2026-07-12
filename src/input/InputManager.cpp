@@ -24,16 +24,10 @@ constexpr int kRepeatDelayMs    = 400;
 constexpr int kRepeatIntervalMs = 100;
 
 // Qt reports both shift keys as Qt::Key_Shift; telling them apart takes the
-// platform code. Linux keymaps (eglfs/evdev, X11, Wayland) report evdev's
-// KEY_RIGHTSHIFT, with or without the X11-style +8 offset; macOS reports
-// kVK_RightShift in the virtual key.
+// platform code. Windows delivers PC scan code set 1, where Right Shift is
+// 0x36 on every keyboard layout.
 bool isRightShift(const QKeyEvent *ke) {
-#ifdef Q_OS_MACOS
-    return ke->nativeVirtualKey() == 0x3C;   // kVK_RightShift
-#else
-    const quint32 sc = ke->nativeScanCode();
-    return sc == 54 || sc == 62;             // KEY_RIGHTSHIFT, +8 offset
-#endif
+    return ke->nativeScanCode() == 0x36;
 }
 
 // True when an editable text field (e.g. a QML TextInput/TextField) currently
@@ -99,7 +93,11 @@ void InputManager::initSdl() {
     // label-based there): "a" always means the SOUTH position, on every pad.
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, "0");
 
-    // Game-controller subsystem only: no video, so this works headless (EGLFS).
+    // Pairs with SDL_MAIN_HANDLED (InputManager.h): tells SDL init proceeded
+    // without its entry-point wrapper, which is expected here.
+    SDL_SetMainReady();
+
+    // Game-controller subsystem only — no video subsystem needed.
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
         qWarning("[input] SDL init failed: %s — gamepad support disabled", SDL_GetError());
         return;

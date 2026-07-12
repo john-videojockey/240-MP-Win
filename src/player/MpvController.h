@@ -8,21 +8,6 @@
 
 class AppCore;
 
-#ifdef Q_OS_LINUX
-#include <xf86drm.h>
-#include <xf86drmMode.h>
-
-struct DrmSavedState {
-    uint32_t crtcId      = 0;
-    uint32_t connectorId = 0;
-    uint32_t fbId        = 0;
-    int      x           = 0;
-    int      y           = 0;
-    drmModeModeInfo mode = {};
-    bool     valid       = false;
-};
-#endif
-
 class MpvController : public QObject {
     Q_OBJECT
     Q_PROPERTY(int position    READ position    NOTIFY positionChanged)
@@ -60,10 +45,10 @@ public:
     Q_INVOKABLE void showOsdSkipPrompt();
     Q_INVOKABLE void clearOsdPrompt();
 
-    // True only on devices whose smooth-playback decode path can't crop/zoom (the
-    // Pi 3 DRM-overlay path). Settings uses this to show the "Smooth Playback"
-    // toggle only where the smoothness-vs-crop trade-off actually exists.
-    Q_INVOKABLE bool hasSmoothPlaybackTradeoff() const;
+    // Kept for the shared Settings view: the smoothness-vs-crop trade-off only
+    // exists on the Raspberry Pi 3 decode path upstream. On Windows the D3D11
+    // scaler path always supports crop, so the toggle is never shown.
+    Q_INVOKABLE bool hasSmoothPlaybackTradeoff() const { return false; }
 
 signals:
     void positionChanged(int ms);
@@ -89,33 +74,15 @@ private slots:
     void onIpcReadyRead();
 
 private:
-    // Hardware video-decode profile, detected once from /proc/device-tree/model.
-    enum class VideoProfile { Pi3, Pi4, PiFullKms, Generic };
-
     void sendCommand(const QJsonArray &args);
-    void doHeadlessRestore(int pos, int dur, const QString &reason);
-    bool detectHeadlessMode() const;
-    VideoProfile detectVideoProfile() const;
-    // Appends the profile-specific --vo/--gpu-context/--hwdec flags (honouring the
-    // app-level "mpv_video_args" override) to a forming mpv argument list.
+    // Appends the --hwdec flags (honouring the app-level "mpv_video_args"
+    // override) to a forming mpv argument list.
     void appendVideoArgs(QStringList &args) const;
-    // App-level "smooth_playback" setting (default ON). On the Pi 3 this selects the
-    // smooth zero-copy overlay path; turning it OFF restores the crop-capable scaler path.
-    bool smoothPlaybackEnabled() const;
     // App-level "auto_crop" setting (default OFF). When ON, playback starts with
     // panscan=1 so video fills a CRT/4:3 screen by default (still toggleable live).
     bool autoCropEnabled() const;
-    int  getActiveVt() const;
-    int  findFreeVt() const;
-    int  findQtDrmFd() const;
-    void switchToVt(int vt);
-#ifdef Q_OS_LINUX
-    void saveDrmCrtcState(int fd);
-    void restoreDrmCrtcState(int fd);
-#endif
 
     AppCore      *m_appCore        = nullptr;
-    VideoProfile  m_videoProfile  = VideoProfile::Generic;
     QProcess     *m_process        = nullptr;
     QLocalSocket *m_ipc            = nullptr;
     QTimer       *m_connectTimer   = nullptr;
@@ -123,7 +90,7 @@ private:
     qint64        m_lastIpcEventMs = 0;
     bool          m_paused         = false;  // mirrors mpv's pause property (watchdog exemption)
     QString       m_appRoot;
-    QString       m_socketPath;
+    QString       m_pipePath;           // \\.\pipe\... — mpv's --input-ipc-server on Windows
     QString       m_inputConfPath;
     QString       m_logFilePath;
     QString       m_subInfoPath;       // JSON map: external sub URL -> friendly name (for the OSC)
@@ -131,13 +98,7 @@ private:
     int           m_position     = 0;
     int           m_duration     = 0;
     int           m_playlistPos  = -1;
-    bool          m_headlessMode = false;
-    int           m_previousVt   = -1;
     bool          m_hasMpvOscScript     = false;
     bool          m_hasAmbientOscScript = false;
     bool          m_hasMediaKeysScript  = false;
-    int           m_qtDrmFd      = -1;
-#ifdef Q_OS_LINUX
-    DrmSavedState m_savedDrm     = {};
-#endif
 };

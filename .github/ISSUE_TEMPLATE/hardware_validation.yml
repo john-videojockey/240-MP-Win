@@ -1,22 +1,31 @@
 name: Hardware validation report
-description: Report whether 240-MP works (or doesn't) on your specific hardware and display setup
+description: Share a working (or not-working) 240-MP setup so others can learn from it
 title: "[Hardware]: "
 labels: ["hardware-validation"]
 body:
   - type: markdown
     attributes:
       value: |
-        Validation reports across different Pi models and CRT/HDMI outputs are one of the most useful contributions to this project. Thank you for sharing yours!
-  - type: dropdown
-    id: platform
+        Validation reports across different PCs, GPUs, controllers, and TV setups are one of the most useful contributions to this project. Thank you for sharing yours!
+  - type: input
+    id: machine
     attributes:
-      label: Platform
-      options:
-        - Raspberry Pi 4
-        - Raspberry Pi 3B+
-        - Raspberry Pi 3B
-        - Other Raspberry Pi model
-        - macOS (Apple Silicon)
+      label: Machine
+      description: e.g. "Beelink S12 Pro mini PC", "Custom desktop", "ThinkPad T480"
+    validations:
+      required: true
+  - type: input
+    id: windows_version
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 24H2"
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU
+      placeholder: "Intel N100 iGPU / NVIDIA GTX 1650 / ..."
     validations:
       required: true
   - type: dropdown
@@ -24,38 +33,21 @@ body:
     attributes:
       label: Display & output
       options:
-        - CRT via composite (NTSC)
-        - CRT via composite (PAL)
-        - HDMI (TV / monitor)
+        - TV over HDMI
+        - Desktop monitor
+        - CRT (via HDMI-to-analog converter)
         - Other
     validations:
       required: true
   - type: input
-    id: os_version
+    id: controller
     attributes:
-      label: OS version
-      description: e.g. Raspberry Pi OS Lite (Trixie / Debian 13), or your macOS version
-    validations:
-      required: true
-  - type: dropdown
-    id: result
-    attributes:
-      label: Overall result
-      options:
-        - Works great
-        - Works with issues
-        - Doesn't work
-    validations:
-      required: true
+      label: Controller(s) tested
+      placeholder: "Xbox Series pad (USB), 8BitDo SN30 Pro (XInput mode), ..."
   - type: textarea
-    id: details
+    id: notes
     attributes:
-      label: What worked / what didn't
-      description: Playback, navigation, overscan & layout, audio, autostart, etc. Note anything you had to tweak (e.g. config.txt changes).
+      label: What works / what doesn't
+      description: Playback smoothness, hardware decode (check `%TEMP%\240mp-mpv.log`), controller behavior, any mpv_video_args tweaks you needed.
     validations:
       required: true
-  - type: textarea
-    id: photos
-    attributes:
-      label: Photos of the setup (optional)
-      description: Drag & drop photos of your setup or screen here — always fun to see 240-MP running in the wild.

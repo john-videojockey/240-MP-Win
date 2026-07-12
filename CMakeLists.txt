@@ -5,32 +5,22 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-# Strip qDebug(...) calls in Release builds to reduce CPU/disk noise on Pi
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -DQT_NO_DEBUG_OUTPUT")
+# Strip qDebug(...) calls in Release builds
+add_compile_definitions($<$<CONFIG:Release>:QT_NO_DEBUG_OUTPUT>)
 
 # Release version string. CI passes the git tag (-DAPP_VERSION=vX.Y.Z); local
 # builds report "dev", which disables the in-app self-update download path.
 set(APP_VERSION "dev" CACHE STRING "Release version (CI passes the git tag)")
 
-include(GNUInstallDirs)
-
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Qml Network Svg)
-find_package(OpenSSL REQUIRED)
-find_package(SDL2 CONFIG REQUIRED) # gamepad input (InputManager)
+find_package(OpenSSL REQUIRED)          # PlexBackend: Ed25519 device JWT (no CNG equivalent)
+find_package(SDL2 CONFIG REQUIRED)      # gamepad input (InputManager)
 
-# libdrm is used on Linux/RPi to save and restore the KMS CRTC state
-# around mpv playback so Qt EGLFS can resume cleanly after mpv exits.
-if(NOT APPLE)
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(Libdrm REQUIRED libdrm)
-endif()
-
-if(APPLE)
-    enable_language(OBJCXX)
-endif()
-
-add_executable(240mp
+# WIN32: GUI subsystem, no console window. Logs go to DATA_ROOT/logs/240mp.log
+# and to the parent console when launched from a terminal (src/win_utils.cpp).
+add_executable(240mp WIN32
     src/main.cpp
+    src/win_utils.cpp
     src/AppCore.cpp
     src/modules/local_files/LocalFilesBackend.cpp
     src/modules/plex/PlexBackend.cpp
@@ -41,7 +31,7 @@ add_executable(240mp
     src/input/InputManager.cpp
     src/input/IdleTracker.cpp
     src/update/UpdateManager.cpp
-    $<$<BOOL:${APPLE}>:src/macos_utils.mm>
+    assets/240mp.rc
 )
 
 target_compile_definitions(240mp PRIVATE APP_VERSION="${APP_VERSION}")
@@ -55,100 +45,62 @@ target_link_libraries(240mp PRIVATE
     Qt6::Svg
     OpenSSL::Crypto
     SDL2::SDL2
-    $<$<NOT:$<BOOL:${APPLE}>>:${Libdrm_LIBRARIES}>
 )
-
-if(APPLE)
-    target_link_libraries(240mp PRIVATE "-framework AppKit")
-endif()
-
-if(NOT APPLE)
-    target_include_directories(240mp PRIVATE ${Libdrm_INCLUDE_DIRS})
-endif()
 
 target_include_directories(240mp PRIVATE
     src
 )
 
-# ── macOS bundle metadata ──────────────────────────────────────────────────────
-set_target_properties(240mp PROPERTIES
-    MACOSX_BUNDLE TRUE
-    MACOSX_BUNDLE_BUNDLE_NAME "240-MP"
-    MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
-    MACOSX_BUNDLE_GUI_IDENTIFIER "com.240mp.app"
-    MACOSX_BUNDLE_ICON_FILE "assets/images/240-mp"
-    INSTALL_RPATH_USE_LINK_PATH TRUE
+# ── Dev-run convenience ────────────────────────────────────────────────────────
+# Copy the non-Qt runtime DLLs next to the built exe so a build can run without
+# an install step (Qt DLLs come from PATH via scripts/run-local.ps1).
+add_custom_command(TARGET 240mp POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:SDL2::SDL2>" "$<TARGET_FILE_DIR:240mp>"
+    COMMENT "Copying SDL2.dll beside the executable"
 )
-
-# ── Dev bundle symlink (macOS only, non-CI) ───────────────────────────────────
-# Makes double-clicking build/240mp.app work during development by symlinking
-# Contents/Resources → repo root so resolveAppRoot() finds the QML files.
-# Skipped in CI (ENV{CI} is set by GitHub Actions) because cmake --install
-# populates Resources with real files — a symlink in the build tree would be
-# packaged into the DMG pointing to a CI path that doesn't exist on end-user Macs.
-if(APPLE AND NOT DEFINED ENV{CI})
-    add_custom_command(TARGET 240mp POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E remove -f
-            "$<TARGET_BUNDLE_CONTENT_DIR:240mp>/Resources"
-        COMMAND ${CMAKE_COMMAND} -E create_symlink
-            "${CMAKE_SOURCE_DIR}"
-            "$<TARGET_BUNDLE_CONTENT_DIR:240mp>/Resources"
-        COMMENT "Symlinking repo root as bundle Resources (dev build)"
-    )
+if(DEFINED OPENSSL_ROOT_DIR)
+    file(GLOB _openssl_dlls "${OPENSSL_ROOT_DIR}/bin/libcrypto-3-x64.dll")
+    if(_openssl_dlls)
+        add_custom_command(TARGET 240mp POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${_openssl_dlls} "$<TARGET_FILE_DIR:240mp>"
+            COMMENT "Copying OpenSSL libcrypto beside the executable"
+        )
+    endif()
 endif()
 
 # ── Install rules ──────────────────────────────────────────────────────────────
-if(APPLE)
-    install(TARGETS 240mp BUNDLE DESTINATION . COMPONENT Runtime)
+# Flat layout: 240mp.exe sits next to Main.qml/views/modules/assets/scripts at
+# the package root — resolveAppRoot() finds Main.qml zero levels up. CI runs
+# windeployqt over the staged folder afterwards to add the Qt runtime.
+install(TARGETS 240mp RUNTIME DESTINATION . COMPONENT Runtime)
 
-    # Use a hardcoded relative path — $<TARGET_BUNDLE_CONTENT_DIR> resolves to
-    # the build tree, not the install prefix, inside install() rules.
-    install(FILES "${CMAKE_SOURCE_DIR}/Main.qml"
-        DESTINATION "240mp.app/Contents/Resources"
-        COMPONENT Runtime)
+install(IMPORTED_RUNTIME_ARTIFACTS SDL2::SDL2
+    RUNTIME DESTINATION . COMPONENT Runtime)
 
-    install(DIRECTORY
-        "${CMAKE_SOURCE_DIR}/views"
-        "${CMAKE_SOURCE_DIR}/modules"
-        "${CMAKE_SOURCE_DIR}/assets"
-        "${CMAKE_SOURCE_DIR}/scripts"
-        DESTINATION "240mp.app/Contents/Resources"
-        COMPONENT Runtime)
-
-    # macdeployqt is NOT run here — it requires Qt frameworks to be present and
-    # is environment-specific. Run it manually in CI after cmake --install.
-else()
-    install(TARGETS 240mp
-        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-        COMPONENT Runtime)
-
-    install(FILES "${CMAKE_SOURCE_DIR}/Main.qml"
-        DESTINATION "${CMAKE_INSTALL_DATADIR}/240mp"
-        COMPONENT Runtime)
-
-    install(DIRECTORY
-        "${CMAKE_SOURCE_DIR}/views"
-        "${CMAKE_SOURCE_DIR}/modules"
-        "${CMAKE_SOURCE_DIR}/assets"
-        "${CMAKE_SOURCE_DIR}/scripts"
-        DESTINATION "${CMAKE_INSTALL_DATADIR}/240mp"
-        COMPONENT Runtime)
+if(DEFINED OPENSSL_ROOT_DIR AND _openssl_dlls)
+    install(FILES ${_openssl_dlls} DESTINATION . COMPONENT Runtime)
 endif()
+
+install(FILES "${CMAKE_SOURCE_DIR}/Main.qml" "${CMAKE_SOURCE_DIR}/LICENSE"
+    DESTINATION . COMPONENT Runtime)
+
+install(DIRECTORY
+    "${CMAKE_SOURCE_DIR}/views"
+    "${CMAKE_SOURCE_DIR}/modules"
+    "${CMAKE_SOURCE_DIR}/assets"
+    DESTINATION . COMPONENT Runtime)
+
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/scripts"
+    DESTINATION . COMPONENT Runtime
+    FILES_MATCHING PATTERN "*.lua")
 
 # ── CPack ──────────────────────────────────────────────────────────────────────
 set(CPACK_PACKAGE_NAME "240-MP")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "240-MP Media Player")
 set(CPACK_PACKAGE_VENDOR "240-MP")
-
-if(APPLE)
-    set(CPACK_GENERATOR "DragNDrop")
-    set(CPACK_DMG_VOLUME_NAME "240-MP")
-    set(CPACK_DMG_FORMAT "UDZO")
-else()
-    set(CPACK_GENERATOR "TGZ")
-    set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
-endif()
+set(CPACK_GENERATOR "ZIP")
 
 include(CPack)

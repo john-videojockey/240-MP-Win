@@ -23,11 +23,7 @@ static const QString PLEX_TV = QStringLiteral("https://plex.tv");
 
 static const QSet<QString> kSupportedLibraryTypes = {"movie", "show", "clip"};
 
-#ifdef Q_OS_MAC
-static const QString kPlexPlatform = QStringLiteral("macOS");
-#else
-static const QString kPlexPlatform = QStringLiteral("Linux");
-#endif
+static const QString kPlexPlatform = QStringLiteral("Windows");
 
 // ---------------------------------------------------------------------------
 // Construction

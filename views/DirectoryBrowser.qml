@@ -13,12 +13,13 @@ FocusScope {
     property string currentBrowsePath: ""
     property var dirEntries: []
 
+    // An empty browse path is the "computer" level (drive list) — a drive must
+    // be entered before "use this directory" makes sense there.
     property var listModel: {
-        var items = [
-            { name: "..PARENT DIRECTORY", entryType: "up" },
-            { name: "<USE THIS DIRECTORY>", entryType: "select" },
-            { name: "<USE DEFAULT DIRECTORY>", entryType: "default" }
-        ]
+        var items = [{ name: "..PARENT DIRECTORY", entryType: "up" }]
+        if (currentBrowsePath !== "")
+            items.push({ name: "<USE THIS DIRECTORY>", entryType: "select" })
+        items.push({ name: "<USE DEFAULT DIRECTORY>", entryType: "default" })
         for (var i = 0; i < dirEntries.length; i++) {
             items.push({ name: dirEntries[i].name, path: dirEntries[i].path, entryType: "dir" })
         }
@@ -62,7 +63,7 @@ FocusScope {
     AppBar {
         iconSource: "../../assets/images/settings.svg"
         title: "Settings"
-        subtitle: currentBrowsePath
+        subtitle: currentBrowsePath || "COMPUTER"
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.topMargin: root.sh * 0.125

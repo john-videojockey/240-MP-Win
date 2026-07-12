@@ -6,7 +6,6 @@
 #include <QStandardPaths>
 #include <QCursor>
 #include <QDebug>
-#include <QWindow>
 #include <QQuickWindow>
 #include <locale.h>
 
@@ -20,32 +19,36 @@
 #include "input/InputManager.h"
 #include "input/IdleTracker.h"
 #include "update/UpdateManager.h"
-#ifdef Q_OS_MAC
-#include "macos_utils.h"
-#endif
+#include "win_utils.h"
 
+// APP_ROOT env wins; otherwise walk up from the executable looking for
+// Main.qml. That single rule covers every layout this app runs from:
+//   installed:      <dir>/240mp.exe next to Main.qml           (0 levels up)
+//   Ninja build:    build/240mp.exe, repo root one up          (1 level up)
+//   VS generator:   build/Release/240mp.exe, repo root two up  (2 levels up)
 static QString resolveAppRoot() {
     QString envRoot = qEnvironmentVariable("APP_ROOT");
     if (!envRoot.isEmpty())
         return QDir(envRoot).canonicalPath();
 
-    QString appDir = QCoreApplication::applicationDirPath();
-
-    if (QCoreApplication::applicationFilePath().contains(".app/Contents/MacOS/"))
-        return QDir(appDir + "/../Resources").canonicalPath();
-
-    QDir fhsData(appDir + "/../share/240mp");
-    if (fhsData.exists())
-        return fhsData.canonicalPath();
-
-    return QDir(appDir + "/..").canonicalPath();
+    QDir dir(QCoreApplication::applicationDirPath());
+    for (int i = 0; i < 4; ++i) {
+        if (dir.exists(QStringLiteral("Main.qml")))
+            return dir.canonicalPath();
+        if (!dir.cdUp())
+            break;
+    }
+    return QDir(QCoreApplication::applicationDirPath()).canonicalPath();
 }
 
 static QString resolveDataRoot() {
     QString envRoot = qEnvironmentVariable("DATA_ROOT");
-    if (!envRoot.isEmpty())
+    if (!envRoot.isEmpty()) {
+        QDir().mkpath(envRoot);
         return QDir(envRoot).canonicalPath();
+    }
 
+    // %APPDATA%/240-MP — roaming, survives reinstalls of the app folder.
     QString path = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     QDir().mkpath(path);
     return path;
@@ -56,24 +59,18 @@ int main(int argc, char *argv[]) {
     app.setApplicationName("240-MP");
     app.setApplicationVersion(QStringLiteral(APP_VERSION));
 
-    // Hide cursor — 240-MP is keyboard-only so the cursor serves no purpose.
-    // On Linux, only hide on headless EGLFS (not desktop X11/Wayland sessions).
-#ifdef Q_OS_LINUX
-    if (qgetenv("DISPLAY").isEmpty() && qgetenv("WAYLAND_DISPLAY").isEmpty())
-        QGuiApplication::setOverrideCursor(Qt::BlankCursor);
-#endif
-#ifdef Q_OS_MAC
+    // Hide cursor — 240-MP is keyboard/gamepad-only so the cursor serves no purpose.
     QGuiApplication::setOverrideCursor(Qt::BlankCursor);
-    hideMacOSMenuBar();
-    int macW = macMainScreenWidth();
-    int macH = macMainScreenHeight();
-    qDebug("[main] macOS NSScreen main frame: %dx%d", macW, macH);
-#endif
 
     setlocale(LC_NUMERIC, "C");
 
     const QString appRoot  = resolveAppRoot();
     const QString dataRoot = resolveDataRoot();
+
+    installWindowsLogging(dataRoot);   // before the first qDebug so nothing is lost
+    keepDisplayAwake();
+    prependToolDirsToPath(appRoot);    // mpv/yt-dlp discovery for every backend
+
     qDebug("[main] appRoot  = %s", qPrintable(appRoot));
     qDebug("[main] dataRoot = %s", qPrintable(dataRoot));
 
@@ -90,8 +87,8 @@ int main(int argc, char *argv[]) {
     IdleTracker         idleTracker(60);   // disabled until Main.qml applies the saved setting
     UpdateManager       updateManager(appRoot, dataRoot);
 
-    // When the Qt window is inactive (fullscreen mpv has OS focus on macOS),
-    // gamepad actions bypass QML and drive mpv directly over IPC.
+    // When the Qt window is inactive (fullscreen mpv holds OS focus during
+    // playback), gamepad actions bypass QML and drive mpv directly over IPC.
     QObject::connect(&inputManager, &InputManager::mpvKeyRequested,
                      &mpvController, &MpvController::sendKey);
 
@@ -110,14 +107,6 @@ int main(int argc, char *argv[]) {
     ctx->setContextProperty("mpvController", &mpvController);
     ctx->setContextProperty("inputManager",  &inputManager);
     ctx->setContextProperty("updateManager", &updateManager);
-#ifdef Q_OS_MAC
-    // QVariant(0), not literal 0 — a bare 0 is a null pointer constant and
-    // resolves to the QObject* overload, handing QML null instead of an int.
-    engine.rootContext()->setContextProperty("macScreenX",      QVariant(0));
-    engine.rootContext()->setContextProperty("macScreenY",      QVariant(0));
-    engine.rootContext()->setContextProperty("macScreenWidth",  macW);
-    engine.rootContext()->setContextProperty("macScreenHeight", macH);
-#endif
 
     engine.addImportPath(appRoot + "/views");
 
@@ -130,13 +119,6 @@ int main(int argc, char *argv[]) {
     // Gamepad key events are posted straight to the root window so they reach
     // the QML focus item even when another window (mpv) holds OS focus.
     inputManager.setTargetWindow(qobject_cast<QQuickWindow *>(engine.rootObjects().first()));
-
-#ifdef Q_OS_MAC
-    if (QWindow *win = qobject_cast<QWindow *>(engine.rootObjects().first())) {
-        win->winId(); // ensure native NSWindow is created
-        forceWindowFullScreen(reinterpret_cast<void *>(win->winId()));
-    }
-#endif
 
     return app.exec();
 }
