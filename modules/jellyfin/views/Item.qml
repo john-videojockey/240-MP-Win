@@ -381,13 +381,9 @@ FocusScope {
     }
 
     // Loading Indicator
-    Text {
+    LoadingText {
         visible: !detail
-        text: "LOADING..."
-        color: root.tertiaryColor
-        font.family: root.globalFont
         anchors.centerIn: parent
-        font.pixelSize: root.sh * 0.05 //24
     }
 
     // Body
@@ -761,12 +757,8 @@ FocusScope {
         visible: isLaunching
         z: 100
 
-        Text {
-            text: "LOADING..."
-            color: root.tertiaryColor
-            font.family: root.globalFont
+        LoadingText {
             anchors.centerIn: parent
-            font.pixelSize: root.sh * 0.05 //24
         }
 
         Text {

@@ -13,6 +13,9 @@ FocusScope {
     signal goBack()
 
     property var items: []
+    property bool isLoading: false
+    // Guards the first-load index restore against the silent cache refresh.
+    property bool loadedOnce: false
 
     // Browse View setting: "Cover" renders the folder as an art grid when the
     // backend found any artwork (poster.jpg/folder.jpg in subfolders,
@@ -139,11 +142,18 @@ FocusScope {
         anchors.leftMargin: root.sw * 0.125 //80
     }
 
+    // Browser-pane loading splash (animated dots) — shown while the first
+    // scan of an uncached folder is running.
+    LoadingText {
+        visible: itemsRoot.isLoading
+        anchors.centerIn: parent
+    }
+
     // Empty state
     Column {
         anchors.centerIn: parent
         spacing: root.sh * 0.0333333 //16
-        visible: items.length === 0
+        visible: !itemsRoot.isLoading && items.length === 0
         Text {
             text: "No items found"
             color: root.secondaryColor
@@ -331,17 +341,10 @@ FocusScope {
         }
     }
 
-    Component.onCompleted: {
-        var bg = appCore.get_setting(moduleRoot.moduleId, "info_background")
-        infoBg = (bg === undefined || bg === null || bg === "")
-                 ? true : (bg === true || bg === "ON")
-        var op = parseInt(appCore.get_setting(moduleRoot.moduleId, "info_background_opacity"))
-        if (op > 0) infoBgOpacity = op / 100
-
-        items = localFilesBackend.getItems(folderPath)
+    function applyItems(loaded, restoreIndex) {
+        items = loaded
         if (items.length > 0) {
-            var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
-            var idx = Math.min(restore, items.length - 1)
+            var idx = Math.min(Math.max(0, restoreIndex), items.length - 1)
             fileList.currentIndex = idx
             fileList.positionViewAtIndex(idx, ListView.Contain)
             coverGrid.currentIndex = idx
@@ -350,6 +353,48 @@ FocusScope {
         if (coverMode) coverGrid.forceActiveFocus()
         else fileList.forceActiveFocus()
         if (infoBg) hoverArtDebounce.restart()
+    }
+
+    // Fresh scan finished on the backend's worker thread. First entry into an
+    // uncached folder clears the LOADING splash; when the cache was already
+    // on screen this is the silent refresh, applied only if something actually
+    // changed (keeping the user's highlight position).
+    Connections {
+        target: localFilesBackend
+        function onItemsLoaded(path, loaded) {
+            if (path !== folderPath) return
+            isLoading = false
+            if (!loadedOnce) {
+                loadedOnce = true
+                var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
+                applyItems(loaded, restore)
+                return
+            }
+            if (JSON.stringify(loaded) === JSON.stringify(items)) return
+            applyItems(loaded, coverMode ? coverGrid.currentIndex : fileList.currentIndex)
+        }
+    }
+
+    Component.onCompleted: {
+        var bg = appCore.get_setting(moduleRoot.moduleId, "info_background")
+        infoBg = (bg === undefined || bg === null || bg === "")
+                 ? true : (bg === true || bg === "ON")
+        var op = parseInt(appCore.get_setting(moduleRoot.moduleId, "info_background_opacity"))
+        if (op > 0) infoBgOpacity = op / 100
+
+        // Show the last known listing instantly (network shares and sleeping
+        // disks can take seconds to answer), then refresh in the background.
+        // No cache yet → LOADING splash until the scan lands.
+        folderPath = String(folderPath)   // detach from navParams binding
+        var cached = localFilesBackend.cachedItems(folderPath)
+        if (cached.length > 0) {
+            loadedOnce = true
+            var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
+            applyItems(cached, restore)
+        } else {
+            isLoading = true
+        }
+        localFilesBackend.loadItems(folderPath)
     }
 
     // Footer

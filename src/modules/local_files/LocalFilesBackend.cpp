@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QUrl>
 #include <QXmlStreamReader>
+#include <QtConcurrent/QtConcurrentRun>
 
 // supported image types
 static const QStringList kImageExts = {
@@ -312,7 +313,9 @@ void LocalFilesBackend::enrichVideoItem(QVariantMap &item, const QString &filePa
     }
 }
 
-QVariantList LocalFilesBackend::getItems(const QString &path) {
+// Synchronous scan (runs on a worker thread via loadItems): mediaRoot is
+// passed by value so a settings change mid-scan can't race the member.
+QVariantList LocalFilesBackend::scanItems(const QString &path, const QString &mediaRoot) const {
     QVariantList result;
     QDir dir(path);
     if (!dir.exists()) {
@@ -325,7 +328,7 @@ QVariantList LocalFilesBackend::getItems(const QString &path) {
     // Case-insensitive: NTFS paths compare equal regardless of case, and QML
     // navigation can hand back a differently-cased drive letter.
     QString clean = QDir(path).absolutePath();
-    QString root  = QDir(m_mediaRoot).absolutePath();
+    QString root  = QDir(mediaRoot).absolutePath();
     bool inside = (clean.compare(root, Qt::CaseInsensitive) == 0) ||
                   clean.startsWith(root.endsWith('/') ? root : root + '/',
                                    Qt::CaseInsensitive);
@@ -372,4 +375,51 @@ QVariantList LocalFilesBackend::getItems(const QString &path) {
         result.append(item);
     }
     return result;
+}
+
+QVariantList LocalFilesBackend::getItems(const QString &path) {
+    const QVariantList items = scanItems(path, m_mediaRoot);
+    updateCache(QDir(path).absolutePath(), items);
+    return items;
+}
+
+QString LocalFilesBackend::cacheFilePath() const {
+    return m_dataRoot + "/local_files_cache.json";
+}
+
+void LocalFilesBackend::ensureCacheLoaded() {
+    if (m_cacheLoaded) return;
+    m_cacheLoaded = true;
+    QFile f(cacheFilePath());
+    if (f.open(QIODevice::ReadOnly))
+        m_cache = QJsonDocument::fromJson(f.readAll()).object().toVariantMap();
+}
+
+void LocalFilesBackend::updateCache(const QString &path, const QVariantList &items) {
+    ensureCacheLoaded();
+    m_cache[path] = items;
+    QFile f(cacheFilePath());
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        f.write(QJsonDocument(QJsonObject::fromVariantMap(m_cache)).toJson(QJsonDocument::Compact));
+}
+
+QVariantList LocalFilesBackend::cachedItems(const QString &path) {
+    ensureCacheLoaded();
+    return m_cache.value(QDir(path).absolutePath()).toList();
+}
+
+void LocalFilesBackend::loadItems(const QString &path) {
+    const QString clean = QDir(path).absolutePath();
+    const QString mediaRoot = m_mediaRoot;
+    // Scan on a worker thread — network shares and spun-down disks can stall
+    // for seconds, and the UI shows the LOADING splash (or the cached listing)
+    // meanwhile. Result hops back to the main thread before touching state.
+    auto future = QtConcurrent::run([this, clean, mediaRoot]() {
+        const QVariantList items = scanItems(clean, mediaRoot);
+        QMetaObject::invokeMethod(this, [this, clean, items]() {
+            updateCache(clean, items);
+            emit itemsLoaded(clean, items);
+        }, Qt::QueuedConnection);
+    });
+    Q_UNUSED(future)
 }

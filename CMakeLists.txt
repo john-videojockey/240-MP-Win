@@ -12,7 +12,7 @@ add_compile_definitions($<$<CONFIG:Release>:QT_NO_DEBUG_OUTPUT>)
 # builds report "dev", which disables the in-app self-update download path.
 set(APP_VERSION "dev" CACHE STRING "Release version (CI passes the git tag)")
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Qml Network Svg)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Qml Network Svg Concurrent)
 find_package(OpenSSL REQUIRED)          # PlexBackend: Ed25519 device JWT (no CNG equivalent)
 find_package(SDL2 CONFIG REQUIRED)      # gamepad input (InputManager)
 
@@ -43,6 +43,7 @@ target_link_libraries(240mp PRIVATE
     Qt6::Qml
     Qt6::Network
     Qt6::Svg
+    Qt6::Concurrent
     OpenSSL::Crypto
     SDL2::SDL2
 )

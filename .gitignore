@@ -10,6 +10,7 @@ $RECYCLE.BIN/
 /build
 /.cache
 /stage
+/media
 
 # Optional app-bundled mpv (drop mpv.exe here for a portable setup;
 # tests/mock-mpv can also be copied here to fake playback) #

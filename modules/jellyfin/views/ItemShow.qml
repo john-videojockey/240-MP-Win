@@ -132,13 +132,9 @@ FocusScope {
         anchors.leftMargin: root.sw * 0.125 //80
     }
 
-    Text {
+    LoadingText {
         visible: isLoading
-        text: "LOADING..."
-        color: root.tertiaryColor
-        font.family: root.globalFont
         anchors.centerIn: parent
-        font.pixelSize: root.sh * 0.05 //24
     }
 
     Item {

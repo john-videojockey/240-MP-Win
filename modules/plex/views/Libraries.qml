@@ -68,13 +68,9 @@ FocusScope {
     }
 
     // Loading Indicator
-    Text {
+    LoadingText {
         visible: libraries.length === 0
-        text: "LOADING..."
-        color: root.tertiaryColor
-        font.family: root.globalFont
         anchors.centerIn: parent
-        font.pixelSize: root.sh * 0.05 //24
     }
 
     // Body

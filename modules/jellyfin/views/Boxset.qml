@@ -123,13 +123,9 @@ FocusScope {
     }
 
     // Loading / empty / error states
-    Text {
+    LoadingText {
         visible: isLoading
-        text: "LOADING..."
-        color: root.tertiaryColor
-        font.family: root.globalFont
         anchors.centerIn: parent
-        font.pixelSize: root.sh * 0.05 //24
     }
     Text {
         visible: !isLoading && errorMessage !== ""
