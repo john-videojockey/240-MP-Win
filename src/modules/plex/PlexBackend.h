@@ -67,6 +67,11 @@ public:
                                      const QString &state, int timeMs, int durationMs);
     Q_INVOKABLE void set_audio_stream(const QString &streamId, const QString &partId);
     Q_INVOKABLE void set_subtitle_stream(const QString &streamId, const QString &partId);
+    // Watched state (scrobble/unscrobble) and Continue Watching membership for
+    // the detail view's Watched/Tracked buttons.
+    Q_INVOKABLE void mark_watched(const QString &ratingKey);
+    Q_INVOKABLE void mark_unwatched(const QString &ratingKey);
+    Q_INVOKABLE void remove_from_continue_watching(const QString &ratingKey);
 
     // Live TV — minimal "watch live channels" support (no DVR/recording features).
     // load_live_channels lists the channel lineup of the first available DVR;

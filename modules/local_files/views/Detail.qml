@@ -24,11 +24,18 @@ FocusScope {
     property var videoIndices: []
     property bool hasSiblings: videoIndices.length > 1
 
+    // Focus rows: 0 = play cluster (PREV/PLAY/NEXT via playCol), 1 = actions
+    // (WATCHED / TRACKED via actionCol).
+    property int focusRow: 0
     // 0=PREV, 1=PLAY, 2=NEXT (PREV/NEXT only exist with siblings)
     property int playCol: 1
+    property int actionCol: 0
 
     // Saved resume position for the current video (drives the RSUM label)
     property int savedPos: 0
+    // Watched flag, and Continue Watching membership (in progress + not removed)
+    property bool watched: false
+    property bool tracked: false
 
     // Fanart background (module settings shared with the browse view)
     property bool infoBg: true
@@ -74,6 +81,22 @@ FocusScope {
     function refreshSaved() {
         var saved = localFilesBackend.getSavedPosition(current.path || "")
         savedPos = saved.pos || 0
+        watched = saved.watched === true
+        // In Continue Watching = has resume progress and not manually removed.
+        tracked = savedPos > 0 && saved.tracked !== false
+    }
+
+    function toggleWatched() {
+        watched = !watched
+        localFilesBackend.set_watched(current.path, watched)
+        if (watched) { savedPos = 0; tracked = false }  // marking watched leaves CW
+    }
+
+    function toggleTracked() {
+        // Only meaningful when there is progress to keep in/out of CW.
+        if (savedPos <= 0) return
+        tracked = !tracked
+        localFilesBackend.set_tracked(current.path, tracked)
     }
 
     // Sibling descriptors handed to the Player so the mpv OSC's |< / >| can
@@ -118,9 +141,22 @@ FocusScope {
 
     focus: true
 
-    Keys.onLeftPressed: if (hasSiblings && playCol > 0) playCol--
-    Keys.onRightPressed: if (hasSiblings && playCol < 2) playCol++
+    Keys.onUpPressed: if (focusRow > 0) focusRow--
+    Keys.onDownPressed: if (focusRow < 1) focusRow++
+    Keys.onLeftPressed: {
+        if (focusRow === 0) { if (hasSiblings && playCol > 0) playCol-- }
+        else if (actionCol > 0) actionCol--
+    }
+    Keys.onRightPressed: {
+        if (focusRow === 0) { if (hasSiblings && playCol < 2) playCol++ }
+        else if (actionCol < 1) actionCol++
+    }
     Keys.onReturnPressed: {
+        if (focusRow === 1) {
+            if (actionCol === 0) toggleWatched()
+            else toggleTracked()
+            return
+        }
         if (hasSiblings && playCol === 0) stepTo(-1)
         else if (hasSiblings && playCol === 2) stepTo(1)
         else play()
@@ -181,92 +217,156 @@ FocusScope {
             height: root.sh * 0.35 //168
             spacing: root.sw * 0.0375 //24
 
-            // PREV / PLAY / NEXT cluster — same footprint as the Plex one.
-            Item {
-                width: root.sw * 0.1875 //120
-                height: root.sh * 0.1166667 //56
+            // Play cluster + action buttons, stacked. WATCHED / TRACKED sit
+            // directly below PREV/PLAY/NEXT (same footprint as the Plex one).
+            Column {
+                spacing: root.sh * 0.0125 //6
 
+                Item {
+                    width: root.sw * 0.1875 //120
+                    height: root.sh * 0.1166667 //56
+
+                    Row {
+                        anchors.fill: parent
+                        spacing: root.sw * 0.0046875 //3
+
+                        Rectangle {
+                            id: prevButton
+                            visible: detailRoot.hasSiblings
+                            property bool sel: focusRow === 0 && playCol === 0
+                            color: sel ? root.accentColor : root.surfaceColor
+                            border.color: sel ? root.accentColor : root.tertiaryColor
+                            width: root.sw * 0.0375 //24
+                            height: parent.height
+                            border.width: root.sh * 0.003125 //2
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (prevButton.sel) inputManager.touchKey("select")
+                                    else { focusRow = 0; playCol = 0 }
+                                }
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "◄"
+                                color: prevButton.sel ? root.surfaceColor : root.primaryColor
+                                font.family: root.globalFont
+                                font.pixelSize: root.sh * 0.0416667 //20
+                            }
+                        }
+
+                        Rectangle {
+                            id: playButton
+                            property bool sel: focusRow === 0 && (!detailRoot.hasSiblings || playCol === 1)
+                            color: sel ? root.accentColor : root.surfaceColor
+                            border.color: sel ? root.accentColor : root.tertiaryColor
+                            width: detailRoot.hasSiblings ? root.sw * 0.1 : root.sw * 0.1875
+                            height: parent.height
+                            border.width: root.sh * 0.003125 //2
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (playButton.sel) inputManager.touchKey("select")
+                                    else { focusRow = 0; playCol = 1 }
+                                }
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: detailRoot.savedPos > 0 ? "RSUM ►" : "PLAY ►"
+                                color: playButton.sel ? root.surfaceColor : root.primaryColor
+                                font.family: root.globalFont
+                                font.pixelSize: detailRoot.hasSiblings ? root.sh * 0.0375 : root.sh * 0.05
+                            }
+                        }
+
+                        Rectangle {
+                            id: nextButton
+                            visible: detailRoot.hasSiblings
+                            property bool sel: focusRow === 0 && playCol === 2
+                            color: sel ? root.accentColor : root.surfaceColor
+                            border.color: sel ? root.accentColor : root.tertiaryColor
+                            width: root.sw * 0.0375 //24
+                            height: parent.height
+                            border.width: root.sh * 0.003125 //2
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (nextButton.sel) inputManager.touchKey("select")
+                                    else { focusRow = 0; playCol = 2 }
+                                }
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "►"
+                                color: nextButton.sel ? root.surfaceColor : root.primaryColor
+                                font.family: root.globalFont
+                                font.pixelSize: root.sh * 0.0416667 //20
+                            }
+                        }
+                    }
+                }
+
+                // Actions: WATCHED / UNWATCHED and TRACKED / UNTRACKED.
                 Row {
-                    anchors.fill: parent
                     spacing: root.sw * 0.0046875 //3
 
                     Rectangle {
-                        id: prevButton
-                        visible: detailRoot.hasSiblings
-                        property bool sel: playCol === 0
+                        id: watchedBtn
+                        property bool sel: focusRow === 1 && actionCol === 0
                         color: sel ? root.accentColor : root.surfaceColor
                         border.color: sel ? root.accentColor : root.tertiaryColor
-                        width: root.sw * 0.0375 //24
-                        height: parent.height
+                        width: root.sw * 0.0925
+                        height: root.sh * 0.05
                         border.width: root.sh * 0.003125 //2
 
                         MouseArea {
                             anchors.fill: parent
                             onClicked: {
-                                if (prevButton.sel) inputManager.touchKey("select")
-                                else playCol = 0
+                                if (watchedBtn.sel) inputManager.touchKey("select")
+                                else { focusRow = 1; actionCol = 0 }
                             }
                         }
 
                         Text {
                             anchors.centerIn: parent
-                            text: "◄"
-                            color: prevButton.sel ? root.surfaceColor : root.primaryColor
+                            text: detailRoot.watched ? "WATCHED" : "UNWATCHED"
+                            color: watchedBtn.sel ? root.surfaceColor : root.primaryColor
                             font.family: root.globalFont
-                            font.pixelSize: root.sh * 0.0416667 //20
+                            font.pixelSize: root.sh * 0.025 //12
                         }
                     }
 
                     Rectangle {
-                        id: playButton
-                        property bool sel: !detailRoot.hasSiblings || playCol === 1
+                        id: trackedBtn
+                        // Only relevant when there is progress to keep in/out of CW.
+                        visible: detailRoot.savedPos > 0
+                        property bool sel: focusRow === 1 && actionCol === 1
                         color: sel ? root.accentColor : root.surfaceColor
                         border.color: sel ? root.accentColor : root.tertiaryColor
-                        width: detailRoot.hasSiblings ? root.sw * 0.1 : root.sw * 0.1875
-                        height: parent.height
+                        width: root.sw * 0.0925
+                        height: root.sh * 0.05
                         border.width: root.sh * 0.003125 //2
 
                         MouseArea {
                             anchors.fill: parent
                             onClicked: {
-                                if (playButton.sel) inputManager.touchKey("select")
-                                else playCol = 1
+                                if (trackedBtn.sel) inputManager.touchKey("select")
+                                else { focusRow = 1; actionCol = 1 }
                             }
                         }
 
                         Text {
                             anchors.centerIn: parent
-                            text: detailRoot.savedPos > 0 ? "RSUM ►" : "PLAY ►"
-                            color: playButton.sel ? root.surfaceColor : root.primaryColor
+                            text: detailRoot.tracked ? "TRACKED" : "UNTRACKED"
+                            color: trackedBtn.sel ? root.surfaceColor : root.primaryColor
                             font.family: root.globalFont
-                            font.pixelSize: detailRoot.hasSiblings ? root.sh * 0.0375 : root.sh * 0.05
-                        }
-                    }
-
-                    Rectangle {
-                        id: nextButton
-                        visible: detailRoot.hasSiblings
-                        property bool sel: playCol === 2
-                        color: sel ? root.accentColor : root.surfaceColor
-                        border.color: sel ? root.accentColor : root.tertiaryColor
-                        width: root.sw * 0.0375 //24
-                        height: parent.height
-                        border.width: root.sh * 0.003125 //2
-
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-                                if (nextButton.sel) inputManager.touchKey("select")
-                                else playCol = 2
-                            }
-                        }
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "►"
-                            color: nextButton.sel ? root.surfaceColor : root.primaryColor
-                            font.family: root.globalFont
-                            font.pixelSize: root.sh * 0.0416667 //20
+                            font.pixelSize: root.sh * 0.025 //12
                         }
                     }
                 }
@@ -361,8 +461,8 @@ FocusScope {
 
     // Footer
     Text {
-        text: root.hints.back + ":BACK "
-              + (detailRoot.hasSiblings ? root.hints.change + ":PREV/NEXT " : "")
+        text: root.hints.back + ":BACK " + root.hints.navigate + ":NAVIGATE "
+              + (detailRoot.focusRow === 0 && detailRoot.hasSiblings ? root.hints.change + ":PREV/NEXT " : "")
               + root.hints.select + ":SELECT"
         color: root.tertiaryColor
         font.family: root.globalFont

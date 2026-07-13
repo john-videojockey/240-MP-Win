@@ -36,12 +36,42 @@ FocusScope {
     property bool infoBg: true
     property real infoBgOpacity: 0.3
 
-    // Column focus inside the button row (focusRow 0): 0=PREV, 1=PLAY, 2=NEXT.
-    // PREV/NEXT swap this screen to the sibling episode; they only exist for
-    // episodes, so non-episode items never leave column 1.
+    // Focus rows: 0 = play cluster, 1 = actions (WATCHED/TRACKED), 2 = audio,
+    // 3 = subtitles. Column focus inside the play row: 0=PREV, 1=PLAY, 2=NEXT
+    // (PREV/NEXT are episode-only). actionCol: 0=WATCHED, 1=TRACKED.
     property int  playCol: 1
+    property int  actionCol: 0
     property bool episodeItem: (detail && detail.type === "episode") || item.type === "episode"
     property bool adjacentPending: false
+
+    // Watched state (viewCount) and Continue Watching membership (viewOffset),
+    // kept locally so the button labels flip without reloading the item.
+    property bool watched: false
+    property bool tracked: false
+
+    function toggleWatched() {
+        if (!detail) return
+        watched = !watched
+        if (watched) {
+            plexBackend.mark_watched(detail.ratingKey)
+            tracked = false   // marking watched removes it from Continue Watching
+        } else {
+            plexBackend.mark_unwatched(detail.ratingKey)
+        }
+    }
+
+    function toggleTracked() {
+        if (!detail) return
+        tracked = !tracked
+        if (tracked) {
+            // Re-add to Continue Watching by sending a timeline update at the
+            // saved offset (Plex has no explicit add endpoint).
+            plexBackend.update_timeline(detail.ratingKey, detail.partKey, "paused",
+                                        detail.viewOffset || 0, detail.duration || 0)
+        } else {
+            plexBackend.remove_from_continue_watching(detail.ratingKey)
+        }
+    }
 
     function requestAdjacent(direction) {
         if (adjacentPending || !detail || !detail.ratingKey) return
@@ -53,6 +83,8 @@ FocusScope {
     // and re-derive the audio/subtitle selection indices from it.
     function applyDetail(d) {
         detail = d
+        watched = (d.viewCount || 0) > 0
+        tracked = (d.viewOffset || 0) > 0
         audioIdx = 0
         subtitleIdx = 0
         if (d.audioStreams) {
@@ -184,9 +216,10 @@ FocusScope {
     Keys.onDownPressed: {
         if (isLaunching) return
         if (detail) {
-            var maxRow = 0
-            if (detail.audioStreams && detail.audioStreams.length > 0) maxRow = 1
-            if (detail.subtitleStreams && detail.subtitleStreams.length > 1) maxRow = 2
+            // Rows: 0 play, 1 actions (always), 2 audio, 3 subtitles.
+            var maxRow = 1
+            if (detail.audioStreams && detail.audioStreams.length > 0) maxRow = 2
+            if (detail.subtitleStreams && detail.subtitleStreams.length > 1) maxRow = 3
             if (focusRow < maxRow) focusRow++
         }
     }
@@ -195,9 +228,11 @@ FocusScope {
         if (!detail) return
         if (focusRow === 0) {
             if (episodeItem && playCol > 0) playCol--
-        } else if (focusRow === 1 && detail.audioStreams && detail.audioStreams.length > 1)
+        } else if (focusRow === 1) {
+            if (actionCol > 0) actionCol--
+        } else if (focusRow === 2 && detail.audioStreams && detail.audioStreams.length > 1)
             audioIdx = (audioIdx - 1 + detail.audioStreams.length) % detail.audioStreams.length
-        else if (focusRow === 2 && detail.subtitleStreams && detail.subtitleStreams.length > 1)
+        else if (focusRow === 3 && detail.subtitleStreams && detail.subtitleStreams.length > 1)
             subtitleIdx = (subtitleIdx - 1 + detail.subtitleStreams.length) % detail.subtitleStreams.length
     }
     Keys.onRightPressed: {
@@ -205,13 +240,20 @@ FocusScope {
         if (!detail) return
         if (focusRow === 0) {
             if (episodeItem && playCol < 2) playCol++
-        } else if (focusRow === 1 && detail.audioStreams && detail.audioStreams.length > 1)
+        } else if (focusRow === 1) {
+            if (actionCol < 1) actionCol++
+        } else if (focusRow === 2 && detail.audioStreams && detail.audioStreams.length > 1)
             audioIdx = (audioIdx + 1) % detail.audioStreams.length
-        else if (focusRow === 2 && detail.subtitleStreams && detail.subtitleStreams.length > 1)
+        else if (focusRow === 3 && detail.subtitleStreams && detail.subtitleStreams.length > 1)
             subtitleIdx = (subtitleIdx + 1) % detail.subtitleStreams.length
     }
     Keys.onReturnPressed: {
         if (isLaunching) return
+        if (focusRow === 1) {
+            if (actionCol === 0) toggleWatched()
+            else toggleTracked()
+            return
+        }
         if (focusRow === 0 && detail && episodeItem && playCol !== 1) {
             // PREV/NEXT: swap this screen to the sibling episode in place.
             requestAdjacent(playCol === 0 ? -1 : 1)
@@ -316,9 +358,12 @@ FocusScope {
             height: root.sh * 0.35 //168
             spacing: root.sw * 0.0375 //24
 
-            // PREV / PLAY / NEXT cluster \u2014 same footprint as the old lone PLAY
-            // button. PREV/NEXT appear for episodes only and swap this screen
-            // to the sibling episode; PLAY behaves exactly as before.
+            // Play cluster (PREV/PLAY/NEXT) stacked over the WATCHED/TRACKED
+            // action buttons. PREV/NEXT appear for episodes only and swap this
+            // screen to the sibling episode; PLAY behaves exactly as before.
+            Column {
+                spacing: root.sh * 0.0125 //6
+
             Item {
                 id: playCluster
                 width: root.sw * 0.1875 //120
@@ -410,6 +455,66 @@ FocusScope {
                         }
                     }
                 }
+            }
+
+            // Actions: WATCHED / UNWATCHED and TRACKED / UNTRACKED.
+            Row {
+                spacing: root.sw * 0.0046875 //3
+
+                Rectangle {
+                    id: watchedBtn
+                    property bool sel: focusRow === 1 && actionCol === 0
+                    color: sel ? root.accentColor : root.surfaceColor
+                    border.color: sel ? root.accentColor : root.tertiaryColor
+                    width: root.sw * 0.0925
+                    height: root.sh * 0.05
+                    border.width: root.sh * 0.003125 //2
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            if (watchedBtn.sel) inputManager.touchKey("select")
+                            else { focusRow = 1; actionCol = 0 }
+                        }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: detailRoot.watched ? "WATCHED" : "UNWATCHED"
+                        color: watchedBtn.sel ? root.surfaceColor : root.primaryColor
+                        font.family: root.globalFont
+                        font.pixelSize: root.sh * 0.025 //12
+                    }
+                }
+
+                Rectangle {
+                    id: trackedBtn
+                    // "Remove from Continue Watching" only applies to in-progress items.
+                    visible: detail && detail.viewOffset > 0
+                    property bool sel: focusRow === 1 && actionCol === 1
+                    color: sel ? root.accentColor : root.surfaceColor
+                    border.color: sel ? root.accentColor : root.tertiaryColor
+                    width: root.sw * 0.0925
+                    height: root.sh * 0.05
+                    border.width: root.sh * 0.003125 //2
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            if (trackedBtn.sel) inputManager.touchKey("select")
+                            else { focusRow = 1; actionCol = 1 }
+                        }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: detailRoot.tracked ? "TRACKED" : "UNTRACKED"
+                        color: trackedBtn.sel ? root.surfaceColor : root.primaryColor
+                        font.family: root.globalFont
+                        font.pixelSize: root.sh * 0.025 //12
+                    }
+                }
+            }
             }
 
             Column {
@@ -549,91 +654,6 @@ FocusScope {
             MouseArea {
                 anchors.fill: parent
                 onClicked: {
-                    if (focusRow === 1) inputManager.touchKey("right")
-                    else focusRow = 1
-                }
-            }
-
-            Rectangle {
-                anchors.fill: parent
-                color: focusRow === 1 ? root.accentColor : "transparent"
-            }
-
-            Text {
-                text: "Audio"
-                color: focusRow === 1 ? root.surfaceColor : root.primaryColor
-                font.family: root.globalFont
-                font.capitalization: Font.AllUppercase
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.left: parent.left
-                anchors.leftMargin: root.sw * 0.009375 //6
-                font.pixelSize: root.sh * 0.0416667 //20
-            }
-
-            Row {
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.right: parent.right
-                anchors.rightMargin: root.sw * 0.009375 //6
-                spacing: root.sw * 0.00625 //4
-
-                Text {
-                    text: "\u25C4"
-                    color: focusRow === 1 ? root.surfaceColor : root.tertiaryColor
-                    font.family: root.globalFont
-                    anchors.verticalCenter: parent.verticalCenter
-                    font.pixelSize: root.sh * 0.0375 //18
-
-                    // Tap \u25C4 to cycle backward (row must be focused first; a
-                    // stray tap focuses it instead of changing it).
-                    MouseArea {
-                        anchors.fill: parent
-                        anchors.margins: -root.sh * 0.0125
-                        onClicked: {
-                            if (focusRow === 1) inputManager.touchKey("left")
-                            else focusRow = 1
-                        }
-                    }
-                }
-                Text {
-                    text: (detail && detail.audioStreams && detail.audioStreams[audioIdx])
-                          ? detail.audioStreams[audioIdx].displayTitle : ""
-                    color: focusRow === 1 ? root.surfaceColor : root.primaryColor
-                    font.family: root.globalFont
-                    font.capitalization: Font.AllUppercase
-                    anchors.verticalCenter: parent.verticalCenter
-                    font.pixelSize:root.sh * 0.0416667 //20
-                }
-                Text {
-                    text: "\u25BA"
-                    color: focusRow === 1 ? root.surfaceColor : root.tertiaryColor
-                    font.family: root.globalFont
-                    anchors.verticalCenter: parent.verticalCenter
-                    font.pixelSize: root.sh * 0.0375 //18
-
-                    MouseArea {
-                        anchors.fill: parent
-                        anchors.margins: -root.sh * 0.0125
-                        onClicked: {
-                            if (focusRow === 1) inputManager.touchKey("right")
-                            else focusRow = 1
-                        }
-                    }
-                }
-            }
-        }
-
-        // SUBTITLES row
-        Item {
-            id: subtitleRow
-            visible: detail && detail.subtitleStreams && detail.subtitleStreams.length > 1
-            anchors.top: audioRow.bottom
-            anchors.left: parent.left
-            anchors.right: parent.right
-            height: root.sh * 0.0583333 //28
-
-            MouseArea {
-                anchors.fill: parent
-                onClicked: {
                     if (focusRow === 2) inputManager.touchKey("right")
                     else focusRow = 2
                 }
@@ -645,12 +665,12 @@ FocusScope {
             }
 
             Text {
-                text: "Subtitles"
+                text: "Audio"
                 color: focusRow === 2 ? root.surfaceColor : root.primaryColor
                 font.family: root.globalFont
                 font.capitalization: Font.AllUppercase
-                anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left
                 anchors.leftMargin: root.sw * 0.009375 //6
                 font.pixelSize: root.sh * 0.0416667 //20
             }
@@ -668,6 +688,8 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     font.pixelSize: root.sh * 0.0375 //18
 
+                    // Tap \u25C4 to cycle backward (row must be focused first; a
+                    // stray tap focuses it instead of changing it).
                     MouseArea {
                         anchors.fill: parent
                         anchors.margins: -root.sh * 0.0125
@@ -678,8 +700,8 @@ FocusScope {
                     }
                 }
                 Text {
-                    text: (detail && detail.subtitleStreams && detail.subtitleStreams[subtitleIdx])
-                          ? detail.subtitleStreams[subtitleIdx].displayTitle : ""
+                    text: (detail && detail.audioStreams && detail.audioStreams[audioIdx])
+                          ? detail.audioStreams[audioIdx].displayTitle : ""
                     color: focusRow === 2 ? root.surfaceColor : root.primaryColor
                     font.family: root.globalFont
                     font.capitalization: Font.AllUppercase
@@ -699,6 +721,89 @@ FocusScope {
                         onClicked: {
                             if (focusRow === 2) inputManager.touchKey("right")
                             else focusRow = 2
+                        }
+                    }
+                }
+            }
+        }
+
+        // SUBTITLES row
+        Item {
+            id: subtitleRow
+            visible: detail && detail.subtitleStreams && detail.subtitleStreams.length > 1
+            anchors.top: audioRow.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: root.sh * 0.0583333 //28
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (focusRow === 3) inputManager.touchKey("right")
+                    else focusRow = 3
+                }
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                color: focusRow === 3 ? root.accentColor : "transparent"
+            }
+
+            Text {
+                text: "Subtitles"
+                color: focusRow === 3 ? root.surfaceColor : root.primaryColor
+                font.family: root.globalFont
+                font.capitalization: Font.AllUppercase
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: root.sw * 0.009375 //6
+                font.pixelSize: root.sh * 0.0416667 //20
+            }
+
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.right: parent.right
+                anchors.rightMargin: root.sw * 0.009375 //6
+                spacing: root.sw * 0.00625 //4
+
+                Text {
+                    text: "\u25C4"
+                    color: focusRow === 3 ? root.surfaceColor : root.tertiaryColor
+                    font.family: root.globalFont
+                    anchors.verticalCenter: parent.verticalCenter
+                    font.pixelSize: root.sh * 0.0375 //18
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 3) inputManager.touchKey("left")
+                            else focusRow = 3
+                        }
+                    }
+                }
+                Text {
+                    text: (detail && detail.subtitleStreams && detail.subtitleStreams[subtitleIdx])
+                          ? detail.subtitleStreams[subtitleIdx].displayTitle : ""
+                    color: focusRow === 3 ? root.surfaceColor : root.primaryColor
+                    font.family: root.globalFont
+                    font.capitalization: Font.AllUppercase
+                    anchors.verticalCenter: parent.verticalCenter
+                    font.pixelSize:root.sh * 0.0416667 //20
+                }
+                Text {
+                    text: "\u25BA"
+                    color: focusRow === 3 ? root.surfaceColor : root.tertiaryColor
+                    font.family: root.globalFont
+                    anchors.verticalCenter: parent.verticalCenter
+                    font.pixelSize: root.sh * 0.0375 //18
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 3) inputManager.touchKey("right")
+                            else focusRow = 3
                         }
                     }
                 }

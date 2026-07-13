@@ -29,6 +29,13 @@ public:
     Q_INVOKABLE void        savePosition(const QString &filePath, int positionMs,
                                          int playlistPos, int durationMs = -1);
     Q_INVOKABLE void        clearPosition(const QString &filePath);
+    // Detail-view Watched button: mark an item played (drops it from Continue
+    // Watching) or unplayed.
+    Q_INVOKABLE void        set_watched(const QString &filePath, bool watched);
+    Q_INVOKABLE bool        is_watched(const QString &filePath);
+    // Detail-view Tracked button: remove from / restore to Continue Watching
+    // without changing the resume position.
+    Q_INVOKABLE void        set_tracked(const QString &filePath, bool tracked);
     // In-progress items (partially watched, not near-complete), newest first,
     // enriched with artwork/nfo for the Continue Watching grid.
     Q_INVOKABLE QVariantList get_continue_watching();

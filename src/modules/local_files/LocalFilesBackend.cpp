@@ -70,6 +70,13 @@ QString LocalFilesBackend::historyFilePath() const {
     return m_dataRoot + "/local_files_history.json";
 }
 
+// Canonical history key: forward slashes (what Qt's absoluteFilePath produces,
+// and what mpv accepts on Windows) so a path never fails to match itself just
+// because of separator style.
+static QString normKey(const QString &path) {
+    return QDir::fromNativeSeparators(path);
+}
+
 QVariantMap LocalFilesBackend::loadHistory() const {
     QFile file(historyFilePath());
     if (!file.open(QIODevice::ReadOnly))
@@ -85,7 +92,7 @@ void LocalFilesBackend::saveHistory(const QVariantMap &history) {
 }
 
 QVariantMap LocalFilesBackend::getSavedPosition(const QString &filePath) {
-    const QVariant val = loadHistory().value(filePath);
+    const QVariant val = loadHistory().value(normKey(filePath));
     if (!val.isValid())
         return {};
     if (val.canConvert<QVariantMap>()) {
@@ -100,6 +107,7 @@ QVariantMap LocalFilesBackend::getSavedPosition(const QString &filePath) {
 void LocalFilesBackend::savePosition(const QString &filePath, int positionMs,
                                      int playlistPos, int durationMs) {
     QVariantMap history = loadHistory();
+    const QVariantMap prev = history.value(normKey(filePath)).toMap();
     QVariantMap entry;
     entry["pos"]   = positionMs;
     entry["plPos"] = playlistPos;
@@ -108,10 +116,47 @@ void LocalFilesBackend::savePosition(const QString &filePath, int positionMs,
     // call didn't supply one.
     if (durationMs > 0)
         entry["dur"] = durationMs;
-    else if (history.value(filePath).toMap().contains("dur"))
-        entry["dur"] = history.value(filePath).toMap().value("dur");
+    else if (prev.contains("dur"))
+        entry["dur"] = prev.value("dur");
     entry["ts"] = QDateTime::currentMSecsSinceEpoch();
-    history[filePath] = entry;
+    // Playing re-enters Continue Watching (tracked) and clears any watched mark.
+    entry["tracked"] = true;
+    history[normKey(filePath)] = entry;
+    saveHistory(history);
+}
+
+// Watched flag (from the detail view's Watched button). Marking watched drops
+// the resume position so the item leaves Continue Watching; unmarking just
+// clears the flag.
+void LocalFilesBackend::set_watched(const QString &filePath, bool watched) {
+    QVariantMap history = loadHistory();
+    QVariantMap entry = history.value(normKey(filePath)).toMap();
+    if (watched) {
+        entry.remove("pos");
+        entry.remove("plPos");
+        entry["watched"] = true;
+        entry["ts"] = QDateTime::currentMSecsSinceEpoch();
+    } else {
+        entry.remove("watched");
+        if (entry.value("pos").toInt() <= 0) { history.remove(normKey(filePath)); saveHistory(history); return; }
+    }
+    history[normKey(filePath)] = entry;
+    saveHistory(history);
+}
+
+bool LocalFilesBackend::is_watched(const QString &filePath) {
+    return loadHistory().value(normKey(filePath)).toMap().value("watched").toBool();
+}
+
+// Continue Watching membership (the detail view's Tracked button). Untracking
+// keeps the resume position but hides the item from the row; tracking restores
+// it. An item with no saved position simply can't be tracked.
+void LocalFilesBackend::set_tracked(const QString &filePath, bool tracked) {
+    QVariantMap history = loadHistory();
+    if (!history.contains(normKey(filePath))) return;
+    QVariantMap entry = history.value(normKey(filePath)).toMap();
+    entry["tracked"] = tracked;
+    history[normKey(filePath)] = entry;
     saveHistory(history);
 }
 
@@ -120,6 +165,7 @@ bool LocalFilesBackend::has_continue_watching() {
     for (auto it = history.constBegin(); it != history.constEnd(); ++it) {
         const QVariantMap e = it.value().toMap();
         if (e.value("pos").toInt() <= 0) continue;
+        if (e.contains("tracked") && !e.value("tracked").toBool()) continue;
         if (isImage(it.key()) || isPlaylist(it.key())) continue;
         if (QFileInfo::exists(it.key())) return true;
     }
@@ -137,6 +183,7 @@ QVariantList LocalFilesBackend::get_continue_watching() {
         const QVariantMap e = it.value().toMap();
         const int pos = e.value("pos").toInt();
         if (pos <= 0) continue;                       // nothing to resume
+        if (e.contains("tracked") && !e.value("tracked").toBool()) continue;  // removed from CW
         if (isImage(it.key()) || isPlaylist(it.key())) continue;
         if (!QFileInfo::exists(it.key())) continue;   // moved/deleted
         entries.append({ it.key(), e.value("ts").toLongLong(),
@@ -163,7 +210,7 @@ QVariantList LocalFilesBackend::get_continue_watching() {
 
 void LocalFilesBackend::clearPosition(const QString &filePath) {
     QVariantMap history = loadHistory();
-    history.remove(filePath);
+    history.remove(normKey(filePath));
     saveHistory(history);
 }
 

@@ -1667,6 +1667,7 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
         {"year",             meta["year"].toVariant()},
         {"duration",         duration},
         {"viewOffset",       meta["viewOffset"].toInt()},
+        {"viewCount",        meta["viewCount"].toInt()},
         {"summary",          meta["summary"].toString()},
         {"partKey",          part["key"].toString()},
         {"partId",           QString::number(part["id"].toInt())},
@@ -2019,6 +2020,44 @@ void PlexBackend::update_timeline(const QString &ratingKey, const QString &partK
     url.setQuery(q);
     // Fire-and-forget
     auto *reply = plexGet(url, token);
+    connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
+}
+
+// Mark an item played (scrobble) or unplayed (unscrobble). Fire-and-forget;
+// the detail view updates its own state optimistically and re-emits so the
+// button label flips without a round-trip.
+void PlexBackend::mark_watched(const QString &ratingKey) {
+    QString uri = serverUrl(), token = serverToken();
+    QUrl url(uri + "/:/scrobble");
+    QUrlQuery q;
+    q.addQueryItem("key", ratingKey);
+    q.addQueryItem("identifier", "com.plexapp.plugins.library");
+    url.setQuery(q);
+    auto *reply = plexGet(url, token);
+    connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
+}
+
+void PlexBackend::mark_unwatched(const QString &ratingKey) {
+    QString uri = serverUrl(), token = serverToken();
+    QUrl url(uri + "/:/unscrobble");
+    QUrlQuery q;
+    q.addQueryItem("key", ratingKey);
+    q.addQueryItem("identifier", "com.plexapp.plugins.library");
+    url.setQuery(q);
+    auto *reply = plexGet(url, token);
+    connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
+}
+
+// Hide an in-progress item from the Continue Watching hub without marking it
+// watched (Plex keeps the resume offset). Re-adding is done by sending a
+// timeline update with the offset (update_timeline), so no separate call.
+void PlexBackend::remove_from_continue_watching(const QString &ratingKey) {
+    QString uri = serverUrl(), token = serverToken();
+    QUrl url(uri + "/actions/removeFromContinueWatching");
+    QUrlQuery q;
+    q.addQueryItem("ratingKey", ratingKey);
+    url.setQuery(q);
+    auto *reply = plexPut(url, token);
     connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
 }
 
