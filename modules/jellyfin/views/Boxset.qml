@@ -162,6 +162,11 @@ FocusScope {
         Keys.onUpPressed: if (currentIndex > 0) currentIndex--
         Keys.onDownPressed: if (currentIndex < count - 1) currentIndex++
         Keys.onReturnPressed: boxsetRoot.selectCategory()
+        Keys.onPressed: function(event) {
+            // PgUp/PgDown page the list a screenful at a time, cursor kept in place.
+            if (event.key === Qt.Key_PageDown) { NavUtil.page(categoryList, 1); event.accepted = true; return }
+            if (event.key === Qt.Key_PageUp) { NavUtil.page(categoryList, -1); event.accepted = true; return }
+        }
 
         delegate: Item {
             width: categoryList.width

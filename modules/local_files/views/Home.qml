@@ -68,6 +68,9 @@ FocusScope {
         Keys.onDownPressed: if (currentIndex < count - 1) currentIndex++
         Keys.onReturnPressed: homeRoot.selectRow()
         Keys.onPressed: function(event) {
+            // PgUp/PgDown page by one screenful, keeping the cursor in place.
+            if (event.key === Qt.Key_PageDown) { NavUtil.page(menuList, 1); event.accepted = true; return }
+            if (event.key === Qt.Key_PageUp) { NavUtil.page(menuList, -1); event.accepted = true; return }
             if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
                 homeRoot.goBack()
                 event.accepted = true

@@ -135,6 +135,10 @@ FocusScope {
         }
     }
     Keys.onPressed: function(event) {
+        // PgUp/PgDown page the season list a screenful at a time (only while it
+        // holds the highlight), cursor kept in place.
+        if (focusRow === 1 && event.key === Qt.Key_PageDown) { NavUtil.page(seasonList, 1); event.accepted = true; return }
+        if (focusRow === 1 && event.key === Qt.Key_PageUp) { NavUtil.page(seasonList, -1); event.accepted = true; return }
         if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
             goBack()
             event.accepted = true

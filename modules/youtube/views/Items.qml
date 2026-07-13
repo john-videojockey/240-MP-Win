@@ -154,6 +154,11 @@ FocusScope {
             else if (selected === "History")
                 navigateTo("Subscriptions.qml", { mode: "history" }, state)
         }
+        Keys.onPressed: function(event) {
+            // PgUp/PgDown page the list a screenful at a time, cursor kept in place.
+            if (event.key === Qt.Key_PageDown) { NavUtil.page(itemList, 1); event.accepted = true; return }
+            if (event.key === Qt.Key_PageUp) { NavUtil.page(itemList, -1); event.accepted = true; return }
+        }
     }
 
     // Footer

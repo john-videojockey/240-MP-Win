@@ -227,6 +227,9 @@ FocusScope {
         Keys.onDownPressed: if (currentIndex < count - 1) currentIndex++
         Keys.onReturnPressed: itemListRoot.selectItem()
         Keys.onPressed: function(event) {
+            // PgUp/PgDown page the list a screenful at a time, cursor kept in place.
+            if (event.key === Qt.Key_PageDown) { NavUtil.page(itemList, 1); event.accepted = true; return }
+            if (event.key === Qt.Key_PageUp) { NavUtil.page(itemList, -1); event.accepted = true; return }
             // Right hands focus to the letter panel, synced to the current letter.
             if (event.key === Qt.Key_Right && showLetterNav && letterIndex.length > 0) {
                 var curLetter = sortKey((items[itemList.currentIndex] && items[itemList.currentIndex].title) || "")

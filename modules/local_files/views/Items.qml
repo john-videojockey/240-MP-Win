@@ -276,11 +276,18 @@ FocusScope {
         anchors.leftMargin: root.sw * 0.115625 //74
         width: root.sw * 0.76875 //492
         height: root.sh * 0.525 //252
-        keyNavigationEnabled: true
         clip: true
         focus: !coverMode
 
+        // Explicit single-step nav (snappier than ListView's built-in
+        // keyNavigation) plus PgUp/PgDown paging that keeps the cursor put.
+        Keys.onUpPressed: if (currentIndex > 0) currentIndex--
+        Keys.onDownPressed: if (currentIndex < count - 1) currentIndex++
         Keys.onReturnPressed: itemsRoot.selectCurrent()
+        Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_PageDown) { NavUtil.page(fileList, 1); event.accepted = true }
+            else if (event.key === Qt.Key_PageUp) { NavUtil.page(fileList, -1); event.accepted = true }
+        }
 
         delegate: Item {
             width: fileList.width

@@ -289,6 +289,22 @@ FocusScope {
         }
 
         Keys.onPressed: function(event) {
+            // PgUp/PgDown page by one screenful; if paging lands on a
+            // non-selectable section header, nudge to the nearest real row.
+            if (event.key === Qt.Key_PageDown) {
+                NavUtil.page(settingsList, 1)
+                if (settingsItems[currentIndex] && settingsItems[currentIndex].type === "section")
+                    currentIndex = settingsRoot.firstSelectableAfter(currentIndex)
+                event.accepted = true
+                return
+            }
+            if (event.key === Qt.Key_PageUp) {
+                NavUtil.page(settingsList, -1)
+                if (settingsItems[currentIndex] && settingsItems[currentIndex].type === "section")
+                    currentIndex = settingsRoot.firstSelectableBefore(currentIndex)
+                event.accepted = true
+                return
+            }
             if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
                 settingsRoot.goBack()
                 event.accepted = true

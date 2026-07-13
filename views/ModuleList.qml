@@ -158,6 +158,9 @@ FocusScope {
         }
 
         Keys.onPressed: function(event) {
+            // PgUp/PgDown page by one screenful, keeping the cursor in place.
+            if (event.key === Qt.Key_PageDown) { NavUtil.page(menuList, 1); event.accepted = true; return }
+            if (event.key === Qt.Key_PageUp) { NavUtil.page(menuList, -1); event.accepted = true; return }
             if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
                 appRoot.navigateTo("views/Settings.qml", {}, { currentIndex: menuList.currentIndex })
                 event.accepted = true

@@ -19,9 +19,10 @@ constexpr quint32 kSyntheticScanCode = 0x240F00D;
 constexpr Sint16 kAxisEngage  = 16384;
 constexpr Sint16 kAxisRelease = 12000;
 
-// Held-direction auto-repeat, tuned to feel like keyboard repeat in lists.
-constexpr int kRepeatDelayMs    = 400;
-constexpr int kRepeatIntervalMs = 100;
+// Held-direction auto-repeat. A short delay before repeat starts, then a brisk
+// interval so holding a direction scrolls long lists quickly (was 400/100).
+constexpr int kRepeatDelayMs    = 300;
+constexpr int kRepeatIntervalMs = 45;
 
 // Qt reports both shift keys as Qt::Key_Shift; telling them apart takes the
 // platform code. Windows delivers PC scan code set 1, where Right Shift is

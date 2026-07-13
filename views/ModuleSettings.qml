@@ -232,6 +232,11 @@ FocusScope {
         }
 
         Keys.onPressed: function(event) {
+            // PgUp/PgDown page by one screenful, keeping the cursor in place.
+            // TODO: schemaItems has no section header rows or skip helper today;
+            // if sections are ever added, skip them here like Settings.qml does.
+            if (event.key === Qt.Key_PageDown) { NavUtil.page(settingsList, 1); event.accepted = true; return }
+            if (event.key === Qt.Key_PageUp) { NavUtil.page(settingsList, -1); event.accepted = true; return }
             if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
                 moduleSettingsRoot.goBack()
                 event.accepted = true

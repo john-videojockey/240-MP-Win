@@ -97,6 +97,9 @@ FocusScope {
             else if (entry.entryType === "dir") browserRoot.navigateInto(entry.path)
         }
         Keys.onPressed: function(event) {
+            // PgUp/PgDown page by one screenful, keeping the cursor in place.
+            if (event.key === Qt.Key_PageDown) { NavUtil.page(dirList, 1); event.accepted = true; return }
+            if (event.key === Qt.Key_PageUp) { NavUtil.page(dirList, -1); event.accepted = true; return }
             if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
                 browserRoot.goBack()
                 event.accepted = true

@@ -115,6 +115,9 @@ FocusScope {
         }
 
         Keys.onPressed: function(event) {
+            // PgUp/PgDown page the list a screenful at a time, cursor kept in place.
+            if (event.key === Qt.Key_PageDown) { NavUtil.page(libraryList, 1); event.accepted = true; return }
+            if (event.key === Qt.Key_PageUp) { NavUtil.page(libraryList, -1); event.accepted = true; return }
             if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
                 browseRoot.goBack()
                 event.accepted = true
