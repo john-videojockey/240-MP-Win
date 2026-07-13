@@ -6,6 +6,7 @@
 #include <QStandardPaths>
 #include <QCursor>
 #include <QDebug>
+#include <QIcon>
 #include <QQuickWindow>
 #include <locale.h>
 
@@ -66,6 +67,11 @@ int main(int argc, char *argv[]) {
 
     const QString appRoot  = resolveAppRoot();
     const QString dataRoot = resolveDataRoot();
+
+    // Runtime window/taskbar icon. The .exe already embeds the same artwork via
+    // assets/240mp.rc (Explorer/Start Menu), but the borderless window's taskbar
+    // button uses the window icon set here — PNG so it needs no image plugin.
+    app.setWindowIcon(QIcon(appRoot + "/assets/images/240-mp-win.png"));
 
     installWindowsLogging(dataRoot);   // before the first qDebug so nothing is lost
     keepDisplayAwake();
