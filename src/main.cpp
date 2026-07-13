@@ -133,7 +133,11 @@ int main(int argc, char *argv[]) {
 
     // Gamepad key events are posted straight to the root window so they reach
     // the QML focus item even when another window (mpv) holds OS focus.
-    inputManager.setTargetWindow(qobject_cast<QQuickWindow *>(engine.rootObjects().first()));
+    auto *rootWindow = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+    inputManager.setTargetWindow(rootWindow);
+    // Owner window for the mpv "window marriage" (single taskbar button, joint
+    // minimize/restore) — see MpvController::tryAdoptMpvWindow.
+    mpvController.setMainWindow(rootWindow);
 
     return app.exec();
 }

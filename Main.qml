@@ -171,18 +171,55 @@ Window {
     // Block the screen saver while mpv is playing so it never flashes during or
     // immediately after playback. The core guard is in IdleTracker (mpvActive
     // property), which also resets the idle timer on transitions.
+    //
+    // Window marriage: mpv plays in its own fullscreen window, married to this
+    // one at the Win32 level (MpvController/win_utils) so they share one taskbar
+    // button and this window OWNS mpv's — which means this window must stay in a
+    // normal (non-minimized) state behind mpv during playback; minimizing it here
+    // would hide the owned player too. When a "minimize" is sent to mpv (it holds
+    // OS focus) it reports window-minimized, and MpvController relays it as
+    // onPlayerMinimizeRequested so we minimize the pair together via the owner.
     Connections {
         target: mpvController
+        // idleTracker guards: these fire on mpv teardown too (e.g. Alt+F4 during
+        // playback), when the context property is already null — id-resolved
+        // root.* stays valid, but idleTracker.* would throw. Short-circuit on it.
         function onPositionChanged(ms) {
-            if (ms > 0 && !idleTracker.mpvActive) {
+            if (ms > 0 && idleTracker && !idleTracker.mpvActive) {
                 idleTracker.mpvActive = true
                 idleTracker.resetActivity()
             }
         }
         function onPlaybackEnded(finalPositionMs, finalDurationMs, reason) {
-            idleTracker.mpvActive = false
-            idleTracker.resetActivity()
+            if (idleTracker) {
+                idleTracker.mpvActive = false
+                idleTracker.resetActivity()
+            }
+            // If the pair was left minimized when playback ended, restore the
+            // menu and re-take OS focus so input routes back to QML.
+            if (root.visibility === Window.Minimized)
+                root.showNormal()
+            root.raise()
+            root.requestActivate()
         }
+        // mpv was minimized (global minimize hotkey, etc.) — minimize the owner
+        // so the whole composed window drops as one; the single taskbar button
+        // restores both (onVisibilityChanged below brings the video back on top).
+        function onPlayerMinimizeRequested() {
+            if (idleTracker && idleTracker.mpvActive)
+                root.showMinimized()
+        }
+    }
+
+    // Restoring the single taskbar button un-minimizes this owner window; while a
+    // video is playing, bring mpv's window back on top with focus so the video
+    // returns rather than the menu sitting in front of it. root.visibility is
+    // checked first (id-resolved, teardown-safe); the context props are guarded
+    // because this also fires as the window hides during app shutdown.
+    onVisibilityChanged: {
+        if (root.visibility === Window.Windowed && idleTracker && mpvController
+                && idleTracker.mpvActive)
+            mpvController.raisePlayer()
     }
 
     // --- MODULE LOADER ---

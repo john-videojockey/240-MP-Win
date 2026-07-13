@@ -46,6 +46,8 @@ target_link_libraries(240mp PRIVATE
     Qt6::Concurrent
     OpenSSL::Crypto
     SDL2::SDL2
+    ole32       # CoCreateInstance for ITaskbarList (win_utils window marriage)
+    user32      # EnumWindows / SetWindowLongPtr / SetForegroundWindow
 )
 
 target_include_directories(240mp PRIVATE

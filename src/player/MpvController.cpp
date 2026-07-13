@@ -9,6 +9,7 @@
 #include <QStandardPaths>
 #include <QDateTime>
 #include <QRegularExpression>
+#include <QQuickWindow>
 #include <QDebug>
 
 MpvController::MpvController(const QString &appRoot, AppCore *appCore, QObject *parent)
@@ -45,6 +46,9 @@ MpvController::MpvController(const QString &appRoot, AppCore *appCore, QObject *
         sendCommand({"observe_property", 2, "duration"});
         sendCommand({"observe_property", 3, "playlist-pos"});
         sendCommand({"observe_property", 4, "pause"});
+        // window-minimized lets us catch a "minimize" sent to mpv (it holds OS
+        // focus during playback) and mirror it onto the married owner window.
+        sendCommand({"observe_property", 5, "window-minimized"});
     });
     connect(m_ipc, &QLocalSocket::readyRead, this, &MpvController::onIpcReadyRead);
 
@@ -68,6 +72,12 @@ MpvController::MpvController(const QString &appRoot, AppCore *appCore, QObject *
                      silenceMs / 1000);
         }
     });
+
+    // mpv's window appears a beat after the process starts, so poll briefly for
+    // it and marry it to the main window once it exists (see tryAdoptMpvWindow).
+    m_adoptTimer = new QTimer(this);
+    m_adoptTimer->setInterval(120);
+    connect(m_adoptTimer, &QTimer::timeout, this, &MpvController::tryAdoptMpvWindow);
 }
 
 MpvController::~MpvController() {
@@ -113,6 +123,8 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
         m_process = nullptr;
     }
     m_watchdogTimer->stop();
+    m_adoptTimer->stop();
+    m_mpvHwnd     = 0;   // previous player's window (if any) is being torn down
     m_ipc->abort();
     m_position    = 0;
     m_duration    = 0;
@@ -334,6 +346,37 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     qDebug("[MpvController] launch: mpv %s", qPrintable(safeCmd));
     m_process->start(bin, args);
     m_connectTimer->start();
+    // Begin looking for mpv's window so we can marry it to the menu window.
+    if (m_mainWindow) {
+        m_adoptTries = 0;
+        m_adoptTimer->start();
+    }
+}
+
+// Polls (every ~120 ms) for mpv's fullscreen window after launch and marries it
+// to the main window once it appears: single taskbar button, player above the
+// menu, minimize/restore as one. Gives up after a few seconds so a headless or
+// window-less mpv (e.g. a failed launch) doesn't poll forever.
+void MpvController::tryAdoptMpvWindow() {
+    if (!m_mainWindow || !m_process || m_process->state() != QProcess::Running) {
+        m_adoptTimer->stop();
+        return;
+    }
+    if (++m_adoptTries > 40) {   // ~5 s
+        m_adoptTimer->stop();
+        return;
+    }
+    const quintptr hwnd = adoptMpvWindow(m_mainWindow->winId(), m_process->processId());
+    if (hwnd) {
+        m_mpvHwnd = hwnd;
+        m_adoptTimer->stop();
+        qInfo("[MpvController] married mpv window to the app window");
+    }
+}
+
+void MpvController::raisePlayer() {
+    if (m_mpvHwnd)
+        raiseMpvWindow(m_mpvHwnd);
 }
 
 void MpvController::stop() {
@@ -404,6 +447,14 @@ void MpvController::onIpcReadyRead() {
             m_paused = data.toBool();
             continue;
         }
+        if (name == "window-minimized") {
+            // mpv was minimized while it held focus (e.g. a global minimize
+            // hotkey). Mirror it onto the married owner window so both drop as
+            // one; QML restores both when the single taskbar button is clicked.
+            if (data.toBool())
+                emit playerMinimizeRequested();
+            continue;
+        }
         const double val = data.toDouble();
         if (name == "time-pos") {
             m_position = int(val * 1000.0);
@@ -429,6 +480,8 @@ void MpvController::onProcessFinished() {
         qWarning("[MpvController] mpv exited with code %d", exitCode);
     m_connectTimer->stop();
     m_watchdogTimer->stop();
+    m_adoptTimer->stop();
+    m_mpvHwnd = 0;   // player window is gone
     // Drain any buffered-but-unread IPC data before tearing the socket down.
     // readyRead and QProcess::finished are independent event-loop signals with
     // no ordering guarantee, so mpv's final "end-file" event may still be sitting

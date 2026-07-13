@@ -7,6 +7,7 @@
 #include <QStringList>
 
 class AppCore;
+class QQuickWindow;
 
 class MpvController : public QObject {
     Q_OBJECT
@@ -45,6 +46,15 @@ public:
     Q_INVOKABLE void showOsdSkipPrompt();
     Q_INVOKABLE void clearOsdPrompt();
 
+    // The app's main (menu) window. Used to marry mpv's fullscreen window to it
+    // so the two behave as a single window (see win_utils adoptMpvWindow).
+    void setMainWindow(QQuickWindow *w) { m_mainWindow = w; }
+
+    // Restore the player's window on top with focus — called from QML when the
+    // owner (menu) window is un-minimized, so the video returns rather than the
+    // menu sitting in front of it.
+    Q_INVOKABLE void raisePlayer();
+
     // Kept for the shared Settings view: the smoothness-vs-crop trade-off only
     // exists on the Raspberry Pi 3 decode path upstream. On Windows the D3D11
     // scaler path always supports crop, so the toggle is never shown.
@@ -71,10 +81,18 @@ signals:
     // what "next"/"prev" means (e.g. Plex plays the next episode in the season).
     void episodeNavRequested(const QString &direction);
 
+    // mpv's window was minimized (e.g. by a global "minimize" hotkey while it
+    // held focus). QML responds by minimizing the owner window too, so the
+    // married pair drops as one. Restore happens via raisePlayer().
+    void playerMinimizeRequested();
+
 private slots:
     void onProcessFinished();
     void tryConnectIpc();
     void onIpcReadyRead();
+    // Polls for mpv's window after launch (it appears asynchronously) and, once
+    // found, marries it to the main window. Self-stops on success or timeout.
+    void tryAdoptMpvWindow();
 
 private:
     void sendCommand(const QJsonArray &args);
@@ -90,6 +108,10 @@ private:
     QLocalSocket *m_ipc            = nullptr;
     QTimer       *m_connectTimer   = nullptr;
     QTimer       *m_watchdogTimer  = nullptr;
+    QTimer       *m_adoptTimer     = nullptr;   // polls for mpv's window to marry it
+    QQuickWindow *m_mainWindow     = nullptr;   // owner window for the marriage
+    quintptr      m_mpvHwnd        = 0;         // adopted mpv window (HWND), 0 if none
+    int           m_adoptTries     = 0;
     qint64        m_lastIpcEventMs = 0;
     bool          m_paused         = false;  // mirrors mpv's pause property (watchdog exemption)
     QString       m_appRoot;

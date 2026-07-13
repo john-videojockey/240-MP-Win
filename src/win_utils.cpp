@@ -12,6 +12,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <shobjidl.h>   // ITaskbarList (drop mpv's separate taskbar button)
 #include <cstdio>
 
 // Laptop hybrid-GPU hint: ask the NVIDIA/AMD driver for the discrete GPU so
@@ -104,6 +105,82 @@ QString findMpvExecutable() {
             return exe;
     }
     return bin;
+}
+
+namespace {
+
+// EnumWindows callback state: find the visible top-level window owned by mpv's
+// process. mpv's video-output window uses the "mpv" window class, which we
+// prefer; any other visible, un-owned top-level window of the same process is a
+// fallback (covers window-class changes across mpv builds).
+struct MpvWindowSearch {
+    DWORD pid;
+    HWND  best;
+};
+
+BOOL CALLBACK findMpvWindowProc(HWND hwnd, LPARAM lparam) {
+    auto *s = reinterpret_cast<MpvWindowSearch *>(lparam);
+    DWORD wpid = 0;
+    GetWindowThreadProcessId(hwnd, &wpid);
+    if (wpid != s->pid)              return TRUE;   // different process
+    if (!IsWindowVisible(hwnd))      return TRUE;   // hidden helper/message window
+    if (GetWindow(hwnd, GW_OWNER))   return TRUE;   // already owned → not the VO window
+
+    wchar_t cls[64] = {0};
+    GetClassNameW(hwnd, cls, 63);
+    if (wcscmp(cls, L"mpv") == 0) {
+        s->best = hwnd;
+        return FALSE;               // exact match — stop enumerating
+    }
+    if (!s->best)
+        s->best = hwnd;             // remember first candidate, keep looking for "mpv"
+    return TRUE;
+}
+
+} // namespace
+
+quintptr adoptMpvWindow(quintptr ownerHwnd, qint64 mpvPid) {
+    if (!ownerHwnd || mpvPid <= 0)
+        return 0;
+
+    MpvWindowSearch search{ DWORD(mpvPid), nullptr };
+    EnumWindows(findMpvWindowProc, reinterpret_cast<LPARAM>(&search));
+    if (!search.best)
+        return 0;   // mpv's window isn't up yet — caller retries
+
+    HWND mpv   = search.best;
+    HWND owner = reinterpret_cast<HWND>(ownerHwnd);
+
+    // Own the player with the menu window. For a non-child top-level window,
+    // GWLP_HWNDPARENT sets the OWNER (not a parent): mpv stays a normal focusable
+    // top-level (its OSC and OS-focus-based input hand-off keep working) but now
+    // sits above the menu in Z-order and is hidden whenever the menu minimizes.
+    SetWindowLongPtrW(mpv, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(owner));
+
+    // Remove mpv's own taskbar button so the pair shows a single button (the
+    // menu window's). DeleteTab does this without a hide/show cycle, so there's
+    // no flicker of the fullscreen video. Uses __uuidof so no CLSID_/IID_ import
+    // lib is needed; COM is already initialised on Qt's GUI thread.
+    ITaskbarList *taskbar = nullptr;
+    if (SUCCEEDED(CoCreateInstance(__uuidof(TaskbarList), nullptr, CLSCTX_INPROC_SERVER,
+                                   __uuidof(ITaskbarList),
+                                   reinterpret_cast<void **>(&taskbar))) && taskbar) {
+        if (SUCCEEDED(taskbar->HrInit()))
+            taskbar->DeleteTab(mpv);
+        taskbar->Release();
+    }
+
+    return reinterpret_cast<quintptr>(mpv);
+}
+
+void raiseMpvWindow(quintptr mpvHwnd) {
+    HWND h = reinterpret_cast<HWND>(mpvHwnd);
+    if (!h || !IsWindow(h))
+        return;
+    if (IsIconic(h))
+        ShowWindow(h, SW_RESTORE);
+    SetWindowPos(h, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    SetForegroundWindow(h);
 }
 
 void prependToolDirsToPath(const QString &appRoot) {

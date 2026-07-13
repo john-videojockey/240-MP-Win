@@ -1,5 +1,6 @@
 #pragma once
 #include <QString>
+#include <QtGlobal>
 
 // Windows platform glue for 240-MP. Each function is a no-op-safe, call-once
 // setup step invoked from main() before the QML engine loads.
@@ -34,3 +35,23 @@ void prependToolDirsToPath(const QString &appRoot);
 // only the wrapper and leave the video playing (the next-episode swap used to
 // leak an orphaned fullscreen mpv exactly this way). Empty string if no mpv.
 QString findMpvExecutable();
+
+// ── Window marriage ────────────────────────────────────────────────────────────
+// mpv plays in its own top-level fullscreen window (a separate process), so by
+// default it and the app's menu window are two independent windows: two taskbar
+// buttons, and a "minimize" sent to one leaves the other on screen. These helpers
+// make them behave as a single composed window without embedding mpv (which would
+// break the input hand-off that relies on mpv owning OS focus).
+
+// Finds mpv's top-level window by process id and marries it to the app's main
+// window: makes it an *owned* window of ownerHwnd (so the player stays above the
+// menu and is hidden when the menu is minimized) and removes its separate taskbar
+// button. mpv's window appears asynchronously after launch, so this returns 0
+// until it exists — the caller polls and retries. On success returns mpv's window
+// handle (opaque), which is passed back to raiseMpvWindow().
+quintptr adoptMpvWindow(quintptr ownerHwnd, qint64 mpvPid);
+
+// Un-minimizes the mpv window (if needed) and brings it back to the front with
+// focus. Called when the app's owner window is restored so the video returns on
+// top of the menu. No-op if mpvHwnd is 0 or no longer a valid window.
+void raiseMpvWindow(quintptr mpvHwnd);
