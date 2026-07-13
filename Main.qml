@@ -211,12 +211,51 @@ Window {
         }
     }
 
-    // Restoring the single taskbar button un-minimizes this owner window; while a
-    // video is playing, bring mpv's window back on top with focus so the video
-    // returns rather than the menu sitting in front of it. root.visibility is
-    // checked first (id-resolved, teardown-safe); the context props are guarded
-    // because this also fires as the window hides during app shutdown.
+    // ---- Fullscreen geometry self-heal ----
+    // The window's size/position are bound to Screen.* (top of file), but a
+    // window-system resize — a display-mode change (a fullscreen game, monitor
+    // sleep/wake, resolution switch) or an unusual minimize/restore — can break
+    // those QML bindings and strand the window at 0x0: still "visible" and
+    // pumping messages, but with nothing to render, which looks exactly like a
+    // freeze/hang (and, mid-playback, leaves the owned mpv window unhidden — the
+    // "split" symptom). These re-apply the fullscreen geometry imperatively so
+    // the window can always recover; the guard keeps it from fighting a
+    // deliberate minimize (a non-zero size in the Minimized visibility state).
+    function _ensureFullscreen() {
+        if (root.visibility === Window.Minimized || root.visibility === Window.Hidden)
+            return
+        if (root.x      !== Screen.virtualX) root.x = Screen.virtualX
+        if (root.y      !== Screen.virtualY) root.y = Screen.virtualY
+        if (root.width  !== Screen.width)    root.width = Screen.width
+        if (root.height !== Screen.height)   root.height = Screen.height
+    }
+
+    // A display-mode change moves the Screen dimensions; re-apply so the window
+    // tracks them even after its original Screen.* bindings have been broken.
+    Screen.onWidthChanged:  root._ensureFullscreen()
+    Screen.onHeightChanged: root._ensureFullscreen()
+
+    // Last-resort watchdog for a total (0x0) collapse that no event caught. Acts
+    // only on a zero-size *shown* window, so it can never disturb a legitimate
+    // minimize (which is a non-zero size in the Minimized visibility state).
+    Timer {
+        interval: 2000; repeat: true; running: true
+        onTriggered: {
+            if (root.visibility === Window.Windowed
+                    && (root.width <= 0 || root.height <= 0))
+                root._ensureFullscreen()
+        }
+    }
+
+    // Restoring the single taskbar button un-minimizes this owner window; heal the
+    // geometry (in case the restore came back collapsed) and, while a video is
+    // playing, bring mpv's window back on top with focus so the video returns
+    // rather than the menu sitting in front of it. root.visibility is checked
+    // first (id-resolved, teardown-safe); the context props are guarded because
+    // this also fires as the window hides during app shutdown.
     onVisibilityChanged: {
+        if (root.visibility === Window.Windowed)
+            root._ensureFullscreen()
         if (root.visibility === Window.Windowed && idleTracker && mpvController
                 && idleTracker.mpvActive)
             mpvController.raisePlayer()
