@@ -633,6 +633,12 @@ QVariantMap PlexBackend::formatItem(const QJsonObject &m) const {
         {"ratingKey",              m["ratingKey"].toString()},
         {"thumb",                  thumb},
         {"art",                    art},
+        // Poster/cover, never the episode still: the show's poster for an
+        // episode (grandparent), the season's for a season, else the item's
+        // own. Continue Watching shows this instead of the screenshot thumb.
+        {"poster",                 !m["grandparentThumb"].toString().isEmpty() ? m["grandparentThumb"].toString()
+                                 : !m["parentThumb"].toString().isEmpty()      ? m["parentThumb"].toString()
+                                                                               : m["thumb"].toString()},
         {"title",                  m["title"].toString().toUpper()},
         {"editionTitle",           m["editionTitle"].toString()},
         {"year",                   m["year"].toVariant()},

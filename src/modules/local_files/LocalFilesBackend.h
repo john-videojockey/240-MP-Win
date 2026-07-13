@@ -26,8 +26,15 @@ public:
     Q_INVOKABLE void         setMediaRoot(const QString &path);
 
     Q_INVOKABLE QVariantMap getSavedPosition(const QString &filePath);
-    Q_INVOKABLE void        savePosition(const QString &filePath, int positionMs, int playlistPos);
+    Q_INVOKABLE void        savePosition(const QString &filePath, int positionMs,
+                                         int playlistPos, int durationMs = -1);
     Q_INVOKABLE void        clearPosition(const QString &filePath);
+    // In-progress items (partially watched, not near-complete), newest first,
+    // enriched with artwork/nfo for the Continue Watching grid.
+    Q_INVOKABLE QVariantList get_continue_watching();
+    // Cheap boolean (no artwork enrichment) for deciding whether to show the
+    // Continue Watching row / landing — safe to call on the UI thread.
+    Q_INVOKABLE bool         has_continue_watching();
     Q_INVOKABLE void        get_resume_playback_options();
     Q_INVOKABLE void        get_auto_subtitles_options();
     Q_INVOKABLE void        get_subtitle_languages();
@@ -55,6 +62,14 @@ private:
     static QVariantMap parseNfo(const QString &nfoPath);
     void enrichFolderItem(QVariantMap &item, const QString &folderPath) const;
     void enrichVideoItem(QVariantMap &item, const QString &filePath) const;
+
+    // Smart show/movie folder handling: a "media folder" (one carrying .nfo or
+    // scraper artwork) shows only its videos, flattened across subfolders,
+    // unless Season/Series/S## subfolders are present — then those are listed
+    // as seasons. collectVideos gathers a folder's videos recursively.
+    static bool isSeasonFolder(const QString &name);
+    static bool folderHasNfoOrArtwork(const QDir &dir);
+    void collectVideos(const QString &path, QVariantList &out, int depth) const;
 
     // Listing cache. m_cache mirrors the on-disk file; updateCache persists.
     QString cacheFilePath() const;

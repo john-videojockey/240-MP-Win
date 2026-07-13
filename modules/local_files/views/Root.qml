@@ -64,6 +64,11 @@ FocusScope {
     }
 
     Component.onCompleted: {
-        navigateTo("Items.qml", {})
+        // Open onto the Continue Watching + Browse landing when there is
+        // something to resume; otherwise go straight to the folder browser.
+        if (localFilesBackend.has_continue_watching())
+            navigateTo("Home.qml", {})
+        else
+            navigateTo("Items.qml", {})
     }
 }

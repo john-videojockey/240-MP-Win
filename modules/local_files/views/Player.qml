@@ -115,7 +115,7 @@ FocusScope {
         if (dur > 0 && pos >= dur * 0.95)
             localFilesBackend.clearPosition(filePath)
         else if (pos > 5000)
-            localFilesBackend.savePosition(filePath, pos, -1)
+            localFilesBackend.savePosition(filePath, pos, -1, dur)
     }
 
     Connections {
@@ -174,14 +174,14 @@ FocusScope {
             if (isPlaylist(filePath)) {
                 // Always save playlist state — skip completion detection
                 if (pos > 0 || plPos >= 0)
-                    localFilesBackend.savePosition(filePath, pos, plPos)
+                    localFilesBackend.savePosition(filePath, pos, plPos, dur)
             } else if (!isImage(filePath)) {
                 // Single file: clear if near completion, save otherwise.
                 // Images carry no resume position, so they never write history.
                 if (dur > 0 && pos >= dur * 0.95)
                     localFilesBackend.clearPosition(filePath)
                 else if (pos > 5000)
-                    localFilesBackend.savePosition(filePath, pos, -1)
+                    localFilesBackend.savePosition(filePath, pos, -1, dur)
             }
             goBack()
         }

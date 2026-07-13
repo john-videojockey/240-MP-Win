@@ -7,6 +7,8 @@
 #include <QJsonObject>
 #include <QUrl>
 #include <QXmlStreamReader>
+#include <QRegularExpression>
+#include <QDateTime>
 #include <QtConcurrent/QtConcurrentRun>
 
 // supported image types
@@ -95,13 +97,68 @@ QVariantMap LocalFilesBackend::getSavedPosition(const QString &filePath) {
     return {{"pos", val.toInt()}, {"plPos", -1}};
 }
 
-void LocalFilesBackend::savePosition(const QString &filePath, int positionMs, int playlistPos) {
+void LocalFilesBackend::savePosition(const QString &filePath, int positionMs,
+                                     int playlistPos, int durationMs) {
     QVariantMap history = loadHistory();
     QVariantMap entry;
     entry["pos"]   = positionMs;
     entry["plPos"] = playlistPos;
+    // Duration and a last-played timestamp drive the Continue Watching row
+    // (progress bar + newest-first ordering). Keep any prior duration if this
+    // call didn't supply one.
+    if (durationMs > 0)
+        entry["dur"] = durationMs;
+    else if (history.value(filePath).toMap().contains("dur"))
+        entry["dur"] = history.value(filePath).toMap().value("dur");
+    entry["ts"] = QDateTime::currentMSecsSinceEpoch();
     history[filePath] = entry;
     saveHistory(history);
+}
+
+bool LocalFilesBackend::has_continue_watching() {
+    const QVariantMap history = loadHistory();
+    for (auto it = history.constBegin(); it != history.constEnd(); ++it) {
+        const QVariantMap e = it.value().toMap();
+        if (e.value("pos").toInt() <= 0) continue;
+        if (isImage(it.key()) || isPlaylist(it.key())) continue;
+        if (QFileInfo::exists(it.key())) return true;
+    }
+    return false;
+}
+
+// In-progress single videos (partially watched, still on disk), newest first,
+// enriched with artwork/nfo so the Continue Watching grid can show a poster.
+QVariantList LocalFilesBackend::get_continue_watching() {
+    const QVariantMap history = loadHistory();
+
+    struct Entry { QString path; qint64 ts; int pos; int dur; };
+    QList<Entry> entries;
+    for (auto it = history.constBegin(); it != history.constEnd(); ++it) {
+        const QVariantMap e = it.value().toMap();
+        const int pos = e.value("pos").toInt();
+        if (pos <= 0) continue;                       // nothing to resume
+        if (isImage(it.key()) || isPlaylist(it.key())) continue;
+        if (!QFileInfo::exists(it.key())) continue;   // moved/deleted
+        entries.append({ it.key(), e.value("ts").toLongLong(),
+                         pos, e.value("dur").toInt() });
+    }
+    std::sort(entries.begin(), entries.end(),
+              [](const Entry &a, const Entry &b) { return a.ts > b.ts; });
+
+    QVariantList result;
+    const int kMax = 30;
+    for (const Entry &e : entries) {
+        if (result.size() >= kMax) break;
+        QVariantMap item;
+        item["name"]       = QFileInfo(e.path).fileName();
+        item["path"]       = e.path;
+        item["isFolder"]   = false;
+        item["viewOffset"] = e.pos;
+        item["duration"]   = e.dur;
+        enrichVideoItem(item, e.path);
+        result.append(item);
+    }
+    return result;
 }
 
 void LocalFilesBackend::clearPosition(const QString &filePath) {
@@ -269,7 +326,7 @@ void LocalFilesBackend::enrichFolderItem(QVariantMap &item, const QString &folde
     const QDir d(folderPath);
     const QString thumb = findArtFile(d, {"poster", "folder", "cover"});
     const QString art   = findArtFile(d, {"fanart", "backdrop", "background"});
-    if (!thumb.isEmpty()) item["thumb"] = thumb;
+    if (!thumb.isEmpty()) { item["thumb"] = thumb; item["poster"] = thumb; }
     if (!art.isEmpty())   item["art"]   = art;
 
     for (const QString &nfoName : {QStringLiteral("tvshow.nfo"), QStringLiteral("movie.nfo")}) {
@@ -295,22 +352,81 @@ void LocalFilesBackend::enrichVideoItem(QVariantMap &item, const QString &filePa
     if (thumb.isEmpty()) thumb = findArtFile(d, {"poster", "folder", "cover"});
     QString art = findArtFile(d, {base + "-fanart", base + "-backdrop"});
     if (art.isEmpty()) art = findArtFile(d, {"fanart", "backdrop", "background"});
-    if (art.isEmpty()) {
+    // The show/season poster (never the episode still) — used by the Continue
+    // Watching grid, which prefers a poster over a screenshot.
+    QString poster = findArtFile(d, {base + "-poster", "poster", "folder", "cover"});
+    QDir parent = d;
+    const bool haveParent = parent.cdUp();
+    if (art.isEmpty() && haveParent) {
         // Episodes inside "Show/Season N/" — scrapers keep fanart at the show
         // level, so look one folder up before giving up.
-        QDir parent = d;
-        if (parent.cdUp())
-            art = findArtFile(parent, {"fanart", "backdrop", "background"});
+        art = findArtFile(parent, {"fanart", "backdrop", "background"});
     }
-    if (!thumb.isEmpty()) item["thumb"] = thumb;
-    if (!art.isEmpty())   item["art"]   = art;
+    if (poster.isEmpty() && haveParent)
+        poster = findArtFile(parent, {"poster", "folder", "cover"});
+    if (!thumb.isEmpty())  item["thumb"]  = thumb;
+    if (!art.isEmpty())    item["art"]    = art;
+    if (!poster.isEmpty()) item["poster"] = poster;
 
-    const QString nfoPath = d.filePath(base + ".nfo");
+    // Per-file nfo ("<name>.nfo") is authoritative. Failing that, a folder-level
+    // movie.nfo applies — a movie folder holds one video, so its metadata is the
+    // video's. tvshow.nfo is deliberately NOT used here: it's the show title, and
+    // applying it to every episode would mislabel them all.
+    QString nfoPath = d.filePath(base + ".nfo");
+    if (!QFileInfo::exists(nfoPath) && QFileInfo::exists(d.filePath("movie.nfo")))
+        nfoPath = d.filePath("movie.nfo");
     if (QFileInfo::exists(nfoPath)) {
         const QVariantMap meta = parseNfo(nfoPath);
         for (auto it = meta.constBegin(); it != meta.constEnd(); ++it)
             item[it.key()] = it.value();
     }
+}
+
+// Season/series folder name: "Season 1", "Series 03", "S1", "S 01", or
+// "Specials". Used to decide whether a show folder shows seasons or flattens.
+bool LocalFilesBackend::isSeasonFolder(const QString &name) {
+    static const QRegularExpression re(
+        QStringLiteral("^(season|series|s)\\s*\\d{1,3}$|^specials$"),
+        QRegularExpression::CaseInsensitiveOption);
+    return re.match(name.trimmed()).hasMatch();
+}
+
+// A "media folder" carries scraper output: a .nfo file or an artwork image.
+// That marks it as a show/movie folder (vs. a plain browse directory) so its
+// contents get flattened / seasoned rather than shown file-by-file.
+bool LocalFilesBackend::folderHasNfoOrArtwork(const QDir &dir) {
+    const QStringList files = dir.entryList(QDir::Files);
+    for (const QString &f : files) {
+        const QFileInfo fi(f);
+        const QString suffix = fi.suffix().toLower();
+        if (suffix == QLatin1String("nfo")) return true;
+        if (kImageExts.contains(suffix) && isArtworkImage(fi.completeBaseName()))
+            return true;
+    }
+    return false;
+}
+
+// Gather a media folder's videos across its subfolders into one flat, enriched
+// list (used when a show/movie folder has no season subfolders). Depth-capped
+// so a stray deep tree can't stall the scan; artwork/nfo files are skipped.
+void LocalFilesBackend::collectVideos(const QString &path, QVariantList &out, int depth) const {
+    if (depth > 4) return;
+    QDir dir(path);
+    for (const QString &name : dir.entryList(QDir::Files, QDir::Name)) {
+        const QString suffix = QFileInfo(name).suffix().toLower();
+        // Videos only here — a movie/show folder's images are artwork, not content.
+        if (!kMediaExts.contains(suffix) || kImageExts.contains(suffix)
+            || kPlaylistExts.contains(suffix))
+            continue;
+        QVariantMap item;
+        item["name"]     = name;
+        item["path"]     = dir.absoluteFilePath(name);
+        item["isFolder"] = false;
+        enrichVideoItem(item, item["path"].toString());
+        out.append(item);
+    }
+    for (const QString &sub : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name))
+        collectVideos(dir.absoluteFilePath(sub), out, depth + 1);
 }
 
 // Synchronous scan (runs on a worker thread via loadItems): mediaRoot is
@@ -337,7 +453,51 @@ QVariantList LocalFilesBackend::scanItems(const QString &path, const QString &me
         return result;
     }
 
-    for (const QString &name : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
+    const QStringList subdirs = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    const bool isMediaRoot = (clean.compare(root, Qt::CaseInsensitive) == 0);
+
+    // Smart show/movie folders: a scraped folder (has .nfo/artwork) below the
+    // media root presents as content, not a raw directory listing. The media
+    // root itself always browses normally.
+    if (!isMediaRoot && folderHasNfoOrArtwork(dir)) {
+        QStringList seasonDirs;
+        for (const QString &sub : subdirs)
+            if (isSeasonFolder(sub)) seasonDirs.append(sub);
+
+        if (!seasonDirs.isEmpty()) {
+            // Show folder with seasons: list the season subfolders (entering one
+            // flattens to its episodes), plus any loose videos at the root.
+            for (const QString &sub : seasonDirs) {
+                QVariantMap item;
+                item["name"]     = sub;
+                item["path"]     = dir.absoluteFilePath(sub);
+                item["isFolder"] = true;
+                item["isSeason"] = true;
+                enrichFolderItem(item, item["path"].toString());
+                result.append(item);
+            }
+            for (const QString &name : dir.entryList(QDir::Files, QDir::Name)) {
+                const QString suffix = QFileInfo(name).suffix().toLower();
+                if (!kMediaExts.contains(suffix) || kImageExts.contains(suffix)
+                    || kPlaylistExts.contains(suffix))
+                    continue;
+                QVariantMap item;
+                item["name"]     = name;
+                item["path"]     = dir.absoluteFilePath(name);
+                item["isFolder"] = false;
+                enrichVideoItem(item, item["path"].toString());
+                result.append(item);
+            }
+            return result;
+        }
+
+        // Movie or flat show folder: flatten to just the videos.
+        collectVideos(clean, result, 0);
+        return result;
+    }
+
+    // Plain browse directory: folders + files as-is.
+    for (const QString &name : subdirs) {
         if (isPlaylist(name)) {
             QString innerPath = dir.absoluteFilePath(name) + "/" + name;
             if (QFileInfo::exists(innerPath)) {

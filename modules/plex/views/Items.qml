@@ -35,7 +35,9 @@ FocusScope {
     // (hubs, categories, playlists-of-lists, …) keep the title list.
     property string browseView: (appCore.get_setting(moduleRoot.moduleId, "browse_view") || "Title")
     property bool coverMode: browseView === "Cover" && items.length > 0 && itemsAreCovers(items)
-    property bool gridLandscape: coverMode && anyEpisodes(items)
+    // Continue Watching always uses portrait posters (show/season cover, not
+    // the episode screenshot); other episode-bearing lists use landscape cards.
+    property bool gridLandscape: coverMode && anyEpisodes(items) && listType !== "continue_watching"
 
     // Fanart hover background (shared module settings with the info screen)
     property bool infoBg: true
@@ -447,11 +449,13 @@ FocusScope {
                 // Landscape cards: an episode's still IS 16:9; movies/shows in
                 // the same list use their (16:9) fanart. Portrait cells always
                 // use the poster.
+                // Portrait cells prefer the poster (show/season cover) so
+                // Continue Watching episodes show a cover, not a screenshot.
                 property string artPath: itemListRoot.gridLandscape
                         ? (modelData.type === "episode"
                            ? (modelData.thumb || modelData.art || "")
                            : (modelData.art || modelData.thumb || ""))
-                        : (modelData.thumb || "")
+                        : (modelData.poster || modelData.thumb || "")
 
                 Image {
                     id: posterImage
