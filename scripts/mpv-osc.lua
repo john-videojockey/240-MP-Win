@@ -161,7 +161,9 @@ local function build_left_btns(has_sub, bar_w)
     btns[#btns + 1] = {label="AUDIO", width=math.floor(bar_w * 0.095),
                        action=function() mp.command("no-osd cycle audio") end}
     if has_sub then
-        btns[#btns + 1] = {label="SUBTITLE", width=math.floor(bar_w * 0.13),
+        -- sub=true marks it for the long-press handlers: a held ENTER or a long
+        -- touch turns subtitles off outright instead of cycling to the next track.
+        btns[#btns + 1] = {label="SUBTITLE", width=math.floor(bar_w * 0.13), sub=true,
                            action=function() mp.command("no-osd cycle sub") end}
     end
     btns[#btns + 1] = {label="CROP", width=math.floor(bar_w * 0.08),
@@ -306,7 +308,6 @@ local function hide_menu()
     mp.remove_key_binding("menu-down")
     mp.remove_key_binding("menu-left")
     mp.remove_key_binding("menu-right")
-    mp.remove_key_binding("menu-enter")
     mp.remove_key_binding("menu-esc")
     mp.remove_key_binding("menu-bs")
 end
@@ -372,17 +373,40 @@ local function show_menu(timeout)
     update_timer = mp.add_periodic_timer(0.5, draw_menu)
     reset_idle_timer(timeout)
 
+    -- ENTER is handled by the always-present complex "osc-enter" binding
+    -- below (tap activates, hold-on-subtitle disables subs). Binding it here
+    -- as well would shadow that one and break its down/up event delivery.
     mp.add_forced_key_binding("UP",    "menu-up",    function() update_nav("up")    end)
     mp.add_forced_key_binding("DOWN",  "menu-down",  function() update_nav("down")  end)
     mp.add_forced_key_binding("LEFT",  "menu-left",  function() update_nav("left")  end)
     mp.add_forced_key_binding("RIGHT", "menu-right", function() update_nav("right") end)
-    mp.add_forced_key_binding("ENTER", "menu-enter", function() update_nav("enter") end)
     mp.add_forced_key_binding("ESC",   "menu-esc",   hide_menu)
     mp.add_forced_key_binding("BS",    "menu-bs",    hide_menu)
 end
 
 local function toggle_menu()
     if menu_visible then hide_menu() else show_menu(MENU_TIMEOUT) end
+end
+
+-- Long-press support for the SUBTITLE button: a held ENTER / long touch turns
+-- subtitles off (sid=no) rather than cycling. LONG_PRESS_SEC is the threshold.
+local LONG_PRESS_SEC = 0.6
+local enter_hold_timer = nil     -- keyboard ENTER hold
+local enter_consumed = false
+local sub_touch_timer = nil      -- touch hold on the subtitle button
+local sub_touch_pending = false
+local sub_touch_consumed = false
+
+local function set_sub_none()
+    mp.command("no-osd set sid no")
+end
+
+local function focused_btn_is_sub()
+    if focus_row ~= 1 then return false end
+    local g = layout()
+    if not g then return false end
+    local b = g.btns[focus_btn]
+    return b ~= nil and b.sub == true
 end
 
 -- ── Mouse support ─────────────────────────────────────────────────────────────
@@ -402,11 +426,28 @@ local function hit(r, mx, my)
     return r and mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h
 end
 
-mp.add_forced_key_binding("MBTN_LEFT", "osc-click", function()
+-- Complex so a long touch can be timed: most controls act on the initial
+-- down, but the SUBTITLE button defers to the release so a hold can turn subs
+-- off (sid=no) instead of cycling.
+mp.add_forced_key_binding("MBTN_LEFT", "osc-click", function(t)
+    if t.event == "up" then
+        -- Resolve a deferred subtitle tap: hold fired → already off; short tap
+        -- → cycle to the next track.
+        if sub_touch_pending then
+            if sub_touch_timer then sub_touch_timer:kill(); sub_touch_timer = nil end
+            if not sub_touch_consumed then
+                mp.command("no-osd cycle sub")
+                reset_idle_timer(MOUSE_TIMEOUT)
+                draw_menu()
+            end
+            sub_touch_pending = false
+        end
+        return
+    end
+    if t.event ~= "down" then return end
+
     local mpos = mp.get_property_native("mouse-pos") or {}
     local mx, my = mpos.x or -1, mpos.y or -1
-    mp.msg.verbose(string.format("click at %d,%d visible=%s dt=%.2f",
-        mx, my, tostring(menu_visible), mp.get_time() - menu_shown_at))
 
     if not menu_visible then
         show_menu(MOUSE_TIMEOUT)
@@ -449,7 +490,20 @@ mp.add_forced_key_binding("MBTN_LEFT", "osc-click", function()
             -- Sync the keyboard focus to the clicked button so the highlight
             -- lands where the user is interacting.
             focus_row, focus_btn = 1, i
-            btn.action()
+            if btn.sub then
+                -- Defer: a hold turns subs off, a short tap cycles (on release).
+                sub_touch_pending  = true
+                sub_touch_consumed = false
+                if sub_touch_timer then sub_touch_timer:kill() end
+                sub_touch_timer = mp.add_timeout(LONG_PRESS_SEC, function()
+                    set_sub_none()
+                    sub_touch_consumed = true
+                    reset_idle_timer(MOUSE_TIMEOUT)
+                    draw_menu()
+                end)
+            else
+                btn.action()
+            end
             reset_idle_timer(MOUSE_TIMEOUT)
             draw_menu()
             return
@@ -463,7 +517,7 @@ mp.add_forced_key_binding("MBTN_LEFT", "osc-click", function()
 
     -- Click outside every control: dismiss.
     hide_menu()
-end)
+end, {complex = true})
 
 -- The volume bar (media-keys.lua) broadcasts this when it appears; close the
 -- menu so the two OSDs never overlap.
@@ -481,10 +535,52 @@ mp.register_script_message("240mp-osd-menu-show", function()
     end
 end)
 
--- Forced bindings so UP/DOWN take priority over mpv's default seek bindings
--- when native keyboard input reaches mpv directly.
-mp.add_forced_key_binding("UP",   "open_menu_up",   toggle_menu)
-mp.add_forced_key_binding("DOWN", "open_menu_down", toggle_menu)
+-- Forced bindings so UP/DOWN/ENTER take priority over mpv's default key
+-- handling when native keyboard input reaches mpv directly. ENTER shows the
+-- playback controls (rather than toggling pause); once the menu is open, the
+-- forced "menu-enter" binding added in show_menu overrides this to activate
+-- the focused button, and is removed again on hide.
+mp.add_forced_key_binding("UP",    "open_menu_up",    toggle_menu)
+mp.add_forced_key_binding("DOWN",  "open_menu_down",  toggle_menu)
+
+-- ENTER: a single always-present complex binding (down/up) so a hold can be
+-- timed. When the menu is hidden it opens it; when shown, a tap activates the
+-- focused button and a hold on the SUBTITLE button turns subtitles off. Being
+-- the only ENTER binding is what keeps its down/up events flowing (a second
+-- forced ENTER binding would shadow it and collapse it back to simple calls).
+mp.add_forced_key_binding("ENTER", "osc-enter", function(t)
+    local ev = t.event
+    if not menu_visible then
+        -- Physical keys/touch send "down"; the keypress IPC command sends an
+        -- atomic "press". Either opens the controls.
+        if ev == "down" or ev == "press" then show_menu(MENU_TIMEOUT) end
+        return
+    end
+    if ev == "down" then
+        -- Physical press: start the hold timer. A held ENTER on the SUBTITLE
+        -- button turns subs off; a quick release activates on "up" below.
+        enter_consumed = false
+        if enter_hold_timer then enter_hold_timer:kill() end
+        enter_hold_timer = mp.add_timeout(LONG_PRESS_SEC, function()
+            if focused_btn_is_sub() then
+                set_sub_none()
+                enter_consumed = true
+                reset_idle_timer(MENU_TIMEOUT)
+                draw_menu()
+            end
+        end)
+    elseif ev == "up" then
+        if enter_hold_timer then enter_hold_timer:kill(); enter_hold_timer = nil end
+        -- Ignore the release of the very press that opened the menu.
+        if mp.get_time() - menu_shown_at < 0.4 then return end
+        if not enter_consumed then update_nav("enter") end
+    elseif ev == "press" then
+        -- Atomic tap (keypress IPC command, incl. gamepad/QML sendKey): no hold
+        -- is possible, so just activate the focused button.
+        if mp.get_time() - menu_shown_at < 0.4 then return end
+        update_nav("enter")
+    end
+end, {complex = true})
 
 -- ESC / BS quit when the menu is not visible. When the menu opens it adds
 -- forced bindings for these keys that take priority automatically; when it

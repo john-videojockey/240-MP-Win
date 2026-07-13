@@ -27,7 +27,8 @@ MpvController::MpvController(const QString &appRoot, AppCore *appCore, QObject *
     if (f.open(QFile::WriteOnly | QFile::Text)) {
         f.write("ESC quit\n");
         f.write("BS quit\n");
-        f.write("ENTER cycle pause\n");
+        // ENTER opens the OSC (bound in mpv-osc.lua); SPACE remains the quick
+        // pause toggle, so ENTER is deliberately NOT mapped to pause here.
         f.close();
     }
 
