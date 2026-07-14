@@ -82,6 +82,13 @@
       "options_slot": "get_image_duration_options",
       "default": "5",
       "description": "How long an image is shown before advancing.\nApplies to images in folders and playlists."
+    },
+    {
+      "key": "clear_cache",
+      "label": "Clear Cache",
+      "type": "action",
+      "action_slot": "clear_cache",
+      "description": "Forget saved folder listings and rescan from disk on next browse.\nUse after changing your library layout."
     }
   ]
 }

@@ -24,6 +24,9 @@ public:
     Q_INVOKABLE bool         playlistContainsImages(const QString &path) const;
     Q_INVOKABLE QString      mediaRoot() const;
     Q_INVOKABLE void         setMediaRoot(const QString &path);
+    // Settings "Clear Cache" action: drop the listing cache (memory + disk) so
+    // the next browse rescans from disk. Invoked by name via invoke_module_action.
+    Q_INVOKABLE void         clear_cache();
 
     Q_INVOKABLE QVariantMap getSavedPosition(const QString &filePath);
     Q_INVOKABLE void        savePosition(const QString &filePath, int positionMs,
@@ -71,11 +74,13 @@ private:
     void enrichVideoItem(QVariantMap &item, const QString &filePath) const;
 
     // Smart show/movie folder handling: a "media folder" (one carrying .nfo or
-    // scraper artwork) shows only its videos, flattened across subfolders,
-    // unless Season/Series/S## subfolders are present — then those are listed
-    // as seasons. collectVideos gathers a folder's videos recursively.
+    // scraper artwork) presents as content. Any subfolder that looks like a season
+    // OR actually holds video (see folderContainsVideo) is shown as a navigable
+    // folder, alongside loose videos at the root; only a folder whose videos are
+    // all at its root is flattened. collectVideos gathers videos recursively.
     static bool isSeasonFolder(const QString &name);
     static bool folderHasNfoOrArtwork(const QDir &dir);
+    bool folderContainsVideo(const QString &path, int depth) const;
     void collectVideos(const QString &path, QVariantList &out, int depth) const;
 
     // Listing cache. m_cache mirrors the on-disk file; updateCache persists.

@@ -453,9 +453,28 @@ bool LocalFilesBackend::folderHasNfoOrArtwork(const QDir &dir) {
     return false;
 }
 
+// True if the folder — or any descendant, up to the same depth collectVideos
+// reaches — holds a video file. Early-exits on the first hit. Used to decide
+// whether a subfolder has content worth keeping as its own navigable folder
+// (a season or nested group) instead of flattening it into the parent.
+bool LocalFilesBackend::folderContainsVideo(const QString &path, int depth) const {
+    if (depth > 4) return false;
+    QDir dir(path);
+    for (const QString &name : dir.entryList(QDir::Files)) {
+        const QString suffix = QFileInfo(name).suffix().toLower();
+        if (kMediaExts.contains(suffix) && !kImageExts.contains(suffix)
+            && !kPlaylistExts.contains(suffix))
+            return true;
+    }
+    for (const QString &sub : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot))
+        if (folderContainsVideo(dir.absoluteFilePath(sub), depth + 1))
+            return true;
+    return false;
+}
+
 // Gather a media folder's videos across its subfolders into one flat, enriched
-// list (used when a show/movie folder has no season subfolders). Depth-capped
-// so a stray deep tree can't stall the scan; artwork/nfo files are skipped.
+// list (used when a show/movie folder has all its videos at the root). Depth-
+// capped so a stray deep tree can't stall the scan; artwork/nfo files skipped.
 void LocalFilesBackend::collectVideos(const QString &path, QVariantList &out, int depth) const {
     if (depth > 4) return;
     QDir dir(path);
@@ -507,19 +526,25 @@ QVariantList LocalFilesBackend::scanItems(const QString &path, const QString &me
     // media root presents as content, not a raw directory listing. The media
     // root itself always browses normally.
     if (!isMediaRoot && folderHasNfoOrArtwork(dir)) {
-        QStringList seasonDirs;
+        // A subfolder stays a navigable folder when it looks like a season OR it
+        // actually holds video anywhere below it — so a real CONTENT > SEASON >
+        // FILE (or deeper) tree is preserved and browsed one level at a time,
+        // never collapsed. Flattening is reserved for the true movie / flat-show
+        // case where every video sits at the folder's own root.
+        QStringList contentDirs;
         for (const QString &sub : subdirs)
-            if (isSeasonFolder(sub)) seasonDirs.append(sub);
+            if (isSeasonFolder(sub) || folderContainsVideo(dir.absoluteFilePath(sub), 0))
+                contentDirs.append(sub);
 
-        if (!seasonDirs.isEmpty()) {
-            // Show folder with seasons: list the season subfolders (entering one
-            // flattens to its episodes), plus any loose videos at the root.
-            for (const QString &sub : seasonDirs) {
+        if (!contentDirs.isEmpty()) {
+            // Show these subfolders (seasons / nested groups), plus any loose
+            // videos at the root — mixed layouts keep both.
+            for (const QString &sub : contentDirs) {
                 QVariantMap item;
                 item["name"]     = sub;
                 item["path"]     = dir.absoluteFilePath(sub);
                 item["isFolder"] = true;
-                item["isSeason"] = true;
+                item["isSeason"] = isSeasonFolder(sub);
                 enrichFolderItem(item, item["path"].toString());
                 result.append(item);
             }
@@ -538,7 +563,7 @@ QVariantList LocalFilesBackend::scanItems(const QString &path, const QString &me
             return result;
         }
 
-        // Movie or flat show folder: flatten to just the videos.
+        // Movie or flat show folder (all videos at the root): flatten to videos.
         collectVideos(clean, result, 0);
         return result;
     }
@@ -613,6 +638,15 @@ void LocalFilesBackend::updateCache(const QString &path, const QVariantList &ite
 QVariantList LocalFilesBackend::cachedItems(const QString &path) {
     ensureCacheLoaded();
     return m_cache.value(QDir(path).absolutePath()).toList();
+}
+
+void LocalFilesBackend::clear_cache() {
+    // Drop both the in-memory and on-disk listing caches; the next browse of any
+    // folder falls through to a fresh scanItems (and repopulates the cache).
+    m_cacheLoaded = true;   // treat as loaded-but-empty so we don't re-read the file
+    m_cache.clear();
+    QFile::remove(cacheFilePath());
+    qInfo("[LocalFiles] listing cache cleared");
 }
 
 void LocalFilesBackend::loadItems(const QString &path) {
