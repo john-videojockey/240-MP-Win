@@ -9,6 +9,8 @@
 #include <QXmlStreamReader>
 #include <QRegularExpression>
 #include <QDateTime>
+#include <QFileSystemWatcher>
+#include <QTimer>
 #include <QtConcurrent/QtConcurrentRun>
 
 // supported image types
@@ -37,6 +39,27 @@ LocalFilesBackend::LocalFilesBackend(const QString &appRoot, const QString &data
         if (!dir.isEmpty())
             setMediaRoot(dir);
     }
+
+    // Live folder watch. directoryChanged fires on any add/remove/rename in the
+    // watched folder; coalesce a burst (e.g. copying several files) through a
+    // short debounce before rescanning the current folder.
+    m_watcher = new QFileSystemWatcher(this);
+    m_rescanDebounce = new QTimer(this);
+    m_rescanDebounce->setSingleShot(true);
+    m_rescanDebounce->setInterval(500);
+    connect(m_watcher, &QFileSystemWatcher::directoryChanged, this,
+            [this](const QString &changed) {
+        // Some tools replace a directory entry on change, which drops it from the
+        // watch list — re-add it if it still exists.
+        if (QDir(changed).exists() && !m_watcher->directories().contains(changed))
+            m_watcher->addPath(changed);
+        if (changed == m_watchedFolder)
+            m_rescanDebounce->start();
+    });
+    connect(m_rescanDebounce, &QTimer::timeout, this, [this]() {
+        if (!m_watchedFolder.isEmpty())
+            rescanAsync(m_watchedFolder);
+    });
 }
 
 bool LocalFilesBackend::isImage(const QString &path) const {
@@ -651,6 +674,21 @@ void LocalFilesBackend::clear_cache() {
 
 void LocalFilesBackend::loadItems(const QString &path) {
     const QString clean = QDir(path).absolutePath();
+
+    // Watch the folder now being browsed (a single active watch that follows
+    // navigation), so content added while it's open refreshes it live.
+    if (m_watcher) {
+        if (!m_watchedFolder.isEmpty() && m_watchedFolder != clean)
+            m_watcher->removePath(m_watchedFolder);
+        m_watchedFolder = clean;
+        if (QDir(clean).exists() && !m_watcher->directories().contains(clean))
+            m_watcher->addPath(clean);
+    }
+
+    rescanAsync(clean);
+}
+
+void LocalFilesBackend::rescanAsync(const QString &clean) {
     const QString mediaRoot = m_mediaRoot;
     // Scan on a worker thread — network shares and spun-down disks can stall
     // for seconds, and the UI shows the LOADING splash (or the cached listing)

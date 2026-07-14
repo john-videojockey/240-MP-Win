@@ -5,6 +5,8 @@
 #include <QVariantMap>
 
 class QDir;
+class QFileSystemWatcher;
+class QTimer;
 
 class LocalFilesBackend : public QObject {
     Q_OBJECT
@@ -88,7 +90,18 @@ private:
     void ensureCacheLoaded();
     void updateCache(const QString &path, const QVariantList &items);
     QVariantList scanItems(const QString &path, const QString &mediaRoot) const;
+    // Scan `path` on a worker thread, then update the cache and emit itemsLoaded
+    // on the main thread. Shared by loadItems and the folder watcher.
+    void rescanAsync(const QString &path);
 
     QVariantMap m_cache;         // canonical path -> items (QVariantList)
     bool m_cacheLoaded = false;
+
+    // Live folder watch: while the browse view shows a folder, that folder is
+    // watched so a video/subfolder added (or removed) in it refreshes the listing
+    // without leaving and re-entering. Only the current folder is watched, and
+    // rapid bursts (a multi-file copy) are coalesced by a short debounce.
+    QFileSystemWatcher *m_watcher        = nullptr;
+    QTimer             *m_rescanDebounce = nullptr;
+    QString             m_watchedFolder;
 };
