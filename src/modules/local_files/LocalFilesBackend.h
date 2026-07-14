@@ -72,6 +72,10 @@ private:
     // getItems entries so the views can render posters, fanart, and titles.
     static QString findArtFile(const QDir &dir, const QStringList &baseNames);
     static QVariantMap parseNfo(const QString &nfoPath);
+    // Walk up from a video's folder (to the media root) for the closest show/
+    // season .nfo, so an episode with no metadata of its own can still inherit
+    // show-level plot/year/title as a fallback.
+    QVariantMap parentNfoMeta(const QDir &startDir) const;
     void enrichFolderItem(QVariantMap &item, const QString &folderPath) const;
     void enrichVideoItem(QVariantMap &item, const QString &filePath) const;
 

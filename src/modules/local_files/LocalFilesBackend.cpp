@@ -440,8 +440,7 @@ void LocalFilesBackend::enrichVideoItem(QVariantMap &item, const QString &filePa
 
     // Per-file nfo ("<name>.nfo") is authoritative. Failing that, a folder-level
     // movie.nfo applies — a movie folder holds one video, so its metadata is the
-    // video's. tvshow.nfo is deliberately NOT used here: it's the show title, and
-    // applying it to every episode would mislabel them all.
+    // video's. Both describe THIS item, so everything (including title) applies.
     QString nfoPath = d.filePath(base + ".nfo");
     if (!QFileInfo::exists(nfoPath) && QFileInfo::exists(d.filePath("movie.nfo")))
         nfoPath = d.filePath("movie.nfo");
@@ -449,7 +448,52 @@ void LocalFilesBackend::enrichVideoItem(QVariantMap &item, const QString &filePa
         const QVariantMap meta = parseNfo(nfoPath);
         for (auto it = meta.constBegin(); it != meta.constEnd(); ++it)
             item[it.key()] = it.value();
+        return;
     }
+
+    // No metadata of its own: inherit show-level context from the closest
+    // ancestor .nfo (typically a show's tvshow.nfo), so a bare episode file still
+    // shows a plot / year / show name. That ancestor's title is the SHOW title,
+    // so it becomes showTitle — never the item title, which stays the filename.
+    const QVariantMap inherited = parentNfoMeta(d);
+    if (inherited.isEmpty())
+        return;
+    const QString showTitle = !inherited.value("showTitle").toString().isEmpty()
+                              ? inherited.value("showTitle").toString()
+                              : inherited.value("title").toString();
+    if (!showTitle.isEmpty() && !item.contains("showTitle"))
+        item["showTitle"] = showTitle;
+    if (inherited.contains("plot") && !item.contains("plot"))
+        item["plot"] = inherited.value("plot");
+    if (inherited.contains("year") && !item.contains("year"))
+        item["year"] = inherited.value("year");
+}
+
+QVariantMap LocalFilesBackend::parentNfoMeta(const QDir &startDir) const {
+    const QString root = QDir(m_mediaRoot).absolutePath();
+    QDir dir = startDir;
+    for (int level = 0; level <= 6; ++level) {
+        // Standard show/season metadata names first.
+        for (const QString &cand : {QStringLiteral("tvshow.nfo"), QStringLiteral("season.nfo")}) {
+            const QString p = dir.filePath(cand);
+            if (QFileInfo::exists(p)) {
+                const QVariantMap m = parseNfo(p);
+                if (!m.isEmpty()) return m;
+            }
+        }
+        // Otherwise a lone folder-level .nfo (a dir with several is more likely
+        // per-episode nfos, so skip those to avoid grabbing a sibling's data).
+        const QStringList nfos = dir.entryList({QStringLiteral("*.nfo")}, QDir::Files);
+        if (nfos.size() == 1) {
+            const QVariantMap m = parseNfo(dir.filePath(nfos.first()));
+            if (!m.isEmpty()) return m;
+        }
+        if (dir.absolutePath().compare(root, Qt::CaseInsensitive) == 0)
+            break;   // don't climb above the media root
+        if (!dir.cdUp())
+            break;   // reached the filesystem root
+    }
+    return {};
 }
 
 // Season/series folder name: "Season 1", "Series 03", "S1", "S 01", or

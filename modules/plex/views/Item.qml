@@ -466,7 +466,10 @@ FocusScope {
                     property bool sel: focusRow === 1 && actionCol === 0
                     color: sel ? root.accentColor : root.surfaceColor
                     border.color: sel ? root.accentColor : root.tertiaryColor
-                    width: root.sw * 0.0925
+                    // Match the play cluster's total width (0.1875): two buttons split
+                    // it with the same 3px gap; WATCHED takes it all when TRACKED hides.
+                    width: trackedBtn.visible ? (root.sw * 0.1875 - root.sw * 0.0046875) / 2
+                                              : root.sw * 0.1875
                     height: root.sh * 0.05
                     border.width: root.sh * 0.003125 //2
 
@@ -494,7 +497,7 @@ FocusScope {
                     property bool sel: focusRow === 1 && actionCol === 1
                     color: sel ? root.accentColor : root.surfaceColor
                     border.color: sel ? root.accentColor : root.tertiaryColor
-                    width: root.sw * 0.0925
+                    width: (root.sw * 0.1875 - root.sw * 0.0046875) / 2
                     height: root.sh * 0.05
                     border.width: root.sh * 0.003125 //2
 
