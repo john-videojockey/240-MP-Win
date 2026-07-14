@@ -135,8 +135,8 @@ FocusScope {
 
     focus: true
 
-    Keys.onUpPressed:   if (rowIndex > 0) { rowIndex--; colIndex = currentItems().length > 0 ? 1 : 0 }
-    Keys.onDownPressed: if (rowIndex < hubs.length - 1) { rowIndex++; colIndex = currentItems().length > 0 ? 1 : 0 }
+    Keys.onUpPressed:   if (rowList.currentIndex > 0) rowList.currentIndex--
+    Keys.onDownPressed: if (rowList.currentIndex < hubs.length - 1) rowList.currentIndex++
     Keys.onLeftPressed:  if (colIndex > 0) colIndex--
     Keys.onRightPressed: if (colIndex < currentItems().length) colIndex++
     Keys.onReturnPressed: openCurrent()
@@ -181,7 +181,6 @@ FocusScope {
         id: rowList
         model: homeRoot.hubs
         visible: !homeRoot.isLoading && homeRoot.hubs.length > 0
-        currentIndex: homeRoot.rowIndex
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
@@ -191,12 +190,22 @@ FocusScope {
         anchors.rightMargin: root.sw * 0.05
         anchors.bottomMargin: root.sh * 0.02
         clip: true
-        interactive: false
+        interactive: true
+        flickableDirection: Flickable.VerticalFlick
         spacing: root.sh * 0.025
         highlightMoveDuration: 220
         preferredHighlightBegin: 0
         preferredHighlightEnd: 0
         highlightRangeMode: ListView.StrictlyEnforceRange
+
+        // Drive the custom rowIndex/colIndex model from currentIndex so touch and
+        // keyboard share one path: StrictlyEnforceRange updates currentIndex as
+        // rows settle under a flick, and the key handlers set it directly. Either
+        // way, follow it and reset the column to the row's first poster.
+        onCurrentIndexChanged: {
+            homeRoot.rowIndex = currentIndex
+            homeRoot.colIndex = homeRoot.currentItems().length > 0 ? 1 : 0
+        }
 
         delegate: Item {
             id: hubRow
@@ -228,7 +237,8 @@ FocusScope {
                 height: root.sh * 0.245   // matches the cover-grid poster height
                 spacing: root.sw * 0.0125
                 clip: true
-                interactive: false
+                interactive: true
+                flickableDirection: Flickable.HorizontalFlick
                 currentIndex: hubRow.isCurrentRow ? (homeRoot.colIndex - 1) : -1
                 onCurrentIndexChanged: if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
 
@@ -274,7 +284,12 @@ FocusScope {
                         onClicked: {
                             if (hubRow.isCurrentRow && homeRoot.colIndex === index + 1)
                                 inputManager.touchKey("select")
-                            else { homeRoot.rowIndex = hubRow.rowIdx; homeRoot.colIndex = index + 1 }
+                            else {
+                                // Set the row via currentIndex (which resets colIndex
+                                // to the first poster), then land on the tapped poster.
+                                rowList.currentIndex = hubRow.rowIdx
+                                homeRoot.colIndex = index + 1
+                            }
                         }
                     }
                 }
