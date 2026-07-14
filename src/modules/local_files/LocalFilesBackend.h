@@ -71,6 +71,10 @@ private:
     // Kodi/TinyMediaManager-style artwork + metadata discovery, merged into
     // getItems entries so the views can render posters, fanart, and titles.
     static QString findArtFile(const QDir &dir, const QStringList &baseNames);
+    // First image in dir whose base name ends with one of the given suffixes
+    // (e.g. "-poster") — for TinyMediaManager sidecars named after the title
+    // ("MovieName-poster.jpg") rather than the generic "poster.jpg".
+    static QString findSuffixArtFile(const QDir &dir, const QStringList &suffixes);
     static QVariantMap parseNfo(const QString &nfoPath);
     // Walk up from a video's folder (to the media root) for the closest show/
     // season .nfo, so an episode with no metadata of its own can still inherit

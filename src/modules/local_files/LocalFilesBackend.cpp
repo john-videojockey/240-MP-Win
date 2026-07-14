@@ -336,6 +336,19 @@ QString LocalFilesBackend::findArtFile(const QDir &dir, const QStringList &baseN
     return {};
 }
 
+QString LocalFilesBackend::findSuffixArtFile(const QDir &dir, const QStringList &suffixes) {
+    static const QStringList kArtExts = {"jpg", "jpeg", "png", "webp"};
+    const QFileInfoList files = dir.entryInfoList(QDir::Files, QDir::Name);
+    for (const QFileInfo &fi : files) {
+        if (!kArtExts.contains(fi.suffix().toLower())) continue;
+        const QString b = fi.completeBaseName().toLower();
+        for (const QString &s : suffixes)
+            if (b.endsWith(s))
+                return QUrl::fromLocalFile(fi.absoluteFilePath()).toString();
+    }
+    return {};
+}
+
 // Minimal Kodi/TinyMediaManager .nfo reader: accepts <movie>, <tvshow>, or
 // <episodedetails> roots and extracts the display fields the views use.
 // Stops at the root's end so the URL line some scrapers append after the XML
@@ -394,8 +407,14 @@ QVariantMap LocalFilesBackend::parseNfo(const QString &nfoPath) {
 // tvshow.nfo / movie.nfo for the display title.
 void LocalFilesBackend::enrichFolderItem(QVariantMap &item, const QString &folderPath) const {
     const QDir d(folderPath);
-    const QString thumb = findArtFile(d, {"poster", "folder", "cover"});
-    const QString art   = findArtFile(d, {"fanart", "backdrop", "background"});
+    // Generic names first (poster.jpg/folder.jpg/…); then TinyMediaManager
+    // sidecars named after the title inside the folder ("MovieName-poster.jpg"),
+    // so a one-movie-per-folder library shows covers in the browse grid too, not
+    // only on the info screen.
+    QString thumb = findArtFile(d, {"poster", "folder", "cover"});
+    if (thumb.isEmpty()) thumb = findSuffixArtFile(d, {"-poster", "-thumb"});
+    QString art = findArtFile(d, {"fanart", "backdrop", "background"});
+    if (art.isEmpty()) art = findSuffixArtFile(d, {"-fanart", "-backdrop"});
     if (!thumb.isEmpty()) { item["thumb"] = thumb; item["poster"] = thumb; }
     if (!art.isEmpty())   item["art"]   = art;
 
