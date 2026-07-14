@@ -253,7 +253,10 @@ FocusScope {
         var sr = appCore.get_setting(moduleRoot.moduleId, "show_related")
         showRelated = (sr === undefined || sr === null || sr === "") ? true
                     : (sr === true || sr === "ON")
-        if (showRelated && item.ratingKey) plexBackend.load_related(item.ratingKey)
+        // Episodes have no "more like this" of their own — use the show's related.
+        var relKey = (item.type === "episode" && item.grandparentRatingKey)
+                     ? item.grandparentRatingKey : item.ratingKey
+        if (showRelated && relKey) plexBackend.load_related(relKey)
     }
 
     // Deferred stop: navigating back to browse (which resumes the same theme on

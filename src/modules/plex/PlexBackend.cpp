@@ -657,6 +657,7 @@ QVariantMap PlexBackend::formatItem(const QJsonObject &m) const {
         {"type",                   m["type"].toString("movie")},
         {"durationDisplay",        msToDisplay(m["duration"].toInt())},
         {"grandparentTitle",       m["grandparentTitle"].toString()},
+        {"grandparentRatingKey",   m["grandparentRatingKey"].toString()},
         {"parentTitle",            m["parentTitle"].toString()},
         {"parentRatingKey",        m["parentRatingKey"].toString()},
         {"index",                  m["index"].toInt()},
@@ -1689,6 +1690,7 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
         {"index",            meta["index"].toInt()},
         {"parentIndex",      meta["parentIndex"].toInt()},
         {"parentRatingKey",  meta["parentRatingKey"].toString()},
+        {"grandparentRatingKey", meta["grandparentRatingKey"].toString()},
         {"grandparentTitle", meta["grandparentTitle"].toString()},
         {"parentTitle",      meta["parentTitle"].toString()},
         {"thumb",            !meta["thumb"].toString().isEmpty()       ? meta["thumb"].toString()
