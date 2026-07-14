@@ -589,7 +589,7 @@ void MpvController::appendUpscalerArgs(QStringList &args) const {
     if (sel == "artcnn") {
         shaders << "ArtCNN_C4F32.glsl";
     } else if (sel == "fsrcnnx") {
-        shaders << "FSRCNNX_x2_8-0-4-1.glsl";
+        shaders << "FSRCNNX_x2_16-0-4-1.glsl";
     } else if (sel == "anime4k") {
         // Mode A (Fast): clamp + restore + a 2x upscale chain, balanced for
         // mid-range GPUs.

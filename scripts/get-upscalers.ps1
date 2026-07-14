@@ -26,7 +26,7 @@ Write-Host "ArtCNN (recommended)..."
 Get-Shader 'https://raw.githubusercontent.com/Artoriuz/ArtCNN/main/GLSL/ArtCNN_C4F32.glsl' 'ArtCNN_C4F32.glsl'
 
 Write-Host "FSRCNNX..."
-Get-Shader 'https://raw.githubusercontent.com/igv/FSRCNN-TensorFlow/master/FSRCNNX_x2_8-0-4-1.glsl' 'FSRCNNX_x2_8-0-4-1.glsl'
+Get-Shader 'https://raw.githubusercontent.com/awused/dotfiles/master/mpv/.config/mpv/shaders/fsrcnnx/FSRCNNX_x2_16-0-4-1.glsl' 'FSRCNNX_x2_16-0-4-1.glsl'
 
 Write-Host "Anime4K (release zip)..."
 $zip     = Join-Path $env:TEMP 'Anime4K_v4.zip'

@@ -22,7 +22,7 @@ you fetch it.
 | Upscaler option | File(s) | Source (license) |
 |---|---|---|
 | **ArtCNN** (recommended) | `ArtCNN_C4F32.glsl` | [Artoriuz/ArtCNN](https://github.com/Artoriuz/ArtCNN) (MIT) |
-| **FSRCNNX** | `FSRCNNX_x2_8-0-4-1.glsl` | [igv/FSRCNN-TensorFlow](https://github.com/igv/FSRCNN-TensorFlow) (MIT) |
+| **FSRCNNX** | `FSRCNNX_x2_16-0-4-1.glsl` | [igv/FSRCNN-TensorFlow](https://github.com/igv/FSRCNN-TensorFlow) (MIT) |
 | **Anime4K** (Mode A, Fast) | `Anime4K_Clamp_Highlights.glsl`, `Anime4K_Restore_CNN_M.glsl`, `Anime4K_Upscale_CNN_x2_M.glsl`, `Anime4K_AutoDownscalePre_x2.glsl`, `Anime4K_AutoDownscalePre_x4.glsl`, `Anime4K_Upscale_CNN_x2_S.glsl` | [bloc97/Anime4K](https://github.com/bloc97/Anime4K) (MIT) |
 
 ## Which to pick
