@@ -54,8 +54,10 @@ FocusScope {
 
     function persist() {
         var keys = []
-        for (var i = 0; i < libModel.count; i++) keys.push(libModel.get(i).key)
-        appCore.save_setting(moduleId, settingKey, keys)
+        for (var i = 0; i < libModel.count; i++) keys.push(String(libModel.get(i).key))
+        // Typed list-save — a JS array through save_setting's QVariant can arrive as
+        // a QJSValue and serialize to null; save_setting_list takes a QStringList.
+        appCore.save_setting_list(moduleId, settingKey, keys)
     }
 
     // Move the picked-up row by one slot, carrying the cursor and grab with it.

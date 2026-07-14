@@ -171,6 +171,31 @@ void AppCore::save_setting(const QString &moduleId, const QString &key, const QV
         emit moduleSettingChanged(moduleId, key, value);
 }
 
+void AppCore::save_setting_list(const QString &moduleId, const QString &key, const QStringList &values) {
+    QJsonObject config = loadConfig();
+    const QJsonArray arr = QJsonArray::fromStringList(values);
+
+    if (moduleId.isEmpty()) {
+        QJsonObject app = config["app"].toObject();
+        app[key] = arr;
+        config["app"] = app;
+    } else {
+        QJsonObject modules = config["modules"].toObject();
+        QJsonObject target = modules[moduleId].toObject();
+        target[key] = arr;
+        modules[moduleId] = target;
+        config["modules"] = modules;
+    }
+    saveConfig(config);
+
+    qDebug("[AppCore] Setting list saved: %s.%s = [%s]",
+           qPrintable(moduleId.isEmpty() ? "app" : moduleId),
+           qPrintable(key), qPrintable(values.join(", ")));
+
+    if (!moduleId.isEmpty())
+        emit moduleSettingChanged(moduleId, key, QVariant(values));
+}
+
 QVariant AppCore::get_module_info(const QString &moduleId) {
     for (const auto &m : m_modules) {
         if (m.id == moduleId) {

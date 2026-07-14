@@ -38,6 +38,10 @@ public:
     Q_INVOKABLE QVariant get_settings();
     Q_INVOKABLE QVariant get_setting(const QString &moduleId, const QString &key);
     Q_INVOKABLE void save_setting(const QString &moduleId, const QString &key, const QVariant &value);
+    // Save an ordered string list. A typed QStringList parameter converts reliably
+    // from a QML JS array, unlike a QVariant which can arrive wrapped as a QJSValue
+    // and serialize to null. Use this for array-valued settings (e.g. library_order).
+    Q_INVOKABLE void save_setting_list(const QString &moduleId, const QString &key, const QStringList &values);
     Q_INVOKABLE QVariant get_module_info(const QString &moduleId);
     Q_INVOKABLE QVariant get_module_settings_schema(const QString &moduleId);
     Q_INVOKABLE void invoke_module_action(const QString &moduleId, const QString &slotName);
