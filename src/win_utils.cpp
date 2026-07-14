@@ -58,9 +58,13 @@ void messageHandler(QtMsgType type, const QMessageLogContext &, const QString &m
 } // namespace
 
 void installWindowsLogging(const QString &dataRoot) {
-    // GUI-subsystem apps have no console; if the app was started from one,
-    // attach so logs print in that terminal like they do on other platforms.
-    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+    // GUI-subsystem apps have no console. Attaching to the launching terminal is
+    // handy for interactive debugging, but ATTACH_PARENT_PROCESS grabs whatever
+    // console is up the process tree — so a launcher started from a shell (e.g. a
+    // taskbar app run from PowerShell that spawns 240-MP) gets our logs dumped
+    // into that session. So it's opt-in: set MP240_CONSOLE=1 for live console
+    // output; otherwise logs go only to the file below (which always has them).
+    if (qEnvironmentVariableIntValue("MP240_CONSOLE") > 0 && AttachConsole(ATTACH_PARENT_PROCESS)) {
         FILE *unused;
         freopen_s(&unused, "CONOUT$", "w", stderr);
         freopen_s(&unused, "CONOUT$", "w", stdout);

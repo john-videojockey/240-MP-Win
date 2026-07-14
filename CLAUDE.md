@@ -20,7 +20,7 @@ cmake --build build
 $env:APP_ROOT = (Get-Location); .\build\240mp.exe
 ```
 
-The app is a GUI-subsystem executable: logs go to `%APPDATA%\240-MP\logs\240mp.log` and to the parent console when started from a terminal. `Ctrl+Q` quits.
+The app is a GUI-subsystem executable: logs always go to `%APPDATA%\240-MP\logs\240mp.log`, and additionally to the parent console **only when `MP240_CONSOLE=1`** is set (opt-in, so a launcher spawned from a shell doesn't get the logs dumped into that session; `run-local.ps1` sets it). `Ctrl+Q` quits.
 
 ---
 

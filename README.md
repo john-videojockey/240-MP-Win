@@ -21,7 +21,7 @@ The philosophy and module system are untouched (see [ARCHITECTURE.md](ARCHITECTU
 - **Plex extras** — optional Cover browse view (poster grid for movies/shows, poster covers for Continue Watching), episode thumbnails, PREV/NEXT episode buttons on the info screen, and optional scanlined fanart backgrounds (opacity configurable) across the browse, show, season, and info screens — all under Settings → Plex.
 - **Local Files extras** — reads Kodi/TinyMediaManager artwork (`poster.jpg`, `fanart.jpg`, `<name>-poster.jpg`…) and `.nfo` metadata; a show/movie folder shows just its videos, flattened, unless it has `Season N` subfolders (then those are seasons); optional Cover browse view and fanart backgrounds like Plex; and a Continue Watching row on the Local Files landing screen that tracks partially-watched videos. All under Settings → Local Files.
 - **Info-screen actions & playback tweaks** — the Play/Resume screen (Plex and Local Files) has Watched/Unwatched and Remove-from-Continue-Watching buttons under Play. During playback, Enter shows the on-screen controls (Space still pauses), and holding Enter or long-pressing the Subtitle button turns subtitles off.
-- **Logs** land in `%APPDATA%\240-MP\logs\240mp.log` (and in your terminal when launched from one), since Windows GUI apps have no stdout.
+- **Logs** land in `%APPDATA%\240-MP\logs\240mp.log` (Windows GUI apps have no stdout); set `MP240_CONSOLE=1` to also mirror them to the terminal you launch from.
 - The display is kept awake while the app runs (it's a TV frontend with its own screen saver); Windows power settings resume control when it exits.
 
 Everything Raspberry-Pi-specific (KMS/DRM hand-off, per-Pi decode profiles, systemd autostart) does not apply here and was removed rather than ported.

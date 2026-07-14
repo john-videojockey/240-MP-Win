@@ -55,5 +55,8 @@ if ($BuildOnly) { return }
 # its own copies (windeployqt). APP_ROOT points the app at the repo's QML.
 $env:PATH = "$QtDir\bin;" + $env:PATH
 $env:APP_ROOT = $repo
+# This is a deliberate run-from-terminal, so opt in to console logging (the app
+# only attaches to the parent console when MP240_CONSOLE is set).
+$env:MP240_CONSOLE = '1'
 Write-Host "Running $build\240mp.exe (logs also land in %APPDATA%\240-MP\logs\240mp.log; Ctrl+Q quits)"
 & "$build\240mp.exe"

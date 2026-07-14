@@ -154,7 +154,11 @@ This config is read at each playback event, so a change applies on the next play
 %APPDATA%\240-MP\logs\240mp.log     (rotated to 240mp.prev.log at ~1 MB)
 ```
 
-Run the exe from a terminal and the same log lines print there too (the app attaches to the parent console).
+To also see the log lines live in your terminal, set `MP240_CONSOLE=1` before launching — the app then attaches to the parent console. It's opt-in so that a launcher started from a shell (e.g. a taskbar app run from PowerShell that spawns 240-MP) doesn't dump the app's logs into that session. `run-local.ps1` sets it for you.
+
+```powershell
+$env:MP240_CONSOLE = '1'   # then run the exe from this terminal
+```
 
 ### mpv playback logs
 
