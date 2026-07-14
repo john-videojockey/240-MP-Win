@@ -173,6 +173,14 @@ FocusScope {
     // ---
 
     // Fanart background + scanlines — same treatment as the Plex info screen.
+    // Opaque base so the fanart dims toward the theme color, not the app
+    // background bleeding through the semi-transparent fanart.
+    Rectangle {
+        anchors.fill: parent
+        z: -2
+        visible: fanart.visible
+        color: root.surfaceColor
+    }
     Image {
         id: fanart
         anchors.fill: parent

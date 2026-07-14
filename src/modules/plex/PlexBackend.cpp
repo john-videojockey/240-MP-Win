@@ -1818,14 +1818,19 @@ PlexBackend::~PlexBackend() {
 
 void PlexBackend::play_theme(const QString &themePath, int volumePercent) {
     stop_theme();
-    if (themePath.isEmpty())
+    if (themePath.isEmpty()) {
+        qInfo("[Plex] play_theme: item has no theme");
         return;
+    }
     const QString uri = serverUrl(), token = serverToken();
     if (uri.isEmpty() || token.isEmpty())
         return;
     const QString bin = findMpvExecutable();
-    if (bin.isEmpty())
+    if (bin.isEmpty()) {
+        qWarning("[Plex] play_theme: mpv not found");
         return;   // no mpv — silently skip theme audio
+    }
+    qInfo("[Plex] play_theme: %s (vol %d)", qPrintable(uri + themePath), volumePercent);
 
     const QString url = uri + themePath;
     QStringList args;

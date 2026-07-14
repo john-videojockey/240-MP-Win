@@ -218,7 +218,10 @@ FocusScope {
         var op = parseInt(appCore.get_setting(moduleRoot.moduleId, "info_background_opacity"))
         if (op > 0) infoBgOpacity = op / 100
 
-        showThemes = appCore.get_setting(moduleRoot.moduleId, "show_themes") === "ON"
+        // Toggle settings persist as a boolean (true/false), not "ON"/"OFF" —
+        // accept both, matching how info_background is read above.
+        var stv = appCore.get_setting(moduleRoot.moduleId, "show_themes")
+        showThemes = (stv === true || stv === "ON")
         var tv = parseInt(appCore.get_setting(moduleRoot.moduleId, "theme_volume"))
         if (tv > 0) themeVolume = tv
     }
@@ -324,6 +327,15 @@ FocusScope {
     // Fanart background — fit to height, full-bleed (aspect-preserving crop,
     // centered), dimmed by the info_background_opacity setting and overlaid
     // with CRT scanlines. z below every sibling so all content stacks above.
+    // Opaque base beneath it so the fanart dims toward the theme surface color,
+    // not the app background (which would otherwise bleed through the semi-
+    // transparent fanart and tint it).
+    Rectangle {
+        anchors.fill: parent
+        z: -2
+        visible: fanart.visible
+        color: root.surfaceColor
+    }
     Image {
         id: fanart
         anchors.fill: parent

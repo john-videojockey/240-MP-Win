@@ -314,6 +314,15 @@ FocusScope {
         function onCurrentIndexChanged() { if (itemListRoot.infoBg) hoverArtDebounce.restart() }
     }
 
+    // Opaque base under the hover fanart so it dims toward the theme color, not
+    // the app background bleeding through it. Fades in/out with the fanart.
+    Rectangle {
+        anchors.fill: parent
+        z: -2
+        color: root.surfaceColor
+        opacity: hoverArt.opacity > 0 ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 200 } }
+    }
     Image {
         id: hoverArt
         anchors.fill: parent
