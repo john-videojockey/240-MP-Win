@@ -14,6 +14,8 @@
 #include <QVariantMap>
 #include <QDebug>
 #include <QDateTime>
+#include <QProcess>
+#include "../../win_utils.h"
 
 #include <openssl/evp.h>
 #include <openssl/pem.h>
@@ -1689,6 +1691,11 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
         // Fanart/background: the item's own art, else the show's.
         {"art",              !meta["art"].toString().isEmpty() ? meta["art"].toString()
                                                                : meta["grandparentArt"].toString()},
+        // Theme song (shows/episodes that have one) — a server path the info view
+        // plays as background audio via play_theme().
+        {"theme",            !meta["theme"].toString().isEmpty()            ? meta["theme"].toString()
+                           : !meta["grandparentTheme"].toString().isEmpty() ? meta["grandparentTheme"].toString()
+                                                                            : meta["parentTheme"].toString()},
     };
 }
 
@@ -1803,6 +1810,52 @@ void PlexBackend::load_item_detail(const QString &ratingKey) {
         if (metaArr.isEmpty()) { emit errorOccurred("LOAD DETAIL FAILED: empty metadata"); return; }
         emit itemLoaded(buildItemDetail(metaArr[0].toObject()));
     });
+}
+
+PlexBackend::~PlexBackend() {
+    stop_theme();
+}
+
+void PlexBackend::play_theme(const QString &themePath, int volumePercent) {
+    stop_theme();
+    if (themePath.isEmpty())
+        return;
+    const QString uri = serverUrl(), token = serverToken();
+    if (uri.isEmpty() || token.isEmpty())
+        return;
+    const QString bin = findMpvExecutable();
+    if (bin.isEmpty())
+        return;   // no mpv — silently skip theme audio
+
+    const QString url = uri + themePath;
+    QStringList args;
+    args << url
+         << "--no-video"           // audio only, no VO window
+         << "--no-terminal"
+         << "--no-config"          // ignore the user's mpv.conf
+         << "--force-window=no"
+         << "--idle=no"
+         << "--loop-file=inf"      // loop the (short) theme while the info screen is up
+         << QStringLiteral("--volume=%1").arg(qBound(0, volumePercent, 100))
+         << QStringLiteral("--http-header-fields=X-Plex-Token:%1").arg(token);
+    if (QUrl(url).host().endsWith(QStringLiteral(".plex.direct")))
+        args << QStringLiteral("--tls-verify=no");
+
+    m_themeProcess = new QProcess(this);
+    m_themeProcess->start(bin, args);
+}
+
+void PlexBackend::stop_theme() {
+    if (!m_themeProcess)
+        return;
+    m_themeProcess->disconnect();
+    if (m_themeProcess->state() != QProcess::NotRunning) {
+        m_themeProcess->terminate();               // WM_CLOSE — mpv exits promptly
+        if (!m_themeProcess->waitForFinished(300))
+            m_themeProcess->kill();
+    }
+    m_themeProcess->deleteLater();
+    m_themeProcess = nullptr;
 }
 
 void PlexBackend::load_children(const QString &ratingKey) {

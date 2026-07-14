@@ -97,6 +97,12 @@ FocusScope {
                 if (d.subtitleStreams[j].id === d.selectedSubtitleId) { subtitleIdx = j; break }
             }
         }
+        // Theme song for this item (if enabled and one exists). play_theme
+        // restarts cleanly, so a PREV/NEXT swap to another episode is fine.
+        if (detailRoot.showThemes && d.theme)
+            plexBackend.play_theme(d.theme, detailRoot.themeVolume)
+        else
+            plexBackend.stop_theme()
     }
 
     function newSessionId() {
@@ -196,6 +202,12 @@ FocusScope {
         }
     }
 
+    // Show theme music (opt-in): play the item's theme while this info screen is
+    // open. Read here, applied in applyDetail once the detail (with its theme
+    // path) has loaded, and stopped on playback / when leaving the screen.
+    property bool showThemes: false
+    property int  themeVolume: 50
+
     Component.onCompleted: {
         if (item.ratingKey) plexBackend.load_item_detail(item.ratingKey)
         focusRow = 0
@@ -205,7 +217,13 @@ FocusScope {
                  ? true : (bg === true || bg === "ON")
         var op = parseInt(appCore.get_setting(moduleRoot.moduleId, "info_background_opacity"))
         if (op > 0) infoBgOpacity = op / 100
+
+        showThemes = appCore.get_setting(moduleRoot.moduleId, "show_themes") === "ON"
+        var tv = parseInt(appCore.get_setting(moduleRoot.moduleId, "theme_volume"))
+        if (tv > 0) themeVolume = tv
     }
+
+    Component.onDestruction: plexBackend.stop_theme()
 
     focus: true
 
@@ -260,6 +278,8 @@ FocusScope {
             return
         }
         if (focusRow === 0 && detail) {
+            // Stop the theme before handing off to the fullscreen player.
+            plexBackend.stop_theme()
             // Show the loading overlay immediately; clears on navigate or error.
             isLaunching = true
             var audioId = detail.audioStreams && detail.audioStreams[audioIdx]

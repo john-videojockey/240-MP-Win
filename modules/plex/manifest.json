@@ -88,6 +88,22 @@
       "requires_auth": true
     },
     {
+      "key": "show_themes",
+      "label": "Show Theme Music",
+      "type": "toggle",
+      "default": "OFF",
+      "requires_auth": true,
+      "description": "Play a show's theme song while its info screen is open (for shows that have one)."
+    },
+    {
+      "key": "theme_volume",
+      "label": "Theme Volume",
+      "type": "list_single",
+      "options": ["25%", "50%", "75%", "100%"],
+      "default": "50%",
+      "requires_auth": true
+    },
+    {
       "key": "logout",
       "label": "Sign out",
       "type": "action",

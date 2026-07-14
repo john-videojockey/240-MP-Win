@@ -9,10 +9,13 @@
 #include <functional>
 #include <openssl/evp.h>
 
+class QProcess;
+
 class PlexBackend : public QObject {
     Q_OBJECT
 public:
     explicit PlexBackend(const QString &appRoot, const QString &dataRoot, QObject *parent = nullptr);
+    ~PlexBackend() override;
 
     // Sync — no HTTP
     Q_INVOKABLE QString  get_auth_state();
@@ -72,6 +75,12 @@ public:
     Q_INVOKABLE void mark_watched(const QString &ratingKey);
     Q_INVOKABLE void mark_unwatched(const QString &ratingKey);
     Q_INVOKABLE void remove_from_continue_watching(const QString &ratingKey);
+
+    // Show theme music: play the item's theme song (a server-relative path from
+    // the detail's "theme" field) as looping background audio via a headless mpv
+    // process while the info screen is open, and stop it. Opt-in (show_themes).
+    Q_INVOKABLE void play_theme(const QString &themePath, int volumePercent);
+    Q_INVOKABLE void stop_theme();
 
     // Live TV — minimal "watch live channels" support (no DVR/recording features).
     // load_live_channels lists the channel lineup of the first available DVR;
@@ -214,6 +223,7 @@ private:
     QString m_appRoot;
     QString m_dataRoot;
     QNetworkAccessManager *m_nam;
+    QProcess *m_themeProcess = nullptr;   // headless mpv playing the show theme
     QTimer *m_pollTimer;
     QString m_pendingPinId;
     QString m_clientId;          // cached after first load
