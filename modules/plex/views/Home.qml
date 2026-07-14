@@ -14,6 +14,11 @@ FocusScope {
     signal goBack()
 
     property var navParams: ({})
+    // Saved cursor position handed back when returning from a pushed view, so
+    // Home lands on the item that was opened rather than resetting to the top.
+    property var navListState: navParams.navListState || ({})
+    property int _restoreRow: -1
+    property int _restoreCol: -1
 
     property var hubs: []
     property int rowIndex: 0
@@ -32,19 +37,23 @@ FocusScope {
     // The poster currently under the cursor, or null when a row title is focused.
     function hoveredItem() { return colIndex <= 0 ? null : (currentItems()[colIndex - 1] || null) }
 
+    // Cursor position to restore to on return.
+    function navState() { return { rowIndex: rowIndex, colIndex: colIndex } }
+
     function openCurrent() {
         var h = currentHub()
         if (!h) return
+        var st = navState()
         if (colIndex === 0) {
             // Title: open the full source.
             if (h.key === "continue_watching")
                 homeRoot.navigateTo("Items.qml", {
                     listType: "continue_watching", title: "CONTINUE WATCHING", libraryName: h.title
-                }, {})
+                }, st)
             else
                 homeRoot.navigateTo("Library.qml", {
                     libraryName: h.title, sectionId: h.key, sectionType: h.sectionType
-                }, {})
+                }, st)
             return
         }
         var it = currentItems()[colIndex - 1]
@@ -54,9 +63,20 @@ FocusScope {
         // Both load full detail/art from the item's ratingKey.
         var libName = (h.key !== "continue_watching") ? h.title : ""
         if (it.type === "show")
-            homeRoot.navigateTo("ItemShow.qml", { item: it, libraryName: libName }, {})
+            homeRoot.navigateTo("ItemShow.qml", { item: it, libraryName: libName }, st)
         else
-            homeRoot.navigateTo("Item.qml", { item: it, libraryName: libName }, {})
+            homeRoot.navigateTo("Item.qml", { item: it, libraryName: libName }, st)
+    }
+
+    // Apply a saved/def cursor position after the model settles (deferred so a
+    // model-driven currentIndex reset doesn't clobber it).
+    function applyRestore() {
+        rowList.currentIndex = _restoreRow
+        rowIndex = _restoreRow
+        var items = currentItems()
+        colIndex = (_restoreCol >= 0) ? Math.max(0, Math.min(_restoreCol, items.length))
+                                      : (items.length > 0 ? 1 : 0)
+        if (infoBg || showThemes) hoverArtDebounce.restart()
     }
 
     Component.onCompleted: {
@@ -78,10 +98,17 @@ FocusScope {
         target: plexBackend
         function onHomeHubsReady(h) {
             homeRoot.hubs = h
-            homeRoot.rowIndex = 0
-            homeRoot.colIndex = homeRoot.currentItems().length > 0 ? 1 : 0
             homeRoot.isLoading = false
-            if (homeRoot.infoBg || homeRoot.showThemes) hoverArtDebounce.restart()
+            var rs = homeRoot.navListState
+            homeRoot.navListState = ({})   // consume — later re-fetches start fresh
+            if (rs && rs.rowIndex !== undefined && rs.rowIndex >= 0 && rs.rowIndex < h.length) {
+                homeRoot._restoreRow = rs.rowIndex
+                homeRoot._restoreCol = (rs.colIndex !== undefined) ? rs.colIndex : -1
+            } else {
+                homeRoot._restoreRow = 0
+                homeRoot._restoreCol = -1
+            }
+            Qt.callLater(homeRoot.applyRestore)
         }
     }
 
