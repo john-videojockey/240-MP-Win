@@ -40,7 +40,15 @@ FocusScope {
             return
         }
         var it = currentItems()[colIndex - 1]
-        if (it) homeRoot.navigateTo("Item.qml", { item: it }, {})
+        if (!it) return
+        // Route like browse does: shows open the season/episode view, everything
+        // else (movies, episodes from Continue Watching) opens the item view.
+        // Both load full detail/art from the item's ratingKey.
+        var libName = (h.key !== "continue_watching") ? h.title : ""
+        if (it.type === "show")
+            homeRoot.navigateTo("ItemShow.qml", { item: it, libraryName: libName }, {})
+        else
+            homeRoot.navigateTo("Item.qml", { item: it, libraryName: libName }, {})
     }
 
     Component.onCompleted: plexBackend.load_home_hubs()

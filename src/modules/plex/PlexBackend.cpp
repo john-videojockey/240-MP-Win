@@ -1364,7 +1364,7 @@ void PlexBackend::load_home_hubs() {
         hubs->append(QVariantMap{{"title","CONTINUE WATCHING"},{"key","continue_watching"},
                                  {"sectionType",QVariant()},{"items",QVariantList()}});
         for (const auto &l : libs)
-            hubs->append(QVariantMap{{"title","RECENTLY ADDED — " + l.title},{"key",l.key},
+            hubs->append(QVariantMap{{"title",l.title},{"key",l.key},
                                      {"sectionType",l.type},{"items",QVariantList()}});
 
         auto *pending = new int(hubs->size());
