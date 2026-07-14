@@ -9,6 +9,7 @@ FocusScope {
     property var navListState: navParams.navListState || ({})
 
     signal navigateTo(string path, var params, var listState)
+    signal replaceWith(string path, var params)
     signal goBack()
 
     property var libraries: []
@@ -23,12 +24,12 @@ FocusScope {
         target: plexBackend
 
         function onLibrariesLoaded(items) {
-            browseRoot.libraries = items
-            if (items.length > 0) {
-                var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
-                libraryList.currentIndex = Math.min(restore, items.length - 1)
-                libraryList.positionViewAtIndex(libraryList.currentIndex, ListView.Contain)
-            }
+            // Pin a HOME entry on top so the dashboard stays reachable after
+            // backing out of it into this list.
+            browseRoot.libraries = [{ title: "HOME", key: "home" }].concat(items)
+            var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
+            libraryList.currentIndex = Math.min(restore, browseRoot.libraries.length - 1)
+            libraryList.positionViewAtIndex(libraryList.currentIndex, ListView.Contain)
         }
 
         function onErrorOccurred(msg) {
@@ -95,7 +96,11 @@ FocusScope {
             var lib = libraries[currentIndex]
             if (!lib) return
 
-            if (lib.key === "continue_watching") {
+            if (lib.key === "home") {
+                // Replace (don't push) so Home ⇄ list stays a clean toggle and
+                // Back from Home returns here rather than stacking up.
+                browseRoot.replaceWith("Home.qml", {})
+            } else if (lib.key === "continue_watching") {
                 browseRoot.navigateTo("Items.qml", {
                     listType: "continue_watching",
                     title: "CONTINUE WATCHING",

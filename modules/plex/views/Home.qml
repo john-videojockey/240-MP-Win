@@ -20,9 +20,17 @@ FocusScope {
     property int colIndex: 1   // 0 = row title, 1..N = items[colIndex - 1]
     property bool isLoading: true
 
+    // Hover fanart + theme music (shared settings with the info/browse screens).
+    property bool infoBg: true
+    property real infoBgOpacity: 0.3
+    property bool showThemes: false
+    property int  themeVolume: 50
+
     function currentHub() { return hubs[rowIndex] || null }
     function itemsFor(h) { return h ? (h.items || []) : [] }
     function currentItems() { return itemsFor(currentHub()) }
+    // The poster currently under the cursor, or null when a row title is focused.
+    function hoveredItem() { return colIndex <= 0 ? null : (currentItems()[colIndex - 1] || null) }
 
     function openCurrent() {
         var h = currentHub()
@@ -51,7 +59,20 @@ FocusScope {
             homeRoot.navigateTo("Item.qml", { item: it, libraryName: libName }, {})
     }
 
-    Component.onCompleted: plexBackend.load_home_hubs()
+    Component.onCompleted: {
+        var bg = appCore.get_setting(moduleRoot.moduleId, "info_background")
+        infoBg = (bg === undefined || bg === null || bg === "") ? true : (bg === true || bg === "ON")
+        var op = parseInt(appCore.get_setting(moduleRoot.moduleId, "info_background_opacity"))
+        if (op > 0) infoBgOpacity = op / 100
+        var stv = appCore.get_setting(moduleRoot.moduleId, "show_themes")
+        showThemes = (stv === true || stv === "ON")
+        var tv = parseInt(appCore.get_setting(moduleRoot.moduleId, "theme_volume"))
+        if (tv > 0) themeVolume = tv
+        plexBackend.load_home_hubs()
+    }
+    // Deferred stop on leave: entering an item's info screen (which starts the
+    // same theme) carries over seamlessly; leaving elsewhere still stops it.
+    Component.onDestruction: plexBackend.stop_theme_deferred()
 
     Connections {
         target: plexBackend
@@ -60,7 +81,56 @@ FocusScope {
             homeRoot.rowIndex = 0
             homeRoot.colIndex = homeRoot.currentItems().length > 0 ? 1 : 0
             homeRoot.isLoading = false
+            if (homeRoot.infoBg || homeRoot.showThemes) hoverArtDebounce.restart()
         }
+    }
+
+    // Re-arm the hover fanart/theme whenever the cursor moves to a new poster.
+    onRowIndexChanged: if (infoBg || showThemes) hoverArtDebounce.restart()
+    onColIndexChanged: if (infoBg || showThemes) hoverArtDebounce.restart()
+
+    // Hover fanart: the highlighted poster's background art, debounced so
+    // scrolling doesn't fire a request per step. Opaque base beneath it so it
+    // dims toward the theme color, not the app background bleeding through.
+    Timer {
+        id: hoverArtDebounce
+        interval: 250
+        repeat: false
+        onTriggered: {
+            var it = homeRoot.hoveredItem()
+            hoverArt.source = (homeRoot.infoBg && it && it.art)
+                    ? plexBackend.image_url(it.art, Math.round(root.sw), Math.round(root.sh))
+                    : ""
+            if (homeRoot.showThemes && it && it.theme)
+                plexBackend.play_theme(it.theme, homeRoot.themeVolume)
+            else
+                plexBackend.stop_theme()
+        }
+    }
+    Rectangle {
+        anchors.fill: parent
+        z: -2
+        color: root.surfaceColor
+        opacity: hoverArt.opacity > 0 ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 200 } }
+    }
+    Image {
+        id: hoverArt
+        anchors.fill: parent
+        z: -1
+        visible: opacity > 0
+        opacity: (homeRoot.infoBg && status === Image.Ready) ? homeRoot.infoBgOpacity : 0
+        Behavior on opacity { NumberAnimation { duration: 200 } }
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+    }
+    Image {
+        anchors.fill: parent
+        z: -1
+        visible: hoverArt.visible
+        opacity: Math.min(1, hoverArt.opacity * 2)
+        fillMode: Image.Tile
+        source: "../../../assets/images/scanlines.png"
     }
 
     focus: true
