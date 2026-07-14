@@ -10,6 +10,7 @@ FocusScope {
     id: homeRoot
 
     signal navigateTo(string path, var params, var listState)
+    signal replaceWith(string path, var params)
     signal goBack()
 
     property var navParams: ({})
@@ -63,7 +64,10 @@ FocusScope {
     Keys.onReturnPressed: openCurrent()
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
-            homeRoot.goBack()
+            // Back from Home goes to the full library list (the original browsing
+            // options), not out of the module. replaceWith keeps Home off the stack
+            // so Back from the list then exits the module as before.
+            homeRoot.replaceWith("Libraries.qml", {})
             event.accepted = true
         }
     }

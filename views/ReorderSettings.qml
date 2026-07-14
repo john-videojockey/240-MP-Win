@@ -19,44 +19,59 @@ FocusScope {
     // when a slot is shared with another setting — e.g. getLibraries emits "libraries").
     property string optionsKey: navParams.optionsKey || settingKey
 
-    property var items: []       // ordered [{id, key, label}]
     property int grabbed: -1     // index currently picked up, or -1
+
+    // Bare key for an option. Prefer the explicit "key" field; fall back to the
+    // trailing segment of a server-scoped id ("<machineId>_<key>") so this still
+    // works if the slot only provides ids.
+    function bareKey(o) {
+        if (o.key !== undefined && o.key !== "") return o.key
+        var id = o.id || ""
+        var us = id.lastIndexOf("_")
+        return us >= 0 ? id.substring(us + 1) : id
+    }
 
     function applyOrder(options) {
         var allSettings = appCore.get_settings()
         var moduleConfig = (allSettings.modules && allSettings.modules[moduleId]) ? allSettings.modules[moduleId] : {}
         var saved = moduleConfig[settingKey] || []
         var byKey = ({})
-        for (var i = 0; i < options.length; i++) byKey[options[i].key] = options[i]
+        for (var i = 0; i < options.length; i++) byKey[bareKey(options[i])] = options[i]
         var ordered = []
         var used = ({})
         for (var j = 0; j < saved.length; j++) {
             var o = byKey[saved[j]]
-            if (o && !used[o.key]) { ordered.push(o); used[o.key] = true }
+            if (o && !used[saved[j]]) { ordered.push(o); used[saved[j]] = true }
         }
         for (var k = 0; k < options.length; k++)
-            if (!used[options[k].key]) ordered.push(options[k])
-        items = ordered
+            if (!used[bareKey(options[k])]) ordered.push(options[k])
+
+        libModel.clear()
+        for (var m = 0; m < ordered.length; m++)
+            libModel.append({ key: bareKey(ordered[m]), label: ordered[m].label || "" })
+        if (libModel.count > 0) optionsList.currentIndex = 0
     }
 
     function persist() {
         var keys = []
-        for (var i = 0; i < items.length; i++) keys.push(items[i].key)
+        for (var i = 0; i < libModel.count; i++) keys.push(libModel.get(i).key)
         appCore.save_setting(moduleId, settingKey, keys)
     }
 
     // Move the picked-up row by one slot, carrying the cursor and grab with it.
+    // ListModel.move reorders in place (no view reset), so scroll and cursor follow.
     function move(dir) {
         var from = optionsList.currentIndex
         var to = from + dir
-        if (to < 0 || to >= items.length) return
-        var arr = items.slice()
-        var tmp = arr[from]; arr[from] = arr[to]; arr[to] = tmp
-        items = arr
+        if (to < 0 || to >= libModel.count) return
+        libModel.move(from, to, 1)
         optionsList.currentIndex = to
+        optionsList.positionViewAtIndex(to, ListView.Contain)
         grabbed = to
         persist()
     }
+
+    ListModel { id: libModel }
 
     Connections {
         target: appCore
@@ -89,7 +104,7 @@ FocusScope {
 
     ListView {
         id: optionsList
-        model: reorderRoot.items
+        model: libModel
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.topMargin: root.sh * 0.25 //120
@@ -99,13 +114,17 @@ FocusScope {
         clip: true
         focus: true
 
+        // Smoothly slide rows past each other while reordering.
+        move: Transition { NumberAnimation { properties: "y"; duration: 150 } }
+        moveDisplaced: Transition { NumberAnimation { properties: "y"; duration: 150 } }
+
         Keys.onUpPressed: {
             if (reorderRoot.grabbed >= 0) reorderRoot.move(-1)
-            else if (currentIndex > 0) currentIndex--
+            else if (currentIndex > 0) { currentIndex--; positionViewAtIndex(currentIndex, ListView.Contain) }
         }
         Keys.onDownPressed: {
             if (reorderRoot.grabbed >= 0) reorderRoot.move(1)
-            else if (currentIndex < count - 1) currentIndex++
+            else if (currentIndex < count - 1) { currentIndex++; positionViewAtIndex(currentIndex, ListView.Contain) }
         }
 
         Keys.onReturnPressed: {
@@ -126,7 +145,6 @@ FocusScope {
         delegate: Item {
             width: optionsList.width
             height: root.sh * 0.0583333 //28
-            property bool isGrabbed: reorderRoot.grabbed === index
 
             Rectangle {
                 anchors.fill: parent
@@ -144,7 +162,7 @@ FocusScope {
                 }
 
                 Text {
-                    text: modelData.label || ""
+                    text: model.label || ""
                     color: (optionsList.currentIndex === index || reorderRoot.grabbed === index)
                            ? root.surfaceColor : root.primaryColor
                     font.family: root.globalFont
