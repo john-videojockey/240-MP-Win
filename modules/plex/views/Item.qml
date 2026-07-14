@@ -87,6 +87,7 @@ FocusScope {
         tracked = (d.viewOffset || 0) > 0
         audioIdx = 0
         subtitleIdx = 0
+        castIndex = 0
         if (d.audioStreams) {
             for (var i = 0; i < d.audioStreams.length; i++) {
                 if (d.audioStreams[i].id === d.selectedAudioId) { audioIdx = i; break }
@@ -219,11 +220,18 @@ FocusScope {
     property var  relatedItems: []
     property int  relatedIndex: 0
 
+    // "Cast & Extras": the item's cast (Role) plus any extras (trailers,
+    // featurettes), revealed on the same scroll as More Like This. Sourced from
+    // the loaded detail; informational for now (no per-card action).
+    property var  castExtras: (detail && detail.castExtras) ? detail.castExtras : []
+    property int  castIndex: 0
+
     // Scroll the section stack so the section holding the current focusRow snaps
     // to the top of the content viewport: play/options (0-1) -> audio/subtitle
-    // (2-3) -> More Like This (4). Cast & Extras will slot in between later.
+    // (2-3) -> Cast & Extras (4) -> More Like This (5).
     property real sectionScroll: focusRow <= 1 ? 0
                                : focusRow <= 3 ? pbSettingsLabel.y
+                               : focusRow === 4 ? castSection.y
                                : relatedSection.y
 
     Component.onCompleted: {
@@ -266,20 +274,26 @@ FocusScope {
 
     focus: true
 
+    // Rows: 0 play, 1 actions (always), 2 audio, 3 subtitles, 4 cast & extras,
+    // 5 More Like This. A row is only reachable when it has content, and Up/Down
+    // skip over any empty rows in between.
+    function rowAvailable(r) {
+        if (r <= 1) return true
+        if (r === 2) return detail && detail.audioStreams && detail.audioStreams.length > 0
+        if (r === 3) return detail && detail.subtitleStreams && detail.subtitleStreams.length > 1
+        if (r === 4) return detailRoot.castExtras.length > 0
+        if (r === 5) return detailRoot.showRelated && detailRoot.relatedItems.length > 0
+        return false
+    }
     Keys.onUpPressed: {
         if (isLaunching) return
-        if (focusRow > 0) focusRow--
+        for (var r = focusRow - 1; r >= 0; r--)
+            if (rowAvailable(r)) { focusRow = r; break }
     }
     Keys.onDownPressed: {
-        if (isLaunching) return
-        if (detail) {
-            // Rows: 0 play, 1 actions (always), 2 audio, 3 subtitles, 4 related.
-            var maxRow = 1
-            if (detail.audioStreams && detail.audioStreams.length > 0) maxRow = 2
-            if (detail.subtitleStreams && detail.subtitleStreams.length > 1) maxRow = 3
-            if (detailRoot.showRelated && detailRoot.relatedItems.length > 0) maxRow = 4
-            if (focusRow < maxRow) focusRow++
-        }
+        if (isLaunching || !detail) return
+        for (var r = focusRow + 1; r <= 5; r++)
+            if (rowAvailable(r)) { focusRow = r; break }
     }
     Keys.onLeftPressed: {
         if (isLaunching) return
@@ -292,7 +306,9 @@ FocusScope {
             audioIdx = (audioIdx - 1 + detail.audioStreams.length) % detail.audioStreams.length
         else if (focusRow === 3 && detail.subtitleStreams && detail.subtitleStreams.length > 1)
             subtitleIdx = (subtitleIdx - 1 + detail.subtitleStreams.length) % detail.subtitleStreams.length
-        else if (focusRow === 4 && detailRoot.relatedItems.length > 0)
+        else if (focusRow === 4 && detailRoot.castExtras.length > 0)
+            detailRoot.castIndex = (detailRoot.castIndex - 1 + detailRoot.castExtras.length) % detailRoot.castExtras.length
+        else if (focusRow === 5 && detailRoot.relatedItems.length > 0)
             detailRoot.relatedIndex = (detailRoot.relatedIndex - 1 + detailRoot.relatedItems.length) % detailRoot.relatedItems.length
     }
     Keys.onRightPressed: {
@@ -306,7 +322,9 @@ FocusScope {
             audioIdx = (audioIdx + 1) % detail.audioStreams.length
         else if (focusRow === 3 && detail.subtitleStreams && detail.subtitleStreams.length > 1)
             subtitleIdx = (subtitleIdx + 1) % detail.subtitleStreams.length
-        else if (focusRow === 4 && detailRoot.relatedItems.length > 0)
+        else if (focusRow === 4 && detailRoot.castExtras.length > 0)
+            detailRoot.castIndex = (detailRoot.castIndex + 1) % detailRoot.castExtras.length
+        else if (focusRow === 5 && detailRoot.relatedItems.length > 0)
             detailRoot.relatedIndex = (detailRoot.relatedIndex + 1) % detailRoot.relatedItems.length
     }
     Keys.onReturnPressed: {
@@ -316,11 +334,12 @@ FocusScope {
             else toggleTracked()
             return
         }
-        if (focusRow === 4 && detailRoot.relatedItems.length > 0) {
+        if (focusRow === 5 && detailRoot.relatedItems.length > 0) {
             // Open the highlighted related title's info screen.
             detailRoot.navigateTo("Item.qml", { item: detailRoot.relatedItems[detailRoot.relatedIndex] })
             return
         }
+        // focusRow === 4 (Cast & Extras) is informational — no per-card action yet.
         if (focusRow === 0 && detail && episodeItem && playCol !== 1) {
             // PREV/NEXT: swap this screen to the sibling episode in place.
             requestAdjacent(playCol === 0 ? -1 : 1)
@@ -901,12 +920,118 @@ FocusScope {
             }
         }
 
+        // SECTION: Cast & Extras — actor headshots (name + character) and any
+        // extras (trailers/featurettes), same reveal-on-scroll as More Like This.
+        // Informational for now: navigable to browse, no per-card action.
+        Item {
+            id: castSection
+            visible: detailRoot.castExtras.length > 0
+            anchors.top: subtitleRow.bottom
+            anchors.topMargin: visible ? root.sh * 0.03 : 0
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: visible ? (castLabel.height + root.sh * 0.0083333 + castList.height) : 0
+
+            Text {
+                id: castLabel
+                text: "Cast & Extras"
+                color: detailRoot.focusRow === 4 ? root.accentColor : root.secondaryColor
+                font.family: root.globalFont
+                font.capitalization: Font.AllUppercase
+                anchors.top: parent.top
+                anchors.left: parent.left
+                font.pixelSize: root.sh * 0.0375 //18
+            }
+
+            ListView {
+                id: castList
+                model: detailRoot.castExtras
+                orientation: ListView.Horizontal
+                anchors.top: castLabel.bottom
+                anchors.topMargin: root.sh * 0.0083333
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: root.sh * 0.245
+                spacing: root.sw * 0.0125
+                clip: true
+                interactive: true
+                flickableDirection: Flickable.HorizontalFlick
+                currentIndex: detailRoot.castIndex
+                onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
+
+                delegate: Item {
+                    height: castList.height
+                    width: castList.height * (2 / 3)   // portrait card
+                    property bool sel: detailRoot.focusRow === 4 && detailRoot.castIndex === index
+
+                    Column {
+                        anchors.fill: parent
+                        spacing: root.sh * 0.0083333
+
+                        Rectangle {
+                            id: cBox
+                            width: parent.width
+                            height: castList.height * 0.66   // headshot; text below
+                            color: "transparent"
+                            border.color: sel ? root.accentColor : root.tertiaryColor
+                            border.width: sel ? Math.max(2, Math.floor(root.sh * 0.00625)) : 1
+
+                            Image {
+                                anchors.fill: parent
+                                anchors.margins: cBox.border.width
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                source: modelData.image
+                                        ? plexBackend.image_url(modelData.image, Math.round(cBox.width), Math.round(cBox.height))
+                                        : ""
+                            }
+                            // Imageless cards: a play glyph for extras, initial for cast.
+                            Text {
+                                visible: !modelData.image
+                                anchors.centerIn: parent
+                                text: modelData.kind === "extra" ? "▶" : (modelData.title || "?").charAt(0)
+                                color: root.secondaryColor
+                                font.family: root.globalFont
+                                font.capitalization: Font.AllUppercase
+                                font.pixelSize: root.sh * 0.05
+                            }
+                        }
+                        Text {
+                            width: parent.width
+                            text: modelData.title || ""
+                            color: sel ? root.accentColor : root.primaryColor
+                            font.family: root.globalFont
+                            font.capitalization: Font.AllUppercase
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                            font.pixelSize: root.sh * 0.0233333 //~11
+                        }
+                        Text {
+                            width: parent.width
+                            text: modelData.subtitle || ""
+                            color: root.tertiaryColor
+                            font.family: root.globalFont
+                            font.capitalization: Font.AllUppercase
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                            font.pixelSize: root.sh * 0.02 //~10
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: { detailRoot.focusRow = 4; detailRoot.castIndex = index }
+                    }
+                }
+            }
+        }
+
         // SECTION: More Like This — a full-size boxart row (matching the browse /
         // Continue Watching cover grid) below the audio/subtitle settings.
         Item {
             id: relatedSection
             visible: detailRoot.showRelated && detailRoot.relatedItems.length > 0
-            anchors.top: subtitleRow.bottom
+            anchors.top: castSection.bottom
             anchors.topMargin: root.sh * 0.03
             anchors.left: parent.left
             anchors.right: parent.right
@@ -915,7 +1040,7 @@ FocusScope {
             Text {
                 id: relatedLabel
                 text: "More Like This"
-                color: detailRoot.focusRow === 4 ? root.accentColor : root.secondaryColor
+                color: detailRoot.focusRow === 5 ? root.accentColor : root.secondaryColor
                 font.family: root.globalFont
                 font.capitalization: Font.AllUppercase
                 anchors.top: parent.top
@@ -946,9 +1071,9 @@ FocusScope {
                         id: relBox
                         anchors.fill: parent
                         color: "transparent"
-                        border.color: (detailRoot.focusRow === 4 && detailRoot.relatedIndex === index)
+                        border.color: (detailRoot.focusRow === 5 && detailRoot.relatedIndex === index)
                                       ? root.accentColor : root.tertiaryColor
-                        border.width: (detailRoot.focusRow === 4 && detailRoot.relatedIndex === index)
+                        border.width: (detailRoot.focusRow === 5 && detailRoot.relatedIndex === index)
                                       ? Math.max(2, Math.floor(root.sh * 0.00625)) : 1
 
                         Image {
@@ -979,9 +1104,9 @@ FocusScope {
                     MouseArea {
                         anchors.fill: parent
                         onClicked: {
-                            if (detailRoot.focusRow === 4 && detailRoot.relatedIndex === index)
+                            if (detailRoot.focusRow === 5 && detailRoot.relatedIndex === index)
                                 inputManager.touchKey("select")
-                            else { detailRoot.focusRow = 4; detailRoot.relatedIndex = index }
+                            else { detailRoot.focusRow = 5; detailRoot.relatedIndex = index }
                         }
                     }
                 }

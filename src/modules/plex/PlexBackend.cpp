@@ -1740,6 +1740,18 @@ QString PlexBackend::mediaFilePath(const QJsonObject &meta) {
     return partArr.first().toObject()["file"].toString();
 }
 
+// Human label for a Plex extra's subtype (trailer, behindTheScenes, …).
+static QString extraSubtypeLabel(const QString &s) {
+    if (s == "trailer")         return "TRAILER";
+    if (s == "behindTheScenes") return "BEHIND THE SCENES";
+    if (s == "deletedScene")    return "DELETED SCENE";
+    if (s == "featurette")      return "FEATURETTE";
+    if (s == "interview")       return "INTERVIEW";
+    if (s == "sceneOrSample")   return "SCENE";
+    if (s == "short")           return "SHORT";
+    return s.toUpper();
+}
+
 QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
     const QString uri = serverUrl();
     // Guard against metadata with no media/part (e.g. an item the server can't
@@ -1800,6 +1812,30 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
              << "| playback:" << (forceTranscode ? "transcode" : "direct play");
     int duration = meta["duration"].toInt();
 
+    // Cast & Extras: the actors (Role) followed by any extras (trailers,
+    // featurettes, …). Extras only appear when the metadata was fetched with
+    // ?includeExtras=1. Each entry carries a "kind" so the info view can label it.
+    QVariantList castExtras;
+    for (const auto &rv : meta["Role"].toArray()) {
+        const QJsonObject r = rv.toObject();
+        castExtras.append(QVariantMap{
+            {"kind",     "cast"},
+            {"title",    r["tag"].toString()},
+            {"subtitle", r["role"].toString()},
+            {"image",    r["thumb"].toString()},
+        });
+    }
+    for (const auto &ev : meta["Extras"].toObject()["Metadata"].toArray()) {
+        const QJsonObject e = ev.toObject();
+        castExtras.append(QVariantMap{
+            {"kind",      "extra"},
+            {"title",     e["title"].toString()},
+            {"subtitle",  extraSubtypeLabel(e["subtype"].toString())},
+            {"image",     e["thumb"].toString()},
+            {"ratingKey", e["ratingKey"].toString()},
+        });
+    }
+
     return QVariantMap{
         {"ratingKey",        meta["ratingKey"].toString()},
         {"title",            meta["title"].toString().toUpper()},
@@ -1835,6 +1871,7 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
         {"theme",            !meta["theme"].toString().isEmpty()            ? meta["theme"].toString()
                            : !meta["grandparentTheme"].toString().isEmpty() ? meta["grandparentTheme"].toString()
                                                                             : meta["parentTheme"].toString()},
+        {"castExtras",       castExtras},
     };
 }
 
@@ -1935,7 +1972,8 @@ QString PlexBackend::image_url(const QString &imagePath, int width, int height) 
 
 void PlexBackend::load_item_detail(const QString &ratingKey) {
     QString uri = serverUrl(), token = serverToken();
-    auto *reply = plexGet(QUrl(uri + "/library/metadata/" + ratingKey), token);
+    // includeExtras=1 so the detail carries trailers/featurettes for Cast & Extras.
+    auto *reply = plexGet(QUrl(uri + "/library/metadata/" + ratingKey + "?includeExtras=1"), token);
     connect(reply, &QNetworkReply::finished, this, [this, reply, ratingKey]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
