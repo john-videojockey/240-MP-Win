@@ -25,11 +25,26 @@ FocusScope {
     property bool hasSiblings: videoIndices.length > 1
 
     // Focus rows: 0 = play cluster (PREV/PLAY/NEXT via playCol), 1 = actions
-    // (WATCHED / TRACKED via actionCol).
+    // (WATCHED / TRACKED via actionCol), 2 = upscaler.
     property int focusRow: 0
     // 0=PREV, 1=PLAY, 2=NEXT (PREV/NEXT only exist with siblings)
     property int playCol: 1
     property int actionCol: 0
+
+    // Real-time upscaler — a global app setting ("mpv_upscaler") cycled here, the
+    // same control as the Plex info screen. Applies to the next playback.
+    property var upscalers: [
+        { id: "off",     label: "OFF" },
+        { id: "artcnn",  label: "ARTCNN" },
+        { id: "fsrcnnx", label: "FSRCNNX" },
+        { id: "anime4k", label: "ANIME4K" },
+        { id: "hq",      label: "HIGH QUALITY" }
+    ]
+    property int upscalerIdx: 0
+    function cycleUpscaler(dir) {
+        upscalerIdx = (upscalerIdx + dir + upscalers.length) % upscalers.length
+        appCore.save_setting("", "mpv_upscaler", upscalers[upscalerIdx].id)
+    }
 
     // Saved resume position for the current video (drives the RSUM label)
     property int savedPos: 0
@@ -137,19 +152,25 @@ FocusScope {
                  ? true : (bg === true || bg === "ON")
         var op = parseInt(appCore.get_setting(moduleRoot.moduleId, "info_background_opacity"))
         if (op > 0) infoBgOpacity = op / 100
+
+        var up = (appCore.get_setting("", "mpv_upscaler") || "off").toString().toLowerCase()
+        for (var ui = 0; ui < upscalers.length; ui++)
+            if (upscalers[ui].id === up) { upscalerIdx = ui; break }
     }
 
     focus: true
 
     Keys.onUpPressed: if (focusRow > 0) focusRow--
-    Keys.onDownPressed: if (focusRow < 1) focusRow++
+    Keys.onDownPressed: if (focusRow < 2) focusRow++
     Keys.onLeftPressed: {
         if (focusRow === 0) { if (hasSiblings && playCol > 0) playCol-- }
-        else if (actionCol > 0) actionCol--
+        else if (focusRow === 1) { if (actionCol > 0) actionCol-- }
+        else if (focusRow === 2) detailRoot.cycleUpscaler(-1)
     }
     Keys.onRightPressed: {
         if (focusRow === 0) { if (hasSiblings && playCol < 2) playCol++ }
-        else if (actionCol < 1) actionCol++
+        else if (focusRow === 1) { if (actionCol < 1) actionCol++ }
+        else if (focusRow === 2) detailRoot.cycleUpscaler(1)
     }
     Keys.onReturnPressed: {
         if (focusRow === 1) {
@@ -157,6 +178,7 @@ FocusScope {
             else toggleTracked()
             return
         }
+        if (focusRow === 2) { detailRoot.cycleUpscaler(1); return }
         if (hasSiblings && playCol === 0) stepTo(-1)
         else if (hasSiblings && playCol === 2) stepTo(1)
         else play()
@@ -377,6 +399,44 @@ FocusScope {
                             anchors.centerIn: parent
                             text: detailRoot.tracked ? "TRACKED" : "UNTRACKED"
                             color: trackedBtn.sel ? root.surfaceColor : root.primaryColor
+                            font.family: root.globalFont
+                            font.pixelSize: root.sh * 0.025 //12
+                        }
+                    }
+                }
+
+                // Upscaler: cycles the global "mpv_upscaler" setting (applies to
+                // the next playback). Focus row 2 — the same control as Plex info.
+                Column {
+                    spacing: root.sh * 0.0041667 //2
+                    topPadding: root.sh * 0.0083333 //4
+
+                    Text {
+                        text: "UPSCALER"
+                        color: root.tertiaryColor
+                        font.family: root.globalFont
+                        font.pixelSize: root.sh * 0.0208333 //10
+                    }
+                    Rectangle {
+                        id: upscalerBtn
+                        property bool sel: focusRow === 2
+                        color: sel ? root.accentColor : root.surfaceColor
+                        border.color: sel ? root.accentColor : root.tertiaryColor
+                        width: root.sw * 0.1875
+                        height: root.sh * 0.05
+                        border.width: root.sh * 0.003125 //2
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (upscalerBtn.sel) detailRoot.cycleUpscaler(1)
+                                else focusRow = 2
+                            }
+                        }
+                        Text {
+                            anchors.centerIn: parent
+                            text: "◄ " + detailRoot.upscalers[detailRoot.upscalerIdx].label + " ►"
+                            color: upscalerBtn.sel ? root.surfaceColor : root.primaryColor
                             font.family: root.globalFont
                             font.pixelSize: root.sh * 0.025 //12
                         }

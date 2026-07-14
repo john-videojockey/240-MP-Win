@@ -108,6 +108,9 @@ private:
     // Appends the --hwdec flags (honouring the app-level "mpv_video_args"
     // override) to a forming mpv argument list.
     void appendVideoArgs(QStringList &args) const;
+    // Appends real-time upscaler args for the app-level "mpv_upscaler" setting
+    // (GLSL shader chains from shaders/upscalers, or mpv's built-in HQ scalers).
+    void appendUpscalerArgs(QStringList &args) const;
     // App-level "auto_crop" setting (default OFF). When ON, playback starts with
     // panscan=1 so video fills a CRT/4:3 screen by default (still toggleable live).
     bool autoCropEnabled() const;

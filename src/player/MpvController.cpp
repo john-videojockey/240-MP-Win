@@ -337,6 +337,7 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
          << "--video-sync=audio"
          << "--fullscreen";
     appendVideoArgs(args);
+    appendUpscalerArgs(args);
     // mpv runs as a separate process and can't see the app's FontLoader font.
     // --osd-fonts-dir loads the bundled VCR OSD Mono straight into the OSD
     // libass instance (used by the OSC scripts), no system install needed.
@@ -563,6 +564,47 @@ void MpvController::appendVideoArgs(QStringList &args) const {
     // current builds), which composites through the D3D11 swapchain — the
     // scaler path, so crop/zoom (--panscan) always works.
     args << "--hwdec=auto-safe";
+}
+
+void MpvController::appendUpscalerArgs(QStringList &args) const {
+    if (!m_appCore) return;
+    const QString sel = m_appCore->get_setting(QString(), "mpv_upscaler").toString().toLower();
+    if (sel.isEmpty() || sel == "off") return;
+
+    // Built-in high-quality scalers — no external files needed.
+    if (sel == "hq") {
+        args << "--scale=ewa_lanczossharp"
+             << "--cscale=ewa_lanczossharp"
+             << "--dscale=mitchell"
+             << "--sigmoid-upscaling=yes"
+             << "--correct-downscaling=yes";
+        return;
+    }
+
+    // GLSL shader upscalers. Files live in <app>/shaders/upscalers (fetched by
+    // scripts/get-upscalers.ps1). --glsl-shaders-append (one per file) sidesteps
+    // the platform-specific list separator; a missing file makes mpv log and play
+    // without it, so a not-yet-downloaded shader degrades to no upscaling.
+    QStringList shaders;
+    if (sel == "artcnn") {
+        shaders << "ArtCNN_C4F32.glsl";
+    } else if (sel == "fsrcnnx") {
+        shaders << "FSRCNNX_x2_8-0-4-1.glsl";
+    } else if (sel == "anime4k") {
+        // Mode A (Fast): clamp + restore + a 2x upscale chain, balanced for
+        // mid-range GPUs.
+        shaders << "Anime4K_Clamp_Highlights.glsl"
+                << "Anime4K_Restore_CNN_M.glsl"
+                << "Anime4K_Upscale_CNN_x2_M.glsl"
+                << "Anime4K_AutoDownscalePre_x2.glsl"
+                << "Anime4K_AutoDownscalePre_x4.glsl"
+                << "Anime4K_Upscale_CNN_x2_S.glsl";
+    } else {
+        return;
+    }
+    const QString dir = m_appRoot + "/shaders/upscalers/";
+    for (const QString &s : shaders)
+        args << QString("--glsl-shaders-append=%1").arg(dir + s);
 }
 
 bool MpvController::autoCropEnabled() const {

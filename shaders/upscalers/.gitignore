@@ -1,0 +1,3 @@
+# Upscaler shaders are downloaded on demand (scripts/get-upscalers.ps1), not
+# committed. Track only the README and this ignore file.
+*.glsl
