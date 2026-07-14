@@ -8,6 +8,7 @@
 #include <QUrl>
 #include <QXmlStreamReader>
 #include <QRegularExpression>
+#include <QCollator>
 #include <QDateTime>
 #include <QFileSystemWatcher>
 #include <QTimer>
@@ -306,6 +307,19 @@ void LocalFilesBackend::onSettingChanged(const QString &moduleId, const QString 
 // Scraper artwork must not be listed as playable media: a folder of episodes
 // with TinyMediaManager "-thumb.jpg" sidecars would otherwise show every
 // artwork file as a slideshow entry between the videos.
+// Numeric-aware, case-insensitive sort so "Season 2" precedes "Season 10" and
+// unpadded episode names ("Episode 2" before "Episode 10") order correctly —
+// QDir::Name is plain lexicographic. Applied to browse/flatten listings so both
+// the on-screen order and the playback order (Detail walks the items array) are
+// right.
+static void naturalSort(QStringList &names) {
+    QCollator c;
+    c.setNumericMode(true);
+    c.setCaseSensitivity(Qt::CaseInsensitive);
+    std::sort(names.begin(), names.end(),
+              [&c](const QString &a, const QString &b) { return c.compare(a, b) < 0; });
+}
+
 static bool isArtworkImage(const QString &baseName) {
     static const QStringList kArtBases = {
         "poster", "folder", "cover", "fanart", "backdrop", "background",
@@ -342,6 +356,10 @@ QString LocalFilesBackend::findSuffixArtFile(const QDir &dir, const QStringList 
     for (const QFileInfo &fi : files) {
         if (!kArtExts.contains(fi.suffix().toLower())) continue;
         const QString b = fi.completeBaseName().toLower();
+        // Skip Kodi season sidecars (season01-poster, season-all-poster, …) so a
+        // show folder doesn't adopt one of its season posters as its own cover.
+        if (b.startsWith("season") && b.size() > 6 && (b.at(6).isDigit() || b.at(6) == '-'))
+            continue;
         for (const QString &s : suffixes)
             if (b.endsWith(s))
                 return QUrl::fromLocalFile(fi.absoluteFilePath()).toString();
@@ -418,10 +436,16 @@ void LocalFilesBackend::enrichFolderItem(QVariantMap &item, const QString &folde
     if (!thumb.isEmpty()) { item["thumb"] = thumb; item["poster"] = thumb; }
     if (!art.isEmpty())   item["art"]   = art;
 
-    for (const QString &nfoName : {QStringLiteral("tvshow.nfo"), QStringLiteral("movie.nfo")}) {
+    // tvshow.nfo / movie.nfo, plus "<FolderName>.nfo" — the TinyMediaManager movie
+    // convention names the nfo after the folder ("Movie (2020)/Movie (2020).nfo").
+    const QStringList nfoCandidates = {
+        QStringLiteral("tvshow.nfo"), QStringLiteral("movie.nfo"), d.dirName() + ".nfo"
+    };
+    for (const QString &nfoName : nfoCandidates) {
         const QString nfoPath = d.filePath(nfoName);
         if (!QFileInfo::exists(nfoPath)) continue;
         const QVariantMap meta = parseNfo(nfoPath);
+        if (meta.isEmpty()) continue;
         for (auto it = meta.constBegin(); it != meta.constEnd(); ++it)
             item[it.key()] = it.value();
         break;
@@ -564,7 +588,9 @@ bool LocalFilesBackend::folderContainsVideo(const QString &path, int depth) cons
 void LocalFilesBackend::collectVideos(const QString &path, QVariantList &out, int depth) const {
     if (depth > 4) return;
     QDir dir(path);
-    for (const QString &name : dir.entryList(QDir::Files, QDir::Name)) {
+    QStringList vidFiles = dir.entryList(QDir::Files, QDir::Name);
+    naturalSort(vidFiles);
+    for (const QString &name : vidFiles) {
         const QString suffix = QFileInfo(name).suffix().toLower();
         // Videos only here — a movie/show folder's images are artwork, not content.
         if (!kMediaExts.contains(suffix) || kImageExts.contains(suffix)
@@ -577,7 +603,9 @@ void LocalFilesBackend::collectVideos(const QString &path, QVariantList &out, in
         enrichVideoItem(item, item["path"].toString());
         out.append(item);
     }
-    for (const QString &sub : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name))
+    QStringList subDirs = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    naturalSort(subDirs);
+    for (const QString &sub : subDirs)
         collectVideos(dir.absoluteFilePath(sub), out, depth + 1);
 }
 
@@ -605,7 +633,8 @@ QVariantList LocalFilesBackend::scanItems(const QString &path, const QString &me
         return result;
     }
 
-    const QStringList subdirs = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    QStringList subdirs = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+    naturalSort(subdirs);
     const bool isMediaRoot = (clean.compare(root, Qt::CaseInsensitive) == 0);
 
     // Smart show/movie folders: a scraped folder (has .nfo/artwork) below the
@@ -634,7 +663,9 @@ QVariantList LocalFilesBackend::scanItems(const QString &path, const QString &me
                 enrichFolderItem(item, item["path"].toString());
                 result.append(item);
             }
-            for (const QString &name : dir.entryList(QDir::Files, QDir::Name)) {
+            QStringList looseFiles = dir.entryList(QDir::Files, QDir::Name);
+            naturalSort(looseFiles);
+            for (const QString &name : looseFiles) {
                 const QString suffix = QFileInfo(name).suffix().toLower();
                 if (!kMediaExts.contains(suffix) || kImageExts.contains(suffix)
                     || kPlaylistExts.contains(suffix))
@@ -675,7 +706,9 @@ QVariantList LocalFilesBackend::scanItems(const QString &path, const QString &me
         result.append(item);
     }
 
-    for (const QString &name : dir.entryList(QDir::Files, QDir::Name)) {
+    QStringList browseFiles = dir.entryList(QDir::Files, QDir::Name);
+    naturalSort(browseFiles);
+    for (const QString &name : browseFiles) {
         const QString suffix = QFileInfo(name).suffix().toLower();
         if (!kMediaExts.contains(suffix)) continue;
         // Skip scraper artwork (poster.jpg, <name>-thumb.jpg, …) — it backs
