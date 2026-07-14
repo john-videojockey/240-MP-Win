@@ -10,24 +10,36 @@ FocusScope {
     property string moduleId: navParams.moduleId || ""
     property string settingKey: navParams.settingKey || ""
 
+    // File-pick mode: when navParams.fileExtensions is set (e.g. "jpg,png,gif"),
+    // matching files are listed too and selecting one saves its path (used for
+    // the app background). Otherwise this browses/selects a directory.
+    property string pickExtensions: navParams.fileExtensions || ""
+    property bool pickFile: pickExtensions !== ""
+    property string noneLabel: navParams.noneLabel || "<USE DEFAULT DIRECTORY>"
+
     property string currentBrowsePath: ""
     property var dirEntries: []
+    property var fileEntries: []
 
     // An empty browse path is the "computer" level (drive list) — a drive must
     // be entered before "use this directory" makes sense there.
     property var listModel: {
         var items = [{ name: "..PARENT DIRECTORY", entryType: "up" }]
-        if (currentBrowsePath !== "")
+        // "Use this directory" only makes sense when picking a directory.
+        if (!pickFile && currentBrowsePath !== "")
             items.push({ name: "<USE THIS DIRECTORY>", entryType: "select" })
-        items.push({ name: "<USE DEFAULT DIRECTORY>", entryType: "default" })
-        for (var i = 0; i < dirEntries.length; i++) {
+        items.push({ name: noneLabel, entryType: "default" })
+        for (var i = 0; i < dirEntries.length; i++)
             items.push({ name: dirEntries[i].name, path: dirEntries[i].path, entryType: "dir" })
-        }
+        for (var j = 0; j < fileEntries.length; j++)
+            items.push({ name: fileEntries[j].name, path: fileEntries[j].path, entryType: "file" })
         return items
     }
 
     function loadEntries() {
         dirEntries = appCore.listDirectories(currentBrowsePath)
+        fileEntries = (pickFile && currentBrowsePath !== "")
+                      ? appCore.listFiles(currentBrowsePath, pickExtensions) : []
         dirList.currentIndex = 0
     }
 
@@ -52,6 +64,12 @@ FocusScope {
     // their own default directory at read time.
     function selectDefault() {
         appCore.save_setting(moduleId, settingKey, "")
+        goBack()
+    }
+
+    // File-pick mode: save the chosen file's path.
+    function selectFile(path) {
+        appCore.save_setting(moduleId, settingKey, path)
         goBack()
     }
 
@@ -95,6 +113,7 @@ FocusScope {
             else if (entry.entryType === "select") browserRoot.selectCurrent()
             else if (entry.entryType === "default") browserRoot.selectDefault()
             else if (entry.entryType === "dir") browserRoot.navigateInto(entry.path)
+            else if (entry.entryType === "file") browserRoot.selectFile(entry.path)
         }
         Keys.onPressed: function(event) {
             // PgUp/PgDown page by one screenful, keeping the cursor in place.

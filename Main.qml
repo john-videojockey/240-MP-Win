@@ -87,6 +87,14 @@ Window {
     readonly property real sw: width
     readonly property real sh: height
 
+    // --- APP BACKGROUND --- (Settings → Background: image or animated GIF)
+    property string appBackground: ""
+    property bool   appBgScanlines: true
+    property real   appBgTint: 0.4
+    readonly property bool appBgIsGif: appBackground.toLowerCase().endsWith(".gif")
+    readonly property string appBgUrl:
+        appBackground !== "" ? "file:///" + appBackground.replace(/\\/g, "/") : ""
+
     Connections {
         target: appCore
         function onAppSettingChanged(key, value) {
@@ -101,6 +109,13 @@ Window {
                     idleTracker.enabled = false
                     if (screenSaverActive) screenSaverActive = false
                 }
+            } else if (key === "app_background") {
+                root.appBackground = value || ""
+            } else if (key === "app_background_scanlines") {
+                root.appBgScanlines = (value !== "Off")
+            } else if (key === "app_background_tint") {
+                var p = parseInt(value)
+                root.appBgTint = isNaN(p) ? 0.4 : p / 100
             }
         }
     }
@@ -141,6 +156,12 @@ Window {
             idleTracker.threshold = ssSec
             idleTracker.enabled = true
         }
+
+        // App background (image / animated GIF) + scanline & tint options.
+        root.appBackground = (cfg.app && cfg.app.app_background) || ""
+        root.appBgScanlines = !(cfg.app && cfg.app.app_background_scanlines === "Off")
+        var tintPct = parseInt(cfg.app && cfg.app.app_background_tint)
+        root.appBgTint = isNaN(tintPct) ? 0.4 : tintPct / 100
     }
     
     FontLoader {
@@ -264,6 +285,58 @@ Window {
                 mpvController.raisePlayer()
             else if (root.visibility === Window.Minimized)
                 mpvController.minimizePlayer()
+        }
+    }
+
+    // --- APP BACKGROUND ---
+    // An image or animated GIF behind the menus, tinted toward the theme color
+    // and (optionally) overlaid with CRT scanlines. z:-1 sits it below every menu
+    // view; the module views are transparent, so it shows through. Hidden when no
+    // background is set (the Window's surfaceColor shows, as before).
+    Item {
+        id: appBgLayer
+        anchors.fill: parent
+        z: -1
+        visible: root.appBackground !== ""
+
+        Loader {
+            anchors.fill: parent
+            active: appBgLayer.visible
+            sourceComponent: root.appBgIsGif ? animBgComp : staticBgComp
+        }
+        Component {
+            id: staticBgComp
+            Image {
+                anchors.fill: parent
+                source: root.appBgUrl
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                cache: false
+            }
+        }
+        Component {
+            id: animBgComp
+            AnimatedImage {
+                anchors.fill: parent
+                source: root.appBgUrl
+                fillMode: Image.PreserveAspectCrop
+                cache: false
+                playing: true
+            }
+        }
+        // Tint toward the theme surface color so menu text stays legible.
+        Rectangle {
+            anchors.fill: parent
+            color: root.surfaceColor
+            opacity: root.appBgTint
+        }
+        // CRT scanlines, matching the fanart treatment.
+        Image {
+            anchors.fill: parent
+            visible: root.appBgScanlines
+            fillMode: Image.Tile
+            source: "assets/images/scanlines.png"
+            opacity: 0.6
         }
     }
 

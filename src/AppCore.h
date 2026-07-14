@@ -45,6 +45,9 @@ public:
     Q_INVOKABLE QVariantMap getCustomColorScheme() const;
     Q_INVOKABLE QVariantMap getCustomColorSchemes() const;
     Q_INVOKABLE QVariantList listDirectories(const QString &path);
+    // Files in `path` whose extension is in the comma-separated `extensions`
+    // list (e.g. "jpg,png,gif"), for the directory browser's file-pick mode.
+    Q_INVOKABLE QVariantList listFiles(const QString &path, const QString &extensions);
     Q_INVOKABLE QString parentDirectory(const QString &path);
     Q_INVOKABLE QString homePath();
     Q_INVOKABLE QString startupModuleEntryPoint() const;

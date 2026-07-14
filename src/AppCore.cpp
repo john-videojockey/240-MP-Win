@@ -395,6 +395,26 @@ QVariantList AppCore::listDirectories(const QString &path) {
     return result;
 }
 
+QVariantList AppCore::listFiles(const QString &path, const QString &extensions) {
+    QVariantList result;
+    if (path.isEmpty())
+        return result;   // drive level: no files
+    QDir dir(path);
+    if (!dir.exists())
+        return result;
+    QStringList filters;
+    for (const QString &ext : extensions.split(',', Qt::SkipEmptyParts))
+        filters << QStringLiteral("*.%1").arg(ext.trimmed().toLower());
+    const QStringList names = dir.entryList(filters, QDir::Files, QDir::Name);
+    for (const QString &name : names) {
+        QVariantMap item;
+        item["name"] = name;
+        item["path"] = dir.absoluteFilePath(name);
+        result.append(item);
+    }
+    return result;
+}
+
 QString AppCore::parentDirectory(const QString &path) {
     if (path.isEmpty()) return path;
     QDir dir(path);

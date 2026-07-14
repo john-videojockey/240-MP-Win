@@ -149,6 +149,40 @@ FocusScope {
             moduleId: ""
         })
 
+        // Background — an image or animated GIF behind the menus (file picker).
+        // Scanline + tint controls only appear once a background is chosen.
+        var bgPath = appSettings["app_background"] || ""
+        var bgName = bgPath ? bgPath.replace(/\\/g, "/").split("/").pop() : "None"
+        items.push({
+            type: "file_browser",
+            key: "app_background",
+            label: "Background",
+            value: bgName,
+            path: bgPath,
+            description: "Set an image or animated GIF as the menu background.",
+            moduleId: ""
+        })
+        if (bgPath !== "") {
+            items.push({
+                type: "list_single",
+                key: "app_background_scanlines",
+                label: "Background Scanlines",
+                options: ["On", "Off"],
+                value: appSettings["app_background_scanlines"] || "On",
+                description: "Overlay CRT-style scanlines on the background.",
+                moduleId: ""
+            })
+            items.push({
+                type: "list_single",
+                key: "app_background_tint",
+                label: "Background Tint",
+                options: ["0%", "20%", "40%", "60%", "80%"],
+                value: appSettings["app_background_tint"] || "40%",
+                description: "Tint the background toward the theme color so menus stay legible.",
+                moduleId: ""
+            })
+        }
+
         // MODULES section — only show modules with has_settings
         var hasModuleSettings = false
         for (var i = 0; i < installedModules.length; i++) {
@@ -282,6 +316,14 @@ FocusScope {
                     settingsRoot.navigateTo("views/Update.qml", {}, { currentIndex: settingsList.currentIndex })
                 else
                     settingsRoot.navigateTo("views/ModuleSettings.qml", { moduleId: row.moduleId }, { currentIndex: settingsList.currentIndex })
+            } else if (row && row.type === "file_browser") {
+                settingsRoot.navigateTo("views/DirectoryBrowser.qml", {
+                    moduleId: "",
+                    settingKey: row.key,
+                    currentPath: row.path ? appCore.parentDirectory(row.path) : appCore.homePath(),
+                    fileExtensions: "jpg,jpeg,png,gif,webp,bmp",
+                    noneLabel: "<NO BACKGROUND>"
+                }, { currentIndex: settingsList.currentIndex })
             } else if (row && row.type === "quit") {
                 settingsRoot.quitChoiceIndex = 0
                 settingsRoot.quitOverlayVisible = true
@@ -394,7 +436,7 @@ FocusScope {
                         }
                     }
                     Text {
-                        visible: modelData.type === "list_single"
+                        visible: modelData.type === "list_single" || modelData.type === "file_browser"
                         text: modelData.value || ""
                         color: settingsList.currentIndex === index ? root.surfaceColor : root.primaryColor
                         font.family: root.globalFont
@@ -407,7 +449,7 @@ FocusScope {
                         font.pixelSize:root.sh * 0.05 //24
                     }
                     Text {
-                        visible: modelData.type === "submenu" || modelData.type === "list_single"
+                        visible: modelData.type === "submenu" || modelData.type === "list_single" || modelData.type === "file_browser"
                         text: "\u25BA"
                         color: settingsList.currentIndex === index ? root.surfaceColor : root.tertiaryColor
                         font.family: root.globalFont
