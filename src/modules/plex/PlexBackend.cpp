@@ -631,10 +631,16 @@ QVariantMap PlexBackend::formatItem(const QJsonObject &m) const {
     // browse-view hover background and the landscape grid cards.
     const QString art = !m["art"].toString().isEmpty() ? m["art"].toString()
                                                        : m["grandparentArt"].toString();
+    // Theme song path (its own, else the show's) so hovering a show/movie in the
+    // browse & Continue Watching grids can play it, like the info screen.
+    const QString theme = !m["theme"].toString().isEmpty()            ? m["theme"].toString()
+                        : !m["grandparentTheme"].toString().isEmpty() ? m["grandparentTheme"].toString()
+                                                                      : m["parentTheme"].toString();
     return QVariantMap{
         {"ratingKey",              m["ratingKey"].toString()},
         {"thumb",                  thumb},
         {"art",                    art},
+        {"theme",                  theme},
         // Poster/cover, never the episode still: the show's poster for an
         // episode (grandparent), the season's for a season, else the item's
         // own. Continue Watching shows this instead of the screenshot thumb.

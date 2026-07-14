@@ -42,6 +42,9 @@ FocusScope {
     // Fanart hover background (shared module settings with the info screen)
     property bool infoBg: true
     property real infoBgOpacity: 0.3
+    // Theme music on hover (same settings as the info screen).
+    property bool showThemes: false
+    property int  themeVolume: 50
 
     function itemsAreCovers(arr) {
         for (var i = 0; i < arr.length; i++) {
@@ -78,7 +81,7 @@ FocusScope {
             coverGrid.currentIndex = idx
             coverGrid.positionViewAtIndex(idx, GridView.Contain)
         }
-        if (infoBg) hoverArtDebounce.restart()
+        if (infoBg || showThemes) hoverArtDebounce.restart()
     }
 
     function sortKey(title) {
@@ -252,6 +255,10 @@ FocusScope {
                  ? true : (bg === true || bg === "ON")
         var op = parseInt(appCore.get_setting(moduleRoot.moduleId, "info_background_opacity"))
         if (op > 0) infoBgOpacity = op / 100
+        var stv = appCore.get_setting(moduleRoot.moduleId, "show_themes")
+        showThemes = (stv === true || stv === "ON")
+        var tv = parseInt(appCore.get_setting(moduleRoot.moduleId, "theme_volume"))
+        if (tv > 0) themeVolume = tv
 
         isLoading = true
         errorMessage = ""
@@ -302,17 +309,30 @@ FocusScope {
             hoverArt.source = (itemListRoot.infoBg && it && it.art)
                     ? plexBackend.image_url(it.art, Math.round(root.sw), Math.round(root.sh))
                     : ""
+            // Play the hovered item's theme (if enabled and it has one).
+            if (itemListRoot.showThemes && it && it.theme)
+                plexBackend.play_theme(it.theme, itemListRoot.themeVolume)
+            else
+                plexBackend.stop_theme()
         }
     }
-    // Restart the debounce whenever the highlight moves in either view.
+    // Restart the debounce whenever the highlight moves in either view — needed
+    // for the hover fanart and/or the hover theme.
     Connections {
         target: itemList
-        function onCurrentIndexChanged() { if (itemListRoot.infoBg) hoverArtDebounce.restart() }
+        function onCurrentIndexChanged() {
+            if (itemListRoot.infoBg || itemListRoot.showThemes) hoverArtDebounce.restart()
+        }
     }
     Connections {
         target: coverGrid
-        function onCurrentIndexChanged() { if (itemListRoot.infoBg) hoverArtDebounce.restart() }
+        function onCurrentIndexChanged() {
+            if (itemListRoot.infoBg || itemListRoot.showThemes) hoverArtDebounce.restart()
+        }
     }
+    // Stop the theme when leaving the browse screen (the info screen, if entered,
+    // starts its own).
+    Component.onDestruction: plexBackend.stop_theme()
 
     // Opaque base under the hover fanart so it dims toward the theme color, not
     // the app background bleeding through it. Fades in/out with the fanart.
