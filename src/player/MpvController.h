@@ -101,6 +101,10 @@ private slots:
 
 private:
     void sendCommand(const QJsonArray &args);
+    // Mirrors mpv's captured stdout/stderr into the app log, line by line, while
+    // dropping its high-frequency terminal status line so it can't flood the log
+    // or an attached console.
+    static void logMpvOutput(const QByteArray &raw);
     // Appends the --hwdec flags (honouring the app-level "mpv_video_args"
     // override) to a forming mpv argument list.
     void appendVideoArgs(QStringList &args) const;

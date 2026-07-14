@@ -172,7 +172,13 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
          << QString("--input-ipc-server=%1").arg(m_pipePath)
          << QString("--log-file=%1").arg(m_logFilePath)
          << (hasOscScript ? "--osc=no" : "--osc=yes")
-         << "--osd-level=0";
+         << "--osd-level=0"
+         // Silence mpv's periodic terminal status line ("AV: .. A-V: .."). We
+         // capture mpv's stdout/stderr to mirror real messages into the app log,
+         // but that status line prints many times a second and would flood both
+         // the log and any console the app is attached to. Full detail still goes
+         // to --log-file. (logMpvOutput also filters any that slip through.)
+         << "--term-status-msg=";
 
     if (hasOscScript)
         args << QString("--script=%1").arg(oscScript);
@@ -318,9 +324,7 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
             QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, &MpvController::onProcessFinished);
     connect(m_process, &QProcess::readyRead, this, [this]() {
-        const QByteArray out = m_process->readAll();
-        if (!out.isEmpty())
-            qWarning("[mpv] %s", out.trimmed().constData());
+        logMpvOutput(m_process->readAll());
     });
 
     // Fullscreen hand-off: mpv opens its own fullscreen window over the Qt
@@ -477,11 +481,8 @@ void MpvController::onIpcReadyRead() {
 
 void MpvController::onProcessFinished() {
     int exitCode = m_process ? m_process->exitCode() : -1;
-    if (m_process) {
-        const QByteArray remaining = m_process->readAll();
-        if (!remaining.isEmpty())
-            qWarning("[mpv] %s", remaining.trimmed().constData());
-    }
+    if (m_process)
+        logMpvOutput(m_process->readAll());
     if (exitCode != 0)
         qWarning("[MpvController] mpv exited with code %d", exitCode);
     m_connectTimer->stop();
@@ -511,6 +512,26 @@ void MpvController::onProcessFinished() {
     else                                   reason = QStringLiteral("stopped");
 
     emit playbackEnded(pos, dur, reason);
+}
+
+void MpvController::logMpvOutput(const QByteArray &raw) {
+    if (raw.isEmpty())
+        return;
+    // mpv's status line is \r-terminated (it overwrites in place on a terminal);
+    // normalise to \n so each update is its own line, then log the real messages
+    // and skip the status line. A video status line always carries the "A-V:"
+    // sync field; audio-only / video-only status starts with "A: " / "V: ".
+    QByteArray data = raw;
+    data.replace('\r', '\n');
+    const QList<QByteArray> lines = data.split('\n');
+    for (const QByteArray &line : lines) {
+        const QByteArray t = line.trimmed();
+        if (t.isEmpty())
+            continue;
+        if (t.contains("A-V:") || t.startsWith("A: ") || t.startsWith("V: "))
+            continue;   // periodic status line — noise
+        qWarning("[mpv] %s", t.constData());
+    }
 }
 
 void MpvController::sendCommand(const QJsonArray &args) {
