@@ -362,8 +362,9 @@ void MpvController::tryAdoptMpvWindow() {
         m_adoptTimer->stop();
         return;
     }
-    if (++m_adoptTries > 40) {   // ~5 s
+    if (++m_adoptTries > 80) {   // ~10 s — cover a slow-to-appear mpv window
         m_adoptTimer->stop();
+        qWarning("[MpvController] gave up marrying mpv window (not found / ownership refused)");
         return;
     }
     const quintptr hwnd = adoptMpvWindow(m_mainWindow->winId(), m_process->processId());
@@ -377,6 +378,11 @@ void MpvController::tryAdoptMpvWindow() {
 void MpvController::raisePlayer() {
     if (m_mpvHwnd)
         raiseMpvWindow(m_mpvHwnd);
+}
+
+void MpvController::minimizePlayer() {
+    if (m_mpvHwnd)
+        minimizeMpvWindow(m_mpvHwnd);
 }
 
 void MpvController::stop() {

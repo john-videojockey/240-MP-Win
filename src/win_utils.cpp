@@ -157,6 +157,13 @@ quintptr adoptMpvWindow(quintptr ownerHwnd, qint64 mpvPid) {
     // sits above the menu in Z-order and is hidden whenever the menu minimizes.
     SetWindowLongPtrW(mpv, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(owner));
 
+    // Verify ownership actually took. Setting another process's window owner can
+    // fail silently (timing, cross-process restrictions); if it didn't stick,
+    // report failure so the caller keeps polling instead of trusting a
+    // half-applied marriage (which is what leaves the two windows "split").
+    if (GetWindow(mpv, GW_OWNER) != owner)
+        return 0;
+
     // Remove mpv's own taskbar button so the pair shows a single button (the
     // menu window's). DeleteTab does this without a hide/show cycle, so there's
     // no flicker of the fullscreen video. Uses __uuidof so no CLSID_/IID_ import
@@ -181,6 +188,13 @@ void raiseMpvWindow(quintptr mpvHwnd) {
         ShowWindow(h, SW_RESTORE);
     SetWindowPos(h, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
     SetForegroundWindow(h);
+}
+
+void minimizeMpvWindow(quintptr mpvHwnd) {
+    HWND h = reinterpret_cast<HWND>(mpvHwnd);
+    if (!h || !IsWindow(h) || IsIconic(h))
+        return;
+    ShowWindow(h, SW_MINIMIZE);
 }
 
 void prependToolDirsToPath(const QString &appRoot) {

@@ -256,9 +256,15 @@ Window {
     onVisibilityChanged: {
         if (root.visibility === Window.Windowed)
             root._ensureFullscreen()
-        if (root.visibility === Window.Windowed && idleTracker && mpvController
-                && idleTracker.mpvActive)
-            mpvController.raisePlayer()
+        // Keep the mpv window in lockstep with this (owner) window during
+        // playback: minimize it with us and bring it back on restore, so the two
+        // never split even if the owned-window marriage failed to take.
+        if (idleTracker && mpvController && idleTracker.mpvActive) {
+            if (root.visibility === Window.Windowed)
+                mpvController.raisePlayer()
+            else if (root.visibility === Window.Minimized)
+                mpvController.minimizePlayer()
+        }
     }
 
     // --- MODULE LOADER ---

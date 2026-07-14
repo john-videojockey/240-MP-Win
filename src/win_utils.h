@@ -45,13 +45,21 @@ QString findMpvExecutable();
 
 // Finds mpv's top-level window by process id and marries it to the app's main
 // window: makes it an *owned* window of ownerHwnd (so the player stays above the
-// menu and is hidden when the menu is minimized) and removes its separate taskbar
-// button. mpv's window appears asynchronously after launch, so this returns 0
-// until it exists — the caller polls and retries. On success returns mpv's window
-// handle (opaque), which is passed back to raiseMpvWindow().
+// menu) and removes its separate taskbar button. mpv's window appears
+// asynchronously after launch, so this returns 0 until it exists AND ownership
+// verifiably took (a cross-process window call can fail silently) — the caller
+// polls and retries until it succeeds. Idempotent, so re-calling just re-asserts
+// the marriage. On success returns mpv's window handle (opaque), passed back to
+// raiseMpvWindow()/minimizeMpvWindow().
 quintptr adoptMpvWindow(quintptr ownerHwnd, qint64 mpvPid);
 
 // Un-minimizes the mpv window (if needed) and brings it back to the front with
 // focus. Called when the app's owner window is restored so the video returns on
 // top of the menu. No-op if mpvHwnd is 0 or no longer a valid window.
 void raiseMpvWindow(quintptr mpvHwnd);
+
+// Minimizes the mpv window. Called when the owner window is minimized so the
+// player drops with it explicitly, rather than relying only on owned-window
+// auto-hide (which needs the marriage to have taken). No-op if mpvHwnd is 0,
+// invalid, or already minimized.
+void minimizeMpvWindow(quintptr mpvHwnd);

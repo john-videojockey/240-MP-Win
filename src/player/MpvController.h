@@ -55,6 +55,11 @@ public:
     // menu sitting in front of it.
     Q_INVOKABLE void raisePlayer();
 
+    // Minimize the player's window — called from QML when the owner (menu) window
+    // is minimized, so the pair drops together even if the owned-window marriage
+    // didn't take (belt-and-suspenders against the two windows "splitting").
+    Q_INVOKABLE void minimizePlayer();
+
     // Kept for the shared Settings view: the smoothness-vs-crop trade-off only
     // exists on the Raspberry Pi 3 decode path upstream. On Windows the D3D11
     // scaler path always supports crop, so the toggle is never shown.
