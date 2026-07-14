@@ -78,9 +78,14 @@ public:
 
     // Show theme music: play the item's theme song (a server-relative path from
     // the detail's "theme" field) as looping background audio via a headless mpv
-    // process while the info screen is open, and stop it. Opt-in (show_themes).
+    // process. Opt-in (show_themes). play_theme is idempotent — calling it again
+    // with the theme already playing keeps it going (so browse -> info doesn't
+    // restart it). stop_theme stops immediately; stop_theme_deferred stops after
+    // a short delay that a same-theme play_theme cancels, so a navigation between
+    // two screens that share a theme is seamless.
     Q_INVOKABLE void play_theme(const QString &themePath, int volumePercent);
     Q_INVOKABLE void stop_theme();
+    Q_INVOKABLE void stop_theme_deferred();
 
     // Live TV — minimal "watch live channels" support (no DVR/recording features).
     // load_live_channels lists the channel lineup of the first available DVR;
@@ -224,6 +229,8 @@ private:
     QString m_dataRoot;
     QNetworkAccessManager *m_nam;
     QProcess *m_themeProcess = nullptr;   // headless mpv playing the show theme
+    QString  m_currentTheme;              // theme path currently playing (idempotency)
+    QTimer  *m_themeStopTimer = nullptr;  // deferred-stop timer (lazy)
     QTimer *m_pollTimer;
     QString m_pendingPinId;
     QString m_clientId;          // cached after first load

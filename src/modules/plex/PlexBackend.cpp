@@ -1823,6 +1823,13 @@ PlexBackend::~PlexBackend() {
 }
 
 void PlexBackend::play_theme(const QString &themePath, int volumePercent) {
+    // A pending deferred stop is superseded by any new play request.
+    if (m_themeStopTimer) m_themeStopTimer->stop();
+    // Already playing this exact theme — leave it running so a browse -> info
+    // (or info -> back) navigation to the same show doesn't restart the song.
+    if (!themePath.isEmpty() && themePath == m_currentTheme
+        && m_themeProcess && m_themeProcess->state() != QProcess::NotRunning)
+        return;
     stop_theme();
     if (themePath.isEmpty()) {
         qInfo("[Plex] play_theme: item has no theme");
@@ -1854,9 +1861,12 @@ void PlexBackend::play_theme(const QString &themePath, int volumePercent) {
 
     m_themeProcess = new QProcess(this);
     m_themeProcess->start(bin, args);
+    m_currentTheme = themePath;
 }
 
 void PlexBackend::stop_theme() {
+    if (m_themeStopTimer) m_themeStopTimer->stop();
+    m_currentTheme.clear();
     if (!m_themeProcess)
         return;
     m_themeProcess->disconnect();
@@ -1867,6 +1877,21 @@ void PlexBackend::stop_theme() {
     }
     m_themeProcess->deleteLater();
     m_themeProcess = nullptr;
+}
+
+// Stop shortly, unless a play_theme (for the same or a new theme) arrives first
+// — used on leaving a screen so navigating to another that shares the theme
+// keeps it playing gaplessly, while leaving to a themeless screen still stops it.
+void PlexBackend::stop_theme_deferred() {
+    if (!m_themeProcess)
+        return;   // nothing playing
+    if (!m_themeStopTimer) {
+        m_themeStopTimer = new QTimer(this);
+        m_themeStopTimer->setSingleShot(true);
+        m_themeStopTimer->setInterval(400);
+        connect(m_themeStopTimer, &QTimer::timeout, this, &PlexBackend::stop_theme);
+    }
+    m_themeStopTimer->start();
 }
 
 void PlexBackend::load_children(const QString &ratingKey) {

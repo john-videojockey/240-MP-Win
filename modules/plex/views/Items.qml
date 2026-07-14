@@ -330,9 +330,10 @@ FocusScope {
             if (itemListRoot.infoBg || itemListRoot.showThemes) hoverArtDebounce.restart()
         }
     }
-    // Stop the theme when leaving the browse screen (the info screen, if entered,
-    // starts its own).
-    Component.onDestruction: plexBackend.stop_theme()
+    // Deferred stop on leave: entering an item's info screen (which starts the
+    // same theme) carries over seamlessly; leaving to a themeless screen still
+    // stops it after the short delay.
+    Component.onDestruction: plexBackend.stop_theme_deferred()
 
     // Opaque base under the hover fanart so it dims toward the theme color, not
     // the app background bleeding through it. Fades in/out with the fanart.

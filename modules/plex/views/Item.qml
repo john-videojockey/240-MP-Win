@@ -224,9 +224,19 @@ FocusScope {
         showThemes = (stv === true || stv === "ON")
         var tv = parseInt(appCore.get_setting(moduleRoot.moduleId, "theme_volume"))
         if (tv > 0) themeVolume = tv
+
+        // Start the theme immediately from the passed-in item (its theme path is
+        // already known), so a theme playing on hover in browse carries over with
+        // no restart — play_theme is idempotent. applyDetail re-asserts it once
+        // the full detail arrives.
+        if (showThemes && item.theme)
+            plexBackend.play_theme(item.theme, themeVolume)
     }
 
-    Component.onDestruction: plexBackend.stop_theme()
+    // Deferred stop: navigating back to browse (which resumes the same theme on
+    // hover) is seamless. Playback and themeless screens still stop it promptly
+    // (stop_theme() is called before playback below).
+    Component.onDestruction: plexBackend.stop_theme_deferred()
 
     focus: true
 
