@@ -26,7 +26,7 @@ FocusScope {
 
         function onAuthSuccess() {
             if (navParams.reauth) {
-                userSelectRoot.navigateTo("Libraries.qml", {})
+                userSelectRoot.navigateTo("Home.qml", {})
             }
         }
 

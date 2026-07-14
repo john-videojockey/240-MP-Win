@@ -26,7 +26,7 @@ FocusScope {
             if (serverSelectRoot.switching) {
                 serverSelectRoot.goBack()
             } else {
-                serverSelectRoot.navigateTo("Libraries.qml", {})
+                serverSelectRoot.navigateTo("Home.qml", {})
             }
         }
 

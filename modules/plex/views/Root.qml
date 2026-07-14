@@ -95,7 +95,7 @@ FocusScope {
                 plexBackend.load_users_from_cache()
                 navigateTo("UserSelect.qml", { reauth: true })
             } else {
-                navigateTo("Libraries.qml", {})
+                navigateTo("Home.qml", {})
             }
         } else if (state === "needs_user") {
             // Have token but no server selected yet — show user list

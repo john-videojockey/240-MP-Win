@@ -39,6 +39,10 @@ public:
 
     // Browse
     Q_INVOKABLE void load_libraries();
+    // Home dashboard: Continue Watching (pinned) + a "Recently Added" hub per
+    // enabled library, in the saved library order. Emits homeHubsReady(hubs),
+    // each hub a { title, key, sectionType, items } map (empty hubs dropped).
+    Q_INVOKABLE void load_home_hubs();
     Q_INVOKABLE void load_continue_watching();
     Q_INVOKABLE void load_section_hubs(const QString &sectionId);
     Q_INVOKABLE void load_items_for_hub(const QString &hubKey);
@@ -123,6 +127,7 @@ signals:
 
     void librariesLoaded(const QVariant &libraries);
     void continueWatchingLoaded(const QVariant &items);
+    void homeHubsReady(const QVariant &hubs);
     void hubsLoaded(const QVariant &hubs);
     void itemsLoaded(const QVariant &items);
     void collectionsLoaded(const QVariant &collections);

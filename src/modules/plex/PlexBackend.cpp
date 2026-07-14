@@ -1294,6 +1294,115 @@ void PlexBackend::load_continue_watching() {
     });
 }
 
+void PlexBackend::load_home_hubs() {
+    const QString uri = serverUrl(), token = serverToken();
+    if (uri.isEmpty()) { emit errorOccurred("NO SERVER CONFIGURED"); return; }
+
+    auto *secReply = plexGet(QUrl(uri + "/library/sections"), token);
+    connect(secReply, &QNetworkReply::finished, this, [this, secReply, uri, token]() {
+        secReply->deleteLater();
+        if (secReply->error() != QNetworkReply::NoError) {
+            if (secReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 498) {
+                handle498([this]{ load_home_hubs(); }); return;
+            }
+            emit errorOccurred("LOAD HOME FAILED: " + secReply->errorString()); return;
+        }
+        const QJsonArray sections = QJsonDocument::fromJson(secReply->readAll())
+                                    .object()["MediaContainer"].toObject()["Directory"].toArray();
+        const QJsonObject cfg = loadConfig()["modules"].toObject()["com.240mp.plex"].toObject();
+        const QJsonObject libEnabled = cfg["libraries"].toObject();
+        const QString machineId = loadAuth()["active_server_machine_id"].toString();
+
+        // Enabled, supported libraries in server order.
+        struct Lib { QString key, title, type; };
+        QList<Lib> libs;
+        for (const auto &sv : sections) {
+            const QJsonObject s = sv.toObject();
+            if (!kSupportedLibraryTypes.contains(s["type"].toString())) continue;
+            const QString key = s["key"].toString();
+            const QString libKey = machineId.isEmpty() ? key : machineId + "_" + key;
+            if (!libEnabled.isEmpty() && !libEnabled[libKey].toBool(true)) continue;
+            libs.append({ key, s["title"].toString().toUpper(), s["type"].toString() });
+        }
+        // Apply the saved library order (a list of section keys); unknowns append.
+        const QJsonArray libOrder = cfg["library_order"].toArray();
+        if (!libOrder.isEmpty()) {
+            QList<Lib> ordered;
+            for (const auto &kv : libOrder) {
+                const QString k = kv.toString();
+                for (int i = 0; i < libs.size(); ++i)
+                    if (libs[i].key == k) { ordered.append(libs.takeAt(i)); break; }
+            }
+            ordered.append(libs);
+            libs = ordered;
+        }
+
+        // Slots: 0 = Continue Watching (pinned), 1.. = libraries.
+        auto *hubs = new QVariantList();
+        hubs->append(QVariantMap{{"title","CONTINUE WATCHING"},{"key","continue_watching"},
+                                 {"sectionType",QVariant()},{"items",QVariantList()}});
+        for (const auto &l : libs)
+            hubs->append(QVariantMap{{"title","RECENTLY ADDED — " + l.title},{"key",l.key},
+                                     {"sectionType",l.type},{"items",QVariantList()}});
+
+        auto *pending = new int(hubs->size());
+        auto done = [this, hubs, pending]() {
+            if (--(*pending) != 0) return;
+            // Drop only an empty Continue Watching row (slot 0); keep library rows
+            // even when nothing is recently added, so every library stays reachable
+            // from Home via its title.
+            QVariantList out;
+            for (int i = 0; i < hubs->size(); ++i) {
+                const QVariantMap h = (*hubs)[i].toMap();
+                if (i == 0 && h["items"].toList().isEmpty()) continue;
+                out.append(h);
+            }
+            emit homeHubsReady(out);
+            delete hubs; delete pending;
+        };
+
+        auto fill = [hubs](int slot, const QVariantList &items) {
+            QVariantMap h = (*hubs)[slot].toMap(); h["items"] = items; (*hubs)[slot] = h;
+        };
+
+        // Continue Watching.
+        auto *cwReply = plexGet(QUrl(uri + "/hubs/continueWatching"), token);
+        connect(cwReply, &QNetworkReply::finished, this, [this, cwReply, fill, done]() {
+            cwReply->deleteLater();
+            QVariantList items;
+            if (cwReply->error() == QNetworkReply::NoError)
+                for (const auto &hv : QJsonDocument::fromJson(cwReply->readAll())
+                         .object()["MediaContainer"].toObject()["Hub"].toArray())
+                    for (const auto &mv : hv.toObject()["Metadata"].toArray())
+                        items.append(formatItem(mv.toObject()));
+            fill(0, items);
+            done();
+        });
+
+        // Recently added per library.
+        for (int i = 0; i < libs.size(); ++i) {
+            const int slot = i + 1;
+            QUrl url(uri + "/library/sections/" + libs[i].key + "/all");
+            QUrlQuery q;
+            q.addQueryItem("sort", "addedAt:desc");
+            q.addQueryItem("X-Plex-Container-Start", "0");
+            q.addQueryItem("X-Plex-Container-Size", "20");
+            url.setQuery(q);
+            auto *r = plexGet(url, token);
+            connect(r, &QNetworkReply::finished, this, [this, r, fill, done, slot]() {
+                r->deleteLater();
+                QVariantList items;
+                if (r->error() == QNetworkReply::NoError)
+                    for (const auto &mv : QJsonDocument::fromJson(r->readAll())
+                             .object()["MediaContainer"].toObject()["Metadata"].toArray())
+                        items.append(formatItem(mv.toObject()));
+                fill(slot, items);
+                done();
+            });
+        }
+    });
+}
+
 void PlexBackend::load_section_hubs(const QString &sectionId) {
     QString uri = serverUrl(), token = serverToken();
     QUrl url(uri + "/hubs/sections/" + sectionId);
