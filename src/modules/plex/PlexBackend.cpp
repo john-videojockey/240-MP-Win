@@ -1246,6 +1246,28 @@ void PlexBackend::load_libraries_impl() {
                 });
             }
 
+            // Apply the saved library order (Reorder Sources) — reorder only the
+            // library entries (those with a sectionId), keeping Continue Watching
+            // pinned first. Unknown/new libraries keep their server order at the end.
+            const QJsonArray libOrder = loadConfig()["modules"].toObject()
+                                        ["com.240mp.plex"].toObject()["library_order"].toArray();
+            if (!libOrder.isEmpty()) {
+                QVariantList libItems, otherItems;
+                for (const auto &iv : std::as_const(items)) {
+                    const QVariantMap m = iv.toMap();
+                    if (m["sectionId"].isValid() && !m["sectionId"].isNull()) libItems.append(m);
+                    else otherItems.append(m);
+                }
+                QVariantList ordered;
+                for (const auto &kv : libOrder) {
+                    const QString k = kv.toString();
+                    for (int i = 0; i < libItems.size(); ++i)
+                        if (libItems[i].toMap()["key"].toString() == k) { ordered.append(libItems.takeAt(i)); break; }
+                }
+                ordered.append(libItems);
+                items = otherItems + ordered;
+            }
+
             // Probe for a live-TV DVR. When present, inject a synthetic "LIVE TV"
             // row right after CONTINUE WATCHING (mirrors that synthetic row). The
             // emit is deferred into this callback so the row's position is stable.
@@ -2610,7 +2632,9 @@ void PlexBackend::getLibraries() {
                 if (!kSupportedLibraryTypes.contains(s["type"].toString())) continue;
                 QString key = s["key"].toString();
                 QString id = machineId.isEmpty() ? key : machineId + "_" + key;
-                options.append(QVariantMap{{"id",id},{"label",s["title"].toString().toUpper()}});
+                // "key" is the bare section key used by library_order (Reorder Sources);
+                // "id" is server-scoped and used by the Libraries enable toggles.
+                options.append(QVariantMap{{"id",id},{"key",key},{"label",s["title"].toString().toUpper()}});
             }
         }
         emit dynamicOptionsReady("libraries", options);

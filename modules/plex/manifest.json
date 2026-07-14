@@ -44,6 +44,16 @@
       "requires_auth": true
     },
     {
+      "key": "library_order",
+      "label": "Reorder Sources",
+      "type": "reorder_submenu",
+      "options_source": "dynamic",
+      "options_slot": "getLibraries",
+      "options_key": "libraries",
+      "requires_auth": true,
+      "description": "Set the order libraries appear in on Home and in the library list. Select a library to pick it up, then move it with up/down."
+    },
+    {
       "key": "video_quality",
       "label": "Video Quality",
       "type": "list_single",

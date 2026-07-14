@@ -219,6 +219,13 @@ FocusScope {
                     settingKey: item.key,
                     settingLabel: item.label
                 }, { currentIndex: settingsList.currentIndex })
+            } else if (item.type === "reorder_submenu") {
+                moduleSettingsRoot.navigateTo("views/ReorderSettings.qml", {
+                    moduleId: moduleSettingsRoot.moduleId,
+                    settingKey: item.key,
+                    settingLabel: item.label,
+                    optionsKey: item.options_key || item.key
+                }, { currentIndex: settingsList.currentIndex })
             } else if (item.type === "action") {
                 appCore.invoke_module_action(moduleSettingsRoot.moduleId, item.action_slot)
             } else if (item.type === "directory_browser") {
