@@ -1020,6 +1020,7 @@ FocusScope {
                             border.width: sel ? Math.max(2, Math.floor(root.sh * 0.00625)) : 1
 
                             Image {
+                                id: cImg
                                 anchors.fill: parent
                                 anchors.margins: cBox.border.width
                                 fillMode: Image.PreserveAspectCrop
@@ -1028,9 +1029,9 @@ FocusScope {
                                         ? plexBackend.image_url(modelData.image, Math.round(cBox.width), Math.round(cBox.height))
                                         : ""
                             }
-                            // Imageless cards: a play glyph for extras, initial for cast.
+                            // Imageless / broken cards: a play glyph for extras, initial for cast.
                             Text {
-                                visible: !modelData.image
+                                visible: !modelData.image || cImg.status === Image.Error
                                 anchors.centerIn: parent
                                 text: modelData.kind === "extra" ? "▶" : (modelData.title || "?").charAt(0)
                                 color: root.secondaryColor
