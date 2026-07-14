@@ -219,6 +219,13 @@ FocusScope {
     property var  relatedItems: []
     property int  relatedIndex: 0
 
+    // Scroll the section stack so the section holding the current focusRow snaps
+    // to the top of the content viewport: play/options (0-1) -> audio/subtitle
+    // (2-3) -> More Like This (4). Cast & Extras will slot in between later.
+    property real sectionScroll: focusRow <= 1 ? 0
+                               : focusRow <= 3 ? pbSettingsLabel.y
+                               : relatedSection.y
+
     Component.onCompleted: {
         if (item.ratingKey) plexBackend.load_item_detail(item.ratingKey)
         focusRow = 0
@@ -420,6 +427,16 @@ FocusScope {
         width: root.sw * 0.76875 //492
         height: root.sh * 0.525 //252
         clip: true
+
+        // Section stack: the play/options block, the audio/subtitle settings,
+        // and the More Like This row, stacked vertically and translated so the
+        // section holding the current focusRow snaps to the top (see
+        // sectionScroll). The parent Item clips the rest.
+        Item {
+            id: sectionStack
+            width: parent.width
+            y: -detailRoot.sectionScroll
+            Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
         Row {
             id: itemDetails
@@ -880,96 +897,95 @@ FocusScope {
                 }
             }
         }
-    }
 
-    // "More Like This" — a horizontal poster row, revealed only once the
-    // highlight reaches the audio/subtitle rows (focusRow >= 2), so the play/
-    // options block keeps its clean look. focusRow 4 is this row.
-    Item {
-        id: relatedRow
-        visible: detailRoot.showRelated && detailRoot.relatedItems.length > 0 && focusRow >= 2
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: footer.top
-        anchors.leftMargin: root.sw * 0.115625 //74
-        anchors.rightMargin: root.sw * 0.115625 //74
-        anchors.bottomMargin: root.sh * 0.02
-        height: root.sh * 0.175
-
-        Text {
-            id: relatedLabel
-            text: "More Like This"
-            color: detailRoot.focusRow === 4 ? root.accentColor : root.secondaryColor
-            font.family: root.globalFont
-            font.capitalization: Font.AllUppercase
-            anchors.top: parent.top
-            anchors.left: parent.left
-            font.pixelSize: root.sh * 0.0333333 //16
-        }
-
-        ListView {
-            id: relatedList
-            model: detailRoot.relatedItems
-            orientation: ListView.Horizontal
-            anchors.top: relatedLabel.bottom
-            anchors.topMargin: root.sh * 0.0083333
+        // SECTION: More Like This — a full-size boxart row (matching the browse /
+        // Continue Watching cover grid) below the audio/subtitle settings.
+        Item {
+            id: relatedSection
+            visible: detailRoot.showRelated && detailRoot.relatedItems.length > 0
+            anchors.top: subtitleRow.bottom
+            anchors.topMargin: root.sh * 0.03
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            spacing: root.sw * 0.0078125 //5
-            clip: true
-            interactive: false
-            currentIndex: detailRoot.relatedIndex
-            onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
+            height: relatedLabel.height + root.sh * 0.0083333 + relatedList.height
 
-            delegate: Item {
-                height: relatedList.height
-                width: height * (2 / 3)   // portrait poster
+            Text {
+                id: relatedLabel
+                text: "More Like This"
+                color: detailRoot.focusRow === 4 ? root.accentColor : root.secondaryColor
+                font.family: root.globalFont
+                font.capitalization: Font.AllUppercase
+                anchors.top: parent.top
+                anchors.left: parent.left
+                font.pixelSize: root.sh * 0.0375 //18
+            }
 
-                Rectangle {
-                    id: relBox
-                    anchors.fill: parent
-                    color: "transparent"
-                    border.color: (detailRoot.focusRow === 4 && detailRoot.relatedIndex === index)
-                                  ? root.accentColor : root.tertiaryColor
-                    border.width: (detailRoot.focusRow === 4 && detailRoot.relatedIndex === index)
-                                  ? Math.max(2, Math.floor(root.sh * 0.00625)) : 1
+            ListView {
+                id: relatedList
+                model: detailRoot.relatedItems
+                orientation: ListView.Horizontal
+                anchors.top: relatedLabel.bottom
+                anchors.topMargin: root.sh * 0.0083333
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: root.sh * 0.245   // matches the cover-grid poster height
+                spacing: root.sw * 0.0125
+                clip: true
+                interactive: false
+                currentIndex: detailRoot.relatedIndex
+                onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
 
-                    Image {
+                delegate: Item {
+                    height: relatedList.height
+                    width: height * (2 / 3)   // portrait poster, like the cover grid
+
+                    Rectangle {
+                        id: relBox
                         anchors.fill: parent
-                        anchors.margins: relBox.border.width
-                        fillMode: Image.PreserveAspectCrop
-                        asynchronous: true
-                        source: modelData.poster
-                                ? plexBackend.image_url(modelData.poster, Math.round(relatedList.height * 2 / 3), Math.round(relatedList.height))
-                                : ""
-                    }
-                    Text {
-                        visible: !modelData.poster
-                        anchors.fill: parent
-                        anchors.margins: root.sw * 0.0078125
-                        text: modelData.title || ""
-                        color: root.secondaryColor
-                        font.family: root.globalFont
-                        font.capitalization: Font.AllUppercase
-                        wrapMode: Text.WrapAtWordBoundaryOrAnywhere
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        font.pixelSize: root.sh * 0.025 //12
-                    }
-                }
+                        color: "transparent"
+                        border.color: (detailRoot.focusRow === 4 && detailRoot.relatedIndex === index)
+                                      ? root.accentColor : root.tertiaryColor
+                        border.width: (detailRoot.focusRow === 4 && detailRoot.relatedIndex === index)
+                                      ? Math.max(2, Math.floor(root.sh * 0.00625)) : 1
 
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: {
-                        if (detailRoot.focusRow === 4 && detailRoot.relatedIndex === index)
-                            inputManager.touchKey("select")
-                        else { detailRoot.focusRow = 4; detailRoot.relatedIndex = index }
+                        Image {
+                            anchors.fill: parent
+                            anchors.margins: relBox.border.width
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            source: modelData.poster
+                                    ? plexBackend.image_url(modelData.poster, Math.round(relatedList.height * 2 / 3), Math.round(relatedList.height))
+                                    : ""
+                        }
+                        Text {
+                            visible: !modelData.poster
+                            anchors.fill: parent
+                            anchors.margins: root.sw * 0.0078125
+                            text: modelData.title || ""
+                            color: root.secondaryColor
+                            font.family: root.globalFont
+                            font.capitalization: Font.AllUppercase
+                            wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            font.pixelSize: root.sh * 0.025 //12
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            if (detailRoot.focusRow === 4 && detailRoot.relatedIndex === index)
+                                inputManager.touchKey("select")
+                            else { detailRoot.focusRow = 4; detailRoot.relatedIndex = index }
+                        }
                     }
                 }
             }
         }
+        }   // sectionStack
+
     }
 
     // Footer
