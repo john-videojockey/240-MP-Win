@@ -2028,6 +2028,7 @@ void PlexBackend::play_extra(const QString &ratingKey, const QString &sessionId)
                     ? playKey
                     : uri + playKey + "?X-Plex-Client-Identifier="  + clientId()
                                     + "&X-Plex-Session-Identifier=" + sessionId;
+            qDebug() << "[Plex] Extra stream resolved:" << streamUrl;
             emit extraStreamReady(QVariantMap{
                 {"streamUrl",  streamUrl},
                 {"plexToken",  token},
