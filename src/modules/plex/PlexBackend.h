@@ -67,6 +67,11 @@ public:
     // Related / "More Like This" hub for an item — emits relatedReady(items).
     Q_INVOKABLE void load_related(const QString &ratingKey);
 
+    // Resolve an extra (trailer/featurette) to a direct-play URL and emit
+    // extraStreamReady with the Player params. Used by the info screen's Cast &
+    // Extras section. No-op (errorOccurred) if the extra has no playable part.
+    Q_INVOKABLE void play_extra(const QString &ratingKey, const QString &sessionId);
+
     // Playback
     Q_INVOKABLE void load_item_detail(const QString &ratingKey);
     Q_INVOKABLE void request_transcode(const QString &ratingKey, const QString &partKey,
@@ -138,6 +143,9 @@ signals:
     void itemLoaded(const QVariant &detail);
     void relatedReady(const QVariant &items);
     void streamUrlReady(const QString &url, const QString &plexToken);
+    // Full set of Player.qml params for a resolved extra (streamUrl, plexToken,
+    // title, duration, …). The info view merges these with playback defaults.
+    void extraStreamReady(const QVariant &params);
     void childrenLoaded(const QVariant &items);
     void inProgressEpisodeLoaded(const QVariant &item);
     void nextEpisodeReady(const QVariant &detail);

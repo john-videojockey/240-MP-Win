@@ -202,6 +202,25 @@ FocusScope {
             })
         }
 
+        // An extra (trailer/featurette) resolved to a stream — hand off to the
+        // player with playback defaults (no track selection / resume for a clip).
+        function onExtraStreamReady(params) {
+            var p = {
+                episodeNav: false,
+                viewOffset: 0,
+                audioStreams: [],
+                subtitleStreams: [],
+                selectedAudioId: "",
+                selectedSubtitleId: "0",
+                selectedSubtitleUrl: "",
+                sessionId: detailRoot.sessionId,
+                isTranscoding: false,
+                imageSubtitleIds: []
+            }
+            for (var k in params) p[k] = params[k]
+            detailRoot.navigateTo("Player.qml", p)
+        }
+
         function onErrorOccurred(msg) {
             console.log("[Item] Error: " + msg)
             detailRoot.isLaunching = false
@@ -339,7 +358,27 @@ FocusScope {
             detailRoot.navigateTo("Item.qml", { item: detailRoot.relatedItems[detailRoot.relatedIndex] })
             return
         }
-        // focusRow === 4 (Cast & Extras) is informational — no per-card action yet.
+        if (focusRow === 4 && detailRoot.castExtras.length > 0) {
+            var card = detailRoot.castExtras[detailRoot.castIndex]
+            if (card && card.kind === "extra" && card.ratingKey) {
+                // Resolve and play the extra; loading overlay until it hands off.
+                plexBackend.stop_theme()
+                isLaunching = true
+                sessionId = newSessionId()
+                plexBackend.play_extra(card.ratingKey, sessionId)
+            } else if (card && card.kind === "cast" && card.filter
+                       && detail && detail.librarySectionID && detail.librarySectionID !== "0") {
+                // Open the actor's filmography within this library.
+                detailRoot.navigateTo("Items.qml", {
+                    listType: "category_items",
+                    sectionId: detail.librarySectionID,
+                    categoryKey: card.filter,
+                    title: card.title,
+                    libraryName: card.title
+                })
+            }
+            return
+        }
         if (focusRow === 0 && detail && episodeItem && playCol !== 1) {
             // PREV/NEXT: swap this screen to the sibling episode in place.
             requestAdjacent(playCol === 0 ? -1 : 1)
@@ -1020,7 +1059,11 @@ FocusScope {
 
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: { detailRoot.focusRow = 4; detailRoot.castIndex = index }
+                        onClicked: {
+                            if (detailRoot.focusRow === 4 && detailRoot.castIndex === index)
+                                inputManager.touchKey("select")
+                            else { detailRoot.focusRow = 4; detailRoot.castIndex = index }
+                        }
                     }
                 }
             }

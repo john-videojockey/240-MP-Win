@@ -1823,6 +1823,9 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
             {"title",    r["tag"].toString()},
             {"subtitle", r["role"].toString()},
             {"image",    r["thumb"].toString()},
+            // Plex tag filter, e.g. "actor=12345" — used to open the actor's
+            // filmography within this library. Absent on older servers.
+            {"filter",   r["filter"].toString()},
         });
     }
     for (const auto &ev : meta["Extras"].toObject()["Metadata"].toArray()) {
@@ -1872,6 +1875,7 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
                            : !meta["grandparentTheme"].toString().isEmpty() ? meta["grandparentTheme"].toString()
                                                                             : meta["parentTheme"].toString()},
         {"castExtras",       castExtras},
+        {"librarySectionID", QString::number(meta["librarySectionID"].toInt())},
     };
 }
 
@@ -1986,6 +1990,46 @@ void PlexBackend::load_item_detail(const QString &ratingKey) {
                              .object()["MediaContainer"].toObject()["Metadata"].toArray();
         if (metaArr.isEmpty()) { emit errorOccurred("LOAD DETAIL FAILED: empty metadata"); return; }
         emit itemLoaded(buildItemDetail(metaArr[0].toObject()));
+    });
+}
+
+void PlexBackend::play_extra(const QString &ratingKey, const QString &sessionId) {
+    const QString uri = serverUrl(), token = serverToken();
+    auto *reply = plexGet(QUrl(uri + "/library/metadata/" + ratingKey), token);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, ratingKey, sessionId, uri, token]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 498) {
+                handle498([this, ratingKey, sessionId]{ play_extra(ratingKey, sessionId); }); return;
+            }
+            emit errorOccurred("EXTRA LOAD FAILED: " + reply->errorString()); return;
+        }
+        const QJsonArray metaArr = QJsonDocument::fromJson(reply->readAll())
+                                   .object()["MediaContainer"].toObject()["Metadata"].toArray();
+        if (metaArr.isEmpty()) { emit errorOccurred("EXTRA NOT PLAYABLE"); return; }
+        const QJsonObject meta = metaArr[0].toObject();
+        const QJsonArray mediaArr = meta["Media"].toArray();
+        if (mediaArr.isEmpty()) { emit errorOccurred("EXTRA NOT PLAYABLE"); return; }
+        const QJsonArray partArr = mediaArr.first().toObject()["Part"].toArray();
+        if (partArr.isEmpty()) { emit errorOccurred("EXTRA NOT PLAYABLE"); return; }
+        const QJsonObject part = partArr.first().toObject();
+        const QString partKey = part["key"].toString();
+        if (partKey.isEmpty()) { emit errorOccurred("EXTRA NOT PLAYABLE"); return; }
+
+        // Extras are short clips — direct play only (no transcode/track selection).
+        const QString url = uri + partKey
+                          + "?X-Plex-Client-Identifier="  + clientId()
+                          + "&X-Plex-Session-Identifier=" + sessionId;
+        emit extraStreamReady(QVariantMap{
+            {"streamUrl",  url},
+            {"plexToken",  token},
+            {"ratingKey",  meta["ratingKey"].toString()},
+            {"partKey",    partKey},
+            {"partId",     QString::number(part["id"].toInt())},
+            {"title",      meta["title"].toString()},
+            {"mediaTitle", meta["title"].toString().toUpper()},
+            {"duration",   meta["duration"].toInt()},
+        });
     });
 }
 
