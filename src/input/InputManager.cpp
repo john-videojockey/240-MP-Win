@@ -124,8 +124,9 @@ void InputManager::pollSdl() {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         switch (e.type) {
-        // Hotplug is tracked even while controller input is disabled, so the
-        // setting can be flipped back on without replugging or restarting.
+        // open/closeController no-op while input is disabled (the device is left
+        // untouched); enabling re-enumerates and grabs whatever is connected, so
+        // the setting still flips without replugging or restarting.
         case SDL_CONTROLLERDEVICEADDED:   openController(e.cdevice.which);  break;
         case SDL_CONTROLLERDEVICEREMOVED: closeController(e.cdevice.which); break;
         case SDL_CONTROLLERBUTTONDOWN:
@@ -160,18 +161,33 @@ void InputManager::setControllerInputEnabled(bool on) {
     if (m_controllerInputEnabled == on)
         return;
     m_controllerInputEnabled = on;
-    if (!on) {
+    if (on) {
+        // Grab any already-connected pads now — no DEVICEADDED fires for devices
+        // that were plugged in while input was off.
+        openAllControllers();
+    } else {
         // Nothing may stay latched: stop a repeating direction and reset axis
-        // engagement, then hand the footer hints back to the keyboard.
+        // engagement, release every pad so other apps own the device outright,
+        // then hand the footer hints back to the keyboard.
         if (m_heldDirection != Action::None)
             releaseAction(m_heldDirection);
         m_axisState.clear();
+        closeAllControllers();
         setLastInputDevice(QStringLiteral("keyboard"));
     }
     qInfo("[input] controller input %s", on ? "enabled" : "disabled");
 }
 
 void InputManager::openController(int deviceIndex) {
+    // While controller input is off, never open the device — leave it entirely to
+    // other apps (e.g. the user's Antimicro remapper). openAllControllers() grabs
+    // whatever is connected when input is switched back on.
+    if (!m_controllerInputEnabled)
+        return;
+    // Skip if already open (a duplicate DEVICEADDED, or enable after startup).
+    const SDL_JoystickID existing = SDL_JoystickGetDeviceInstanceID(deviceIndex);
+    if (existing >= 0 && m_controllers.contains(existing))
+        return;
     SDL_GameController *gc = SDL_GameControllerOpen(deviceIndex);
     if (!gc) {
         qWarning("[input] could not open controller %d: %s", deviceIndex, SDL_GetError());
@@ -181,6 +197,21 @@ void InputManager::openController(int deviceIndex) {
     m_controllers.insert(id, gc);
     qInfo("[input] controller added: %s", SDL_GameControllerName(gc));
     emit gamepadConnectedChanged();
+}
+
+void InputManager::openAllControllers() {
+    for (int i = 0; i < SDL_NumJoysticks(); ++i)
+        if (SDL_IsGameController(i))
+            openController(i);
+}
+
+void InputManager::closeAllControllers() {
+    for (SDL_GameController *gc : std::as_const(m_controllers))
+        SDL_GameControllerClose(gc);
+    m_controllers.clear();
+    m_lastActiveController = -1;
+    emit gamepadConnectedChanged();
+    updateHints();
 }
 
 void InputManager::closeController(SDL_JoystickID instanceId) {

@@ -33,10 +33,13 @@ public:
 
     void setTargetWindow(QQuickWindow *window);
 
-    // App-level "controller_input" setting (default ON). While OFF, button and
-    // axis events are ignored — a misbehaving pad can't drive the UI — but
-    // hotplug tracking keeps running so re-enabling works without a restart.
-    // Keyboard input is unaffected. Wired from main.cpp via appSettingChanged.
+    // App-level "controller_input" setting (default ON). While OFF, the app does
+    // not open any controller at all, leaving the physical device entirely to
+    // other apps (e.g. a user's Antimicro remapper driving the whole desktop);
+    // pads are closed on the ON→OFF flip and (re)opened on OFF→ON, so toggling
+    // works without a restart. Keyboard input is unaffected. Hotplug while OFF is
+    // still noticed (so a later enable picks the pad up), just not opened.
+    // Wired from main.cpp via appSettingChanged.
     void setControllerInputEnabled(bool on);
 
     // Touch/mouse → keyboard bridge for QML: posts a synthesized press+release
@@ -74,6 +77,8 @@ private:
     void initSdl();
     void openController(int deviceIndex);
     void closeController(SDL_JoystickID instanceId);
+    void openAllControllers();   // grab every connected pad (on enable)
+    void closeAllControllers();  // release every open pad (on disable)
     void rebuildMapping();
     void loadDefaultMapping();
     void loadUserMapping();
