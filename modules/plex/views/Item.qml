@@ -999,8 +999,12 @@ FocusScope {
                 onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
 
                 delegate: Item {
+                    id: ceCard
+                    property bool isExtra: modelData.kind === "extra"
                     height: castList.height
-                    width: castList.height * (2 / 3)   // portrait card
+                    // Extras get a 16:9 thumbnail (landscape); cast a 2:3 headshot
+                    // (portrait), so the two kinds read differently at a glance.
+                    width: (castList.height * 0.66) * (isExtra ? (16 / 9) : (2 / 3))
                     property bool sel: detailRoot.focusRow === 4 && detailRoot.castIndex === index
 
                     Column {
@@ -1010,7 +1014,7 @@ FocusScope {
                         Rectangle {
                             id: cBox
                             width: parent.width
-                            height: castList.height * 0.66   // headshot; text below
+                            height: castList.height * 0.66   // image; text below
                             color: "transparent"
                             border.color: sel ? root.accentColor : root.tertiaryColor
                             border.width: sel ? Math.max(2, Math.floor(root.sh * 0.00625)) : 1

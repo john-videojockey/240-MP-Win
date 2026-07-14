@@ -1812,10 +1812,20 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
              << "| playback:" << (forceTranscode ? "transcode" : "direct play");
     int duration = meta["duration"].toInt();
 
-    // Cast & Extras: the actors (Role) followed by any extras (trailers,
-    // featurettes, …). Extras only appear when the metadata was fetched with
+    // Cast & Extras: any extras (trailers, featurettes, …) first, then the
+    // actors (Role). Extras only appear when the metadata was fetched with
     // ?includeExtras=1. Each entry carries a "kind" so the info view can label it.
     QVariantList castExtras;
+    for (const auto &ev : meta["Extras"].toObject()["Metadata"].toArray()) {
+        const QJsonObject e = ev.toObject();
+        castExtras.append(QVariantMap{
+            {"kind",      "extra"},
+            {"title",     e["title"].toString()},
+            {"subtitle",  extraSubtypeLabel(e["subtype"].toString())},
+            {"image",     e["thumb"].toString()},
+            {"ratingKey", e["ratingKey"].toString()},
+        });
+    }
     for (const auto &rv : meta["Role"].toArray()) {
         const QJsonObject r = rv.toObject();
         castExtras.append(QVariantMap{
@@ -1826,16 +1836,6 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
             // Plex tag filter, e.g. "actor=12345" — used to open the actor's
             // filmography within this library. Absent on older servers.
             {"filter",   r["filter"].toString()},
-        });
-    }
-    for (const auto &ev : meta["Extras"].toObject()["Metadata"].toArray()) {
-        const QJsonObject e = ev.toObject();
-        castExtras.append(QVariantMap{
-            {"kind",      "extra"},
-            {"title",     e["title"].toString()},
-            {"subtitle",  extraSubtypeLabel(e["subtype"].toString())},
-            {"image",     e["thumb"].toString()},
-            {"ratingKey", e["ratingKey"].toString()},
         });
     }
 
@@ -2016,20 +2016,63 @@ void PlexBackend::play_extra(const QString &ratingKey, const QString &sessionId)
         const QString partKey = part["key"].toString();
         if (partKey.isEmpty()) { emit errorOccurred("EXTRA NOT PLAYABLE"); return; }
 
-        // Extras are short clips — direct play only (no transcode/track selection).
-        const QString url = uri + partKey
-                          + "?X-Plex-Client-Identifier="  + clientId()
-                          + "&X-Plex-Session-Identifier=" + sessionId;
-        emit extraStreamReady(QVariantMap{
-            {"streamUrl",  url},
-            {"plexToken",  token},
-            {"ratingKey",  meta["ratingKey"].toString()},
-            {"partKey",    partKey},
-            {"partId",     QString::number(part["id"].toInt())},
-            {"title",      meta["title"].toString()},
-            {"mediaTitle", meta["title"].toString().toUpper()},
-            {"duration",   meta["duration"].toInt()},
-        });
+        const QString title = meta["title"].toString();
+        const QString metaKey = meta["ratingKey"].toString();
+        const int duration = meta["duration"].toInt();
+
+        // Hand a resolved stream URL to the player. External (http…) URLs — e.g. a
+        // resolved online trailer — play as-is via mpv (+yt-dlp); server-relative
+        // keys get the client/session params like normal direct play.
+        auto emitStream = [this, sessionId, uri, token, title, metaKey, duration](const QString &playKey) {
+            const QString streamUrl = playKey.startsWith("http")
+                    ? playKey
+                    : uri + playKey + "?X-Plex-Client-Identifier="  + clientId()
+                                    + "&X-Plex-Session-Identifier=" + sessionId;
+            emit extraStreamReady(QVariantMap{
+                {"streamUrl",  streamUrl},
+                {"plexToken",  token},
+                {"ratingKey",  metaKey},
+                {"partKey",    playKey},
+                {"partId",     ""},
+                {"title",      title},
+                {"mediaTitle", title.toUpper()},
+                {"duration",   duration},
+            });
+        };
+
+        // Online-only extras (most trailers) are "indirect": the part key is a
+        // resolver, not a stream. GET it (with the token) to obtain the real media,
+        // then play that. Local extras play directly.
+        if (part["indirect"].toBool()) {
+            const QUrl rurl(partKey.startsWith("http") ? partKey : uri + partKey);
+            auto *r2 = plexGet(rurl, token);
+            connect(r2, &QNetworkReply::finished, this, [this, r2, emitStream]() {
+                r2->deleteLater();
+                if (r2->error() != QNetworkReply::NoError) {
+                    emit errorOccurred("EXTRA RESOLVE FAILED: " + r2->errorString()); return;
+                }
+                const QJsonObject mc = QJsonDocument::fromJson(r2->readAll())
+                                       .object()["MediaContainer"].toObject();
+                // Resolved container may use "Metadata" (current) or "Video" (older).
+                QJsonArray items = mc["Metadata"].toArray();
+                if (items.isEmpty()) items = mc["Video"].toArray();
+                QString resolved;
+                for (const auto &vv : items) {
+                    for (const auto &mv : vv.toObject()["Media"].toArray()) {
+                        for (const auto &pv : mv.toObject()["Part"].toArray()) {
+                            const QString k = pv.toObject()["key"].toString();
+                            if (!k.isEmpty()) { resolved = k; break; }
+                        }
+                        if (!resolved.isEmpty()) break;
+                    }
+                    if (!resolved.isEmpty()) break;
+                }
+                if (resolved.isEmpty()) { emit errorOccurred("EXTRA NOT PLAYABLE (unresolved)"); return; }
+                emitStream(resolved);
+            });
+            return;
+        }
+        emitStream(partKey);
     });
 }
 
