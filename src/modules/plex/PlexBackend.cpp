@@ -1818,6 +1818,36 @@ void PlexBackend::load_item_detail(const QString &ratingKey) {
     });
 }
 
+void PlexBackend::load_related(const QString &ratingKey) {
+    QString uri = serverUrl(), token = serverToken();
+    auto *reply = plexGet(QUrl(uri + "/hubs/metadata/" + ratingKey + "/related?count=20"), token);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, ratingKey]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 498) {
+                handle498([this, ratingKey]{ load_related(ratingKey); }); return;
+            }
+            emit relatedReady(QVariantList{}); return;
+        }
+        const QJsonObject mc = QJsonDocument::fromJson(reply->readAll())
+                                   .object()["MediaContainer"].toObject();
+        // The related endpoint returns one or more hubs (e.g. "Related",
+        // "Similar"); flatten their items into one de-duplicated list.
+        QVariantList items;
+        QSet<QString> seen;
+        for (const auto &hv : mc["Hub"].toArray()) {
+            for (const auto &mv : hv.toObject()["Metadata"].toArray()) {
+                QVariantMap it = formatItem(mv.toObject());
+                const QString rk = it["ratingKey"].toString();
+                if (rk.isEmpty() || seen.contains(rk)) continue;
+                seen.insert(rk);
+                items.append(it);
+            }
+        }
+        emit relatedReady(items);
+    });
+}
+
 PlexBackend::~PlexBackend() {
     stop_theme();
 }

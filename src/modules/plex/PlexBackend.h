@@ -60,6 +60,9 @@ public:
     // view's PREV/NEXT; emits adjacentEpisodeReady(direction, detail).
     Q_INVOKABLE void load_adjacent_episode(const QString &currentRatingKey, int direction);
 
+    // Related / "More Like This" hub for an item — emits relatedReady(items).
+    Q_INVOKABLE void load_related(const QString &ratingKey);
+
     // Playback
     Q_INVOKABLE void load_item_detail(const QString &ratingKey);
     Q_INVOKABLE void request_transcode(const QString &ratingKey, const QString &partKey,
@@ -128,6 +131,7 @@ signals:
     void capabilitiesLoaded(const QVariant &capabilities);
 
     void itemLoaded(const QVariant &detail);
+    void relatedReady(const QVariant &items);
     void streamUrlReady(const QString &url, const QString &plexToken);
     void childrenLoaded(const QVariant &items);
     void inProgressEpisodeLoaded(const QVariant &item);

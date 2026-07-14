@@ -104,6 +104,14 @@
       "requires_auth": true
     },
     {
+      "key": "show_related",
+      "label": "More Like This",
+      "type": "toggle",
+      "default": "ON",
+      "requires_auth": true,
+      "description": "Show a related-titles row on the info screen, revealed when you move down to the audio/subtitle rows."
+    },
+    {
       "key": "logout",
       "label": "Sign out",
       "type": "action",

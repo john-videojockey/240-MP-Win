@@ -128,6 +128,11 @@ FocusScope {
             detailRoot.applyDetail(d)
         }
 
+        function onRelatedReady(items) {
+            detailRoot.relatedItems = items
+            detailRoot.relatedIndex = 0
+        }
+
         // PREV/NEXT resolved a sibling episode: swap this screen to it in
         // place (no navigation, so BACK still returns to the episode list).
         function onAdjacentEpisodeReady(direction, d) {
@@ -208,6 +213,12 @@ FocusScope {
     property bool showThemes: false
     property int  themeVolume: 50
 
+    // "More Like This": related titles, revealed only once the highlight reaches
+    // the audio/subtitle rows so the play/options block keeps its clean look.
+    property bool showRelated: false
+    property var  relatedItems: []
+    property int  relatedIndex: 0
+
     Component.onCompleted: {
         if (item.ratingKey) plexBackend.load_item_detail(item.ratingKey)
         focusRow = 0
@@ -231,6 +242,11 @@ FocusScope {
         // the full detail arrives.
         if (showThemes && item.theme)
             plexBackend.play_theme(item.theme, themeVolume)
+
+        var sr = appCore.get_setting(moduleRoot.moduleId, "show_related")
+        showRelated = (sr === undefined || sr === null || sr === "") ? true
+                    : (sr === true || sr === "ON")
+        if (showRelated && item.ratingKey) plexBackend.load_related(item.ratingKey)
     }
 
     // Deferred stop: navigating back to browse (which resumes the same theme on
@@ -247,10 +263,11 @@ FocusScope {
     Keys.onDownPressed: {
         if (isLaunching) return
         if (detail) {
-            // Rows: 0 play, 1 actions (always), 2 audio, 3 subtitles.
+            // Rows: 0 play, 1 actions (always), 2 audio, 3 subtitles, 4 related.
             var maxRow = 1
             if (detail.audioStreams && detail.audioStreams.length > 0) maxRow = 2
             if (detail.subtitleStreams && detail.subtitleStreams.length > 1) maxRow = 3
+            if (detailRoot.showRelated && detailRoot.relatedItems.length > 0) maxRow = 4
             if (focusRow < maxRow) focusRow++
         }
     }
@@ -265,6 +282,8 @@ FocusScope {
             audioIdx = (audioIdx - 1 + detail.audioStreams.length) % detail.audioStreams.length
         else if (focusRow === 3 && detail.subtitleStreams && detail.subtitleStreams.length > 1)
             subtitleIdx = (subtitleIdx - 1 + detail.subtitleStreams.length) % detail.subtitleStreams.length
+        else if (focusRow === 4 && detailRoot.relatedItems.length > 0)
+            detailRoot.relatedIndex = (detailRoot.relatedIndex - 1 + detailRoot.relatedItems.length) % detailRoot.relatedItems.length
     }
     Keys.onRightPressed: {
         if (isLaunching) return
@@ -277,12 +296,19 @@ FocusScope {
             audioIdx = (audioIdx + 1) % detail.audioStreams.length
         else if (focusRow === 3 && detail.subtitleStreams && detail.subtitleStreams.length > 1)
             subtitleIdx = (subtitleIdx + 1) % detail.subtitleStreams.length
+        else if (focusRow === 4 && detailRoot.relatedItems.length > 0)
+            detailRoot.relatedIndex = (detailRoot.relatedIndex + 1) % detailRoot.relatedItems.length
     }
     Keys.onReturnPressed: {
         if (isLaunching) return
         if (focusRow === 1) {
             if (actionCol === 0) toggleWatched()
             else toggleTracked()
+            return
+        }
+        if (focusRow === 4 && detailRoot.relatedItems.length > 0) {
+            // Open the highlighted related title's info screen.
+            detailRoot.navigateTo("Item.qml", { item: detailRoot.relatedItems[detailRoot.relatedIndex] })
             return
         }
         if (focusRow === 0 && detail && episodeItem && playCol !== 1) {
@@ -850,6 +876,96 @@ FocusScope {
                             if (focusRow === 3) inputManager.touchKey("right")
                             else focusRow = 3
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // "More Like This" — a horizontal poster row, revealed only once the
+    // highlight reaches the audio/subtitle rows (focusRow >= 2), so the play/
+    // options block keeps its clean look. focusRow 4 is this row.
+    Item {
+        id: relatedRow
+        visible: detailRoot.showRelated && detailRoot.relatedItems.length > 0 && focusRow >= 2
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: footer.top
+        anchors.leftMargin: root.sw * 0.115625 //74
+        anchors.rightMargin: root.sw * 0.115625 //74
+        anchors.bottomMargin: root.sh * 0.02
+        height: root.sh * 0.175
+
+        Text {
+            id: relatedLabel
+            text: "More Like This"
+            color: detailRoot.focusRow === 4 ? root.accentColor : root.secondaryColor
+            font.family: root.globalFont
+            font.capitalization: Font.AllUppercase
+            anchors.top: parent.top
+            anchors.left: parent.left
+            font.pixelSize: root.sh * 0.0333333 //16
+        }
+
+        ListView {
+            id: relatedList
+            model: detailRoot.relatedItems
+            orientation: ListView.Horizontal
+            anchors.top: relatedLabel.bottom
+            anchors.topMargin: root.sh * 0.0083333
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            spacing: root.sw * 0.0078125 //5
+            clip: true
+            interactive: false
+            currentIndex: detailRoot.relatedIndex
+            onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
+
+            delegate: Item {
+                height: relatedList.height
+                width: height * (2 / 3)   // portrait poster
+
+                Rectangle {
+                    id: relBox
+                    anchors.fill: parent
+                    color: "transparent"
+                    border.color: (detailRoot.focusRow === 4 && detailRoot.relatedIndex === index)
+                                  ? root.accentColor : root.tertiaryColor
+                    border.width: (detailRoot.focusRow === 4 && detailRoot.relatedIndex === index)
+                                  ? Math.max(2, Math.floor(root.sh * 0.00625)) : 1
+
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: relBox.border.width
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                        source: modelData.poster
+                                ? plexBackend.image_url(modelData.poster, Math.round(relatedList.height * 2 / 3), Math.round(relatedList.height))
+                                : ""
+                    }
+                    Text {
+                        visible: !modelData.poster
+                        anchors.fill: parent
+                        anchors.margins: root.sw * 0.0078125
+                        text: modelData.title || ""
+                        color: root.secondaryColor
+                        font.family: root.globalFont
+                        font.capitalization: Font.AllUppercase
+                        wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        font.pixelSize: root.sh * 0.025 //12
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (detailRoot.focusRow === 4 && detailRoot.relatedIndex === index)
+                            inputManager.touchKey("select")
+                        else { detailRoot.focusRow = 4; detailRoot.relatedIndex = index }
                     }
                 }
             }
