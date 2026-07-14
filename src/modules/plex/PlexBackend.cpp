@@ -1995,8 +1995,6 @@ void PlexBackend::load_item_detail(const QString &ratingKey) {
 
 void PlexBackend::play_extra(const QString &ratingKey, const QString &sessionId) {
     const QString uri = serverUrl(), token = serverToken();
-    // Fetch the extra's metadata first (title/duration, and to confirm it has
-    // media), then transcode it.
     auto *metaReply = plexGet(QUrl(uri + "/library/metadata/" + ratingKey), token);
     connect(metaReply, &QNetworkReply::finished, this,
             [this, metaReply, ratingKey, sessionId, uri, token]() {
@@ -2015,69 +2013,61 @@ void PlexBackend::play_extra(const QString &ratingKey, const QString &sessionId)
         const QJsonObject meta = metaArr[0].toObject();
         const QString title = meta["title"].toString();
         const int duration = meta["duration"].toInt();
+        const QJsonObject part = meta["Media"].toArray().first().toObject()["Part"].toArray().first().toObject();
+        const QString partKey = part["key"].toString();
+        if (partKey.isEmpty()) { emit errorOccurred("EXTRA NOT PLAYABLE"); return; }
 
-        // Play extras through the universal transcoder (same flow as
-        // request_transcode). Online-only trailers are "indirect" media that can't
-        // be direct-played — but the universal transcoder resolves the source
-        // server-side, and priming the session here with start.m3u8 keeps the HLS
-        // segments alive (direct-playing the raw part 404s on segments).
-        QString cap = videoQuality();
-        if (cap.isEmpty() || cap == "auto") cap = "20000";   // plenty for a trailer
-        QUrl url(uri + "/video/:/transcode/universal/start.m3u8");
-        QUrlQuery q;
-        q.addQueryItem("hasMDE",       "1");
-        q.addQueryItem("path",         "/library/metadata/" + ratingKey);
-        q.addQueryItem("mediaIndex",   "0");
-        q.addQueryItem("partIndex",    "0");
-        q.addQueryItem("protocol",     "hls");
-        q.addQueryItem("fastSeek",     "1");
-        q.addQueryItem("copyts",       "1");
-        q.addQueryItem("directPlay",   "0");
-        q.addQueryItem("directStream", "0");
-        q.addQueryItem("maxVideoBitrate", cap);
-        q.addQueryItem("audioBoost",   "100");
-        q.addQueryItem("session",      sessionId);
-        q.addQueryItem("X-Plex-Platform", "Chrome");
-        q.addQueryItem("X-Plex-Client-Identifier", clientId());
-        url.setQuery(q);
-
-        QNetworkRequest req = plexRequest(url, token);
-        req.setRawHeader("X-Plex-Platform", "Chrome");
-        auto *tr = m_nam->get(req);
-        ignoreSslErrors(tr);
-        connect(tr, &QNetworkReply::finished, this,
-                [this, tr, token, ratingKey, title, duration]() {
-            tr->deleteLater();
-            if (tr->error() != QNetworkReply::NoError) {
-                emit errorOccurred("EXTRA TRANSCODE FAILED: " + tr->errorString()); return;
-            }
-            // Master m3u8 → first non-comment line is the variant, resolved absolute.
-            const QByteArray body = tr->readAll();
-            QString variantPath;
-            for (const QString &line : QString::fromUtf8(body).split('\n')) {
-                const QString t = line.trimmed();
-                if (!t.isEmpty() && !t.startsWith('#')) { variantPath = t; break; }
-            }
+        // Hand the part to the player as direct play. Online trailers are direct
+        // mp4s proxied by the server (e.g. /services/iva/…video.mp4?fmt=…), so the
+        // key already carries a query string — append params with the right
+        // separator (a stray second '?' corrupts the URL), and pass the token in
+        // the query so it authenticates without depending on request headers.
+        auto emitDirect = [this, sessionId, uri, token, title, duration, ratingKey](const QString &playKey) {
             QString streamUrl;
-            if (!variantPath.isEmpty()) {
-                QUrl base = tr->url(); base.setQuery(QString());
-                streamUrl = base.resolved(QUrl(variantPath)).toString();
+            if (playKey.startsWith("http")) {
+                streamUrl = playKey;
             } else {
-                streamUrl = tr->url().toString();
+                const QString sep = playKey.contains('?') ? "&" : "?";
+                streamUrl = uri + playKey + sep
+                          + "X-Plex-Client-Identifier="  + clientId()
+                          + "&X-Plex-Session-Identifier=" + sessionId
+                          + "&X-Plex-Token="              + token;
             }
-            qDebug() << "[Plex] Extra transcode stream URL:" << streamUrl;
+            qInfo().noquote() << "[Plex] Extra play:" << streamUrl;
             emit extraStreamReady(QVariantMap{
-                {"streamUrl",     streamUrl},
-                {"plexToken",     token},
-                {"ratingKey",     ratingKey},
-                {"partKey",       ""},
-                {"partId",        ""},
-                {"title",         title},
-                {"mediaTitle",    title.toUpper()},
-                {"duration",      duration},
-                {"isTranscoding", true},
+                {"streamUrl", streamUrl}, {"plexToken", token}, {"ratingKey", ratingKey},
+                {"partKey", playKey}, {"partId", ""}, {"title", title},
+                {"mediaTitle", title.toUpper()}, {"duration", duration},
             });
-        });
+        };
+
+        // Some extras are "indirect" (the key is a resolver, not a stream) — follow
+        // one hop to the real media before playing.
+        if (part["indirect"].toBool()) {
+            const QUrl rurl(partKey.startsWith("http") ? partKey : uri + partKey);
+            auto *r2 = plexGet(rurl, token);
+            connect(r2, &QNetworkReply::finished, this, [this, r2, emitDirect]() {
+                r2->deleteLater();
+                if (r2->error() != QNetworkReply::NoError) {
+                    emit errorOccurred("EXTRA RESOLVE FAILED: " + r2->errorString()); return;
+                }
+                const QJsonObject mc = QJsonDocument::fromJson(r2->readAll())
+                                       .object()["MediaContainer"].toObject();
+                QJsonArray items = mc["Metadata"].toArray();
+                if (items.isEmpty()) items = mc["Video"].toArray();
+                QString resolved;
+                for (const auto &vv : items)
+                    for (const auto &mv : vv.toObject()["Media"].toArray())
+                        for (const auto &pv : mv.toObject()["Part"].toArray()) {
+                            const QString k = pv.toObject()["key"].toString();
+                            if (!k.isEmpty()) { resolved = k; break; }
+                        }
+                if (resolved.isEmpty()) { emit errorOccurred("EXTRA NOT PLAYABLE (unresolved)"); return; }
+                emitDirect(resolved);
+            });
+            return;
+        }
+        emitDirect(partKey);
     });
 }
 
