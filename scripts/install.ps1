@@ -13,6 +13,7 @@
     Or with options:
         .\install.ps1 -Autostart          # also start 240-MP at logon
         .\install.ps1 -SkipDeps           # don't touch mpv/yt-dlp
+        .\install.ps1 -SkipUpscalers      # don't download the upscaler shaders
         .\install.ps1 -Uninstall          # remove app + shortcuts (keeps settings)
 
 .NOTES
@@ -26,6 +27,7 @@ param(
     [string]$Repo = 'john-videojockey/240-MP-Win',
     [switch]$Autostart,
     [switch]$SkipDeps,
+    [switch]$SkipUpscalers,
     [switch]$NoShortcut,
     [switch]$Uninstall
 )
@@ -42,6 +44,50 @@ function New-Shortcut([string]$LinkPath, [string]$Target, [string]$WorkDir) {
     $lnk.IconLocation = "$Target,0"
     $lnk.Description = '240-MP retro VCR style media frontend'
     $lnk.Save()
+}
+
+function Get-Shader([string]$Url, [string]$Path) {
+    # Any download failure just warns — the app still runs; that upscaler option
+    # simply won't kick in until its shader file is present.
+    try {
+        Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing
+        Write-Host "  [ok]   $(Split-Path $Path -Leaf)"
+    } catch {
+        Write-Warning "  [skip] $(Split-Path $Path -Leaf) (grab manually: $Url)"
+    }
+}
+
+function Install-Upscalers([string]$Dir) {
+    # Real-time upscaler GLSL shaders the info-screen "Upscaler" selector uses.
+    # Pulled from their upstream open-source repos rather than redistributed in
+    # the release zip. Mirrors scripts/get-upscalers.ps1.
+    New-Item -ItemType Directory -Force -Path $Dir | Out-Null
+    Get-Shader 'https://raw.githubusercontent.com/Artoriuz/ArtCNN/main/GLSL/ArtCNN_C4F32.glsl' (Join-Path $Dir 'ArtCNN_C4F32.glsl')
+    Get-Shader 'https://raw.githubusercontent.com/awused/dotfiles/master/mpv/.config/mpv/shaders/fsrcnnx/FSRCNNX_x2_16-0-4-1.glsl' (Join-Path $Dir 'FSRCNNX_x2_16-0-4-1.glsl')
+
+    # Anime4K ships as a release zip; copy out the Mode-A files 240-MP references.
+    $need = @(
+        'Anime4K_Clamp_Highlights.glsl',   'Anime4K_Restore_CNN_M.glsl',
+        'Anime4K_Upscale_CNN_x2_M.glsl',   'Anime4K_AutoDownscalePre_x2.glsl',
+        'Anime4K_AutoDownscalePre_x4.glsl','Anime4K_Upscale_CNN_x2_S.glsl'
+    )
+    $zip = Join-Path $env:TEMP 'Anime4K_v4.zip'
+    $ex  = Join-Path $env:TEMP 'Anime4K_v4'
+    try {
+        Invoke-WebRequest -Uri 'https://github.com/bloc97/Anime4K/releases/download/v4.0.1/Anime4K_v4.0.zip' -OutFile $zip -UseBasicParsing
+        if (Test-Path $ex) { Remove-Item -Recurse -Force $ex }
+        Expand-Archive -Path $zip -DestinationPath $ex -Force
+        foreach ($f in $need) {
+            $src = Get-ChildItem -Recurse -Path $ex -Filter $f | Select-Object -First 1
+            if ($src) { Copy-Item $src.FullName (Join-Path $Dir $f) -Force; Write-Host "  [ok]   $f" }
+            else      { Write-Warning "  [missing] $f" }
+        }
+    } catch {
+        Write-Warning '  [skip] Anime4K (grab from https://github.com/bloc97/Anime4K/releases)'
+    } finally {
+        Remove-Item -Force $zip -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force $ex -ErrorAction SilentlyContinue
+    }
 }
 
 if ($Uninstall) {
@@ -121,6 +167,9 @@ if (-not (Test-Path "$stage\240mp.exe")) { throw '240mp.exe missing from package
 
 # Preserve an app-bundled mpv folder across updates, then swap.
 if (Test-Path "$InstallDir\mpv") { Copy-Item "$InstallDir\mpv" $stage -Recurse -Force }
+# Preserve already-downloaded upscaler shaders too (the release zip has none), so
+# an update — or a -SkipUpscalers re-run — doesn't wipe them.
+if (Test-Path "$InstallDir\shaders") { Copy-Item "$InstallDir\shaders" $stage -Recurse -Force }
 Remove-Item $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
 Move-Item $stage $InstallDir
 Remove-Item $zip -Force -ErrorAction SilentlyContinue
@@ -133,6 +182,12 @@ if (-not $NoShortcut) {
 if ($Autostart) {
     New-Shortcut $startupLnk "$InstallDir\240mp.exe" $InstallDir
     Write-Host '240-MP will start automatically at logon (shortcut in shell:startup).'
+}
+
+# ── Upscaler shaders (optional) ───────────────────────────────────────────────
+if (-not $SkipUpscalers) {
+    Write-Host 'Fetching upscaler shaders (ArtCNN / FSRCNNX / Anime4K)...'
+    Install-Upscalers "$InstallDir\shaders\upscalers"
 }
 
 Write-Host ''

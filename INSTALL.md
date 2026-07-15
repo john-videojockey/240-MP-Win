@@ -21,6 +21,7 @@ Useful variations (download the script first for these):
 ```powershell
 .\install.ps1 -Autostart      # also start 240-MP automatically at logon
 .\install.ps1 -SkipDeps       # don't install/touch mpv or yt-dlp
+.\install.ps1 -SkipUpscalers  # don't download the upscaler shaders
 .\install.ps1 -InstallDir D:\Apps\240-MP
 .\install.ps1 -Uninstall      # remove the app + shortcuts (your settings survive)
 ```
