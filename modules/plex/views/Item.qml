@@ -280,11 +280,10 @@ FocusScope {
         appCore.save_setting("", "mpv_volume_gain_active", String(volumeDb))
     }
 
-    // Scroll the section stack so the section holding the current focusRow snaps
-    // to the top of the content viewport: play/options (0-1) -> playback settings
-    // audio/subtitle/volume/upscaler (2-5) -> Cast & Extras (6) -> More Like This (7).
-    property real sectionScroll: focusRow <= 1 ? 0
-                               : focusRow <= 5 ? pbSettingsLabel.y
+    // The play/options + playback-settings block now all fits at once (compact,
+    // like the Local Files screen), so nothing scrolls until Cast & Extras (6);
+    // then More Like This (7). Rows 0-5 stay at the top.
+    property real sectionScroll: focusRow <= 5 ? 0
                                : focusRow === 6 ? castSection.y
                                : relatedSection.y
 
@@ -560,7 +559,7 @@ FocusScope {
 
         Row {
             id: itemDetails
-            height: root.sh * 0.35 //168
+            height: root.sh * 0.30
             spacing: root.sw * 0.0375 //24
 
             // Play cluster (PREV/PLAY/NEXT) stacked over the WATCHED/TRACKED
@@ -811,7 +810,7 @@ FocusScope {
             Item {
                 id: detailThumb
                 width: root.sw * 0.155
-                height: root.sh * 0.32
+                height: root.sh * 0.28
                 visible: thumbImage.status === Image.Ready
 
                 Image {
@@ -832,29 +831,16 @@ FocusScope {
             }
         }
 
-        // Playback Settings
-        Text {
-            id: pbSettingsLabel
-            text: "Playback Settings:"
-            color: root.secondaryColor
-            font.family: root.globalFont
-            font.capitalization: Font.AllUppercase
-            anchors.top: itemDetails.bottom
-            anchors.topMargin: root.sh * 0.0145833 //7
-            leftPadding: root.sw * 0.009375 //6
-            rightPadding: root.sw * 0.009375 //6
-            font.pixelSize: root.sh * 0.0291667 //14
-        }
-
-        // AUDIO row
+        // AUDIO row — the playback settings begin directly under the details, with
+        // no "Playback Settings:" label or gap (compact, like the Local Files view).
         Item {
             id: audioRow
             visible: detail && detail.audioStreams && detail.audioStreams.length > 0
-            anchors.top: pbSettingsLabel.bottom
+            anchors.top: itemDetails.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.topMargin: root.sh * 0.0145833 //7
-            height: root.sh * 0.0583333 //28
+            anchors.topMargin: root.sh * 0.0083333
+            height: root.sh * 0.048 //23
 
             // Touch: first tap focuses the row; tapping the focused row cycles
             // its value forward, reusing the LEFT/RIGHT keyboard handlers.
@@ -942,7 +928,7 @@ FocusScope {
             anchors.top: audioRow.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            height: root.sh * 0.0583333 //28
+            height: root.sh * 0.048 //23
 
             MouseArea {
                 anchors.fill: parent
@@ -1024,7 +1010,7 @@ FocusScope {
             anchors.top: subtitleRow.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            height: root.sh * 0.0583333 //28
+            height: root.sh * 0.048 //23
 
             MouseArea {
                 anchors.fill: parent
@@ -1106,7 +1092,7 @@ FocusScope {
             anchors.top: volumeRow.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            height: root.sh * 0.0583333 //28
+            height: root.sh * 0.048 //23
 
             MouseArea {
                 anchors.fill: parent
