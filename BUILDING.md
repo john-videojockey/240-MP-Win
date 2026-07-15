@@ -39,8 +39,8 @@ winget install shinchiro.mpv
 ## Get the source
 
 ```powershell
-git clone https://github.com/anthonycaccese/240-mp-win.git
-cd 240-mp-win
+git clone https://github.com/john_videojockey/240-MP-Win.git
+cd 240-MP-Win
 ```
 
 ## Build & run
