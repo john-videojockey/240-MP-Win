@@ -150,6 +150,14 @@ FocusScope {
     // ---
 
     // Show fanart behind the seasons screen — same treatment as the info screen.
+    // Opaque base beneath it so the fanart dims toward the theme surface color, not
+    // the app background bleeding through the semi-transparent fanart.
+    Rectangle {
+        anchors.fill: parent
+        z: -2
+        visible: fanart.visible
+        color: root.surfaceColor
+    }
     Image {
         id: fanart
         anchors.fill: parent
