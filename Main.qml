@@ -222,6 +222,11 @@ Window {
                 root.showNormal()
             root.raise()
             root.requestActivate()
+            // requestActivate() is a no-op on Windows when we're not already the
+            // foreground app (which we aren't — the fullscreen mpv window we sat
+            // behind just closed), so force the menu to the foreground natively.
+            if (mpvController)
+                mpvController.raiseAppWindow()
         }
         // mpv was minimized (global minimize hotkey, etc.) — minimize the owner
         // so the whole composed window drops as one; the single taskbar button

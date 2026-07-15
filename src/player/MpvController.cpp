@@ -390,6 +390,11 @@ void MpvController::minimizePlayer() {
         minimizeMpvWindow(m_mpvHwnd);
 }
 
+void MpvController::raiseAppWindow() {
+    if (m_mainWindow)
+        forceForegroundWindow(m_mainWindow->winId());
+}
+
 void MpvController::stop() {
     if (m_ipc->state() == QLocalSocket::ConnectedState) {
         sendCommand({"quit"});

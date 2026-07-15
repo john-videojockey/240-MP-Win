@@ -201,6 +201,33 @@ void minimizeMpvWindow(quintptr mpvHwnd) {
     ShowWindow(h, SW_MINIMIZE);
 }
 
+void forceForegroundWindow(quintptr hwnd) {
+    HWND h = reinterpret_cast<HWND>(hwnd);
+    if (!h || !IsWindow(h))
+        return;
+    if (IsIconic(h))
+        ShowWindow(h, SW_RESTORE);
+
+    // Windows only lets the current foreground app hand focus away, so a plain
+    // SetForegroundWindow from here is ignored. Attach our input queue to the
+    // current foreground thread's so we count as "the same" app for the duration,
+    // and toggle topmost to force our window to the top of the Z-order.
+    const HWND fg = GetForegroundWindow();
+    const DWORD fgThread   = fg ? GetWindowThreadProcessId(fg, nullptr) : 0;
+    const DWORD thisThread = GetCurrentThreadId();
+    const bool attached = fgThread && fgThread != thisThread
+                          && AttachThreadInput(thisThread, fgThread, TRUE);
+
+    SetWindowPos(h, HWND_TOPMOST,    0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    SetWindowPos(h, HWND_NOTOPMOST,  0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    BringWindowToTop(h);
+    SetForegroundWindow(h);
+    SetActiveWindow(h);
+
+    if (attached)
+        AttachThreadInput(thisThread, fgThread, FALSE);
+}
+
 void prependToolDirsToPath(const QString &appRoot) {
     const QStringList candidates = {
         appRoot + QStringLiteral("/mpv"),

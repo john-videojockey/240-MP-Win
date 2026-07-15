@@ -60,6 +60,11 @@ public:
     // didn't take (belt-and-suspenders against the two windows "splitting").
     Q_INVOKABLE void minimizePlayer();
 
+    // Force the app (menu) window to the foreground — called from QML when playback
+    // ends so the menu returns on top, not behind another app's window (Windows
+    // ignores a plain requestActivate from a process that isn't already foreground).
+    Q_INVOKABLE void raiseAppWindow();
+
     // Kept for the shared Settings view: the smoothness-vs-crop trade-off only
     // exists on the Raspberry Pi 3 decode path upstream. On Windows the D3D11
     // scaler path always supports crop, so the toggle is never shown.

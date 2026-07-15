@@ -63,3 +63,10 @@ void raiseMpvWindow(quintptr mpvHwnd);
 // auto-hide (which needs the marriage to have taken). No-op if mpvHwnd is 0,
 // invalid, or already minimized.
 void minimizeMpvWindow(quintptr mpvHwnd);
+
+// Force the given window to the foreground, bypassing Windows' foreground lock
+// (which makes a plain SetForegroundWindow/QWindow::requestActivate a no-op when
+// the caller isn't already the foreground app — e.g. right after the fullscreen
+// mpv window it was behind has closed). Called when playback ends so the menu
+// returns on top instead of behind another app's window.
+void forceForegroundWindow(quintptr hwnd);
