@@ -252,8 +252,10 @@ void InputManager::loadDefaultMapping() {
     m_buttonMap[SDL_CONTROLLER_BUTTON_B]             = Action::Back;
     m_buttonMap[SDL_CONTROLLER_BUTTON_BACK]          = Action::Back;
     m_buttonMap[SDL_CONTROLLER_BUTTON_START]         = Action::PlayPause;
-    m_buttonMap[SDL_CONTROLLER_BUTTON_LEFTSHOULDER]  = Action::Left;
-    m_buttonMap[SDL_CONTROLLER_BUTTON_RIGHTSHOULDER] = Action::Right;
+    // Bumpers page a screenful at a time, matching PgUp/PgDown on the keyboard
+    // (the d-pad already covers Left/Right, so the shoulders are free for this).
+    m_buttonMap[SDL_CONTROLLER_BUTTON_LEFTSHOULDER]  = Action::PageUp;
+    m_buttonMap[SDL_CONTROLLER_BUTTON_RIGHTSHOULDER] = Action::PageDown;
     m_axisMap[SDL_CONTROLLER_AXIS_LEFTX] = { Action::Left, Action::Right };
     m_axisMap[SDL_CONTROLLER_AXIS_LEFTY] = { Action::Up,   Action::Down  };
 }
@@ -481,8 +483,11 @@ void InputManager::releaseAction(Action a) {
 void InputManager::deliverPress(Action a, bool autoRepeat) {
     if (windowActive())
         postKey(qtKeyForAction(a), QEvent::KeyPress, autoRepeat);
-    else
-        emit mpvKeyRequested(mpvKeyForAction(a));
+    else {
+        const QString k = mpvKeyForAction(a);
+        if (!k.isEmpty())
+            emit mpvKeyRequested(k);   // actions with no playback mapping are no-ops
+    }
 }
 
 void InputManager::onRepeatDelayElapsed() {
@@ -524,6 +529,8 @@ int InputManager::qtKeyForAction(Action a) {
     case Action::Select:    return Qt::Key_Return;
     case Action::Back:      return Qt::Key_Escape;
     case Action::PlayPause: return Qt::Key_Space;
+    case Action::PageUp:    return Qt::Key_PageUp;
+    case Action::PageDown:  return Qt::Key_PageDown;
     case Action::None:      break;
     }
     return 0;
@@ -539,6 +546,9 @@ QString InputManager::mpvKeyForAction(Action a) {
     case Action::Select:    return QStringLiteral("ENTER");
     case Action::Back:      return QStringLiteral("ESC");
     case Action::PlayPause: return QStringLiteral("SPACE");
+    // Paging is a menu concept — no playback action (the seek bar handles playback).
+    case Action::PageUp:
+    case Action::PageDown:
     case Action::None:      break;
     }
     return QString();
