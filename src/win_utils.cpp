@@ -211,15 +211,14 @@ void forceForegroundWindow(quintptr hwnd) {
     // Windows only lets the current foreground app hand focus away, so a plain
     // SetForegroundWindow from here is ignored. Attach our input queue to the
     // current foreground thread's so we count as "the same" app for the duration,
-    // and toggle topmost to force our window to the top of the Z-order.
+    // then raise/activate. (A HWND_TOPMOST toggle also works but briefly re-layers
+    // the fullscreen window, flashing the desktop — BringWindowToTop is gap-free.)
     const HWND fg = GetForegroundWindow();
     const DWORD fgThread   = fg ? GetWindowThreadProcessId(fg, nullptr) : 0;
     const DWORD thisThread = GetCurrentThreadId();
     const bool attached = fgThread && fgThread != thisThread
                           && AttachThreadInput(thisThread, fgThread, TRUE);
 
-    SetWindowPos(h, HWND_TOPMOST,    0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-    SetWindowPos(h, HWND_NOTOPMOST,  0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
     BringWindowToTop(h);
     SetForegroundWindow(h);
     SetActiveWindow(h);
