@@ -48,6 +48,10 @@ FocusScope {
     // playing); a no-next-episode answer then just keeps playing instead of
     // exiting like the end-of-file autoplay path does.
     property bool   nextViaButton:      false
+    // Set when an episode finished (eof) but autoplay is OFF: rather than play the
+    // next one, repoint BACK to it so exiting lands on the next episode's info
+    // screen instead of re-showing the one just watched.
+    property bool   landOnNextInfo:     false
     property string carryAudioLang:     ""        // language code of the chosen audio track
     property string carrySubLang:       "__off__" // language code, or "__off__" when subtitles are off
 
@@ -274,13 +278,31 @@ FocusScope {
             // Empty detail → no next episode in the season (or a lookup failure).
             if (!detail || !detail.ratingKey) {
                 pendingNextEpisode = false
+                landOnNextInfo = false
                 if (nextViaButton) {
                     // Button press while mpv is still playing: nothing to
                     // advance to, so just keep watching the current episode.
                     nextViaButton = false
                     return
                 }
-                // End-of-file autoplay: fall back to returning to the detail view.
+                // No next episode (last of the season / a movie): fall back to the
+                // current detail view.
+                goBack()
+                return
+            }
+            if (landOnNextInfo) {
+                // Finished with autoplay off: don't play the next episode — just
+                // repoint BACK to it and exit, so we land on its info screen.
+                landOnNextInfo = false
+                pendingNextEpisode = false
+                updateBackItem({
+                    ratingKey: detail.ratingKey,
+                    type: detail.type || "episode",
+                    title: detail.title || "",
+                    grandparentTitle: detail.grandparentTitle || "",
+                    parentIndex: detail.parentIndex,
+                    index: detail.index
+                })
                 goBack()
                 return
             }
@@ -411,7 +433,14 @@ FocusScope {
             // onNextEpisodeReady falls back to goBack(). Everything else returns to
             // the detail view here.
             reportStopped(finalPositionMs, finalDurationMs)
-            if (reason === "eof" && autoplayNext) {
+            // Episode watched to the end: advance the return target to the next
+            // episode so BACK never re-shows the one just finished. With autoplay on
+            // we play it here; with autoplay off we only repoint BACK (landOnNextInfo)
+            // so exiting lands on the next episode's info screen. A user quit
+            // ("stopped") keeps the current episode so it can be resumed. Movies and
+            // the last episode fall back to goBack() (empty next detail).
+            if (reason === "eof" && episodeNav) {
+                landOnNextInfo = !autoplayNext
                 pendingNextEpisode = true
                 plexBackend.load_next_episode(ratingKey)
                 return
