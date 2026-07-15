@@ -357,7 +357,10 @@ FocusScope {
         clip: true
 
         Row {
-            height: root.sh * 0.35 //168
+            id: topRow
+            anchors.top: parent.top
+            anchors.left: parent.left
+            height: root.sh * 0.31
             spacing: root.sw * 0.0375 //24
 
             // Play cluster + action buttons, stacked. WATCHED / TRACKED sit
@@ -517,157 +520,6 @@ FocusScope {
                         }
                     }
                 }
-
-                // Audio: per-show language (◄/►). Only when the file has >1 language.
-                Column {
-                    visible: detailRoot.audioLangs.length > 1
-                    spacing: root.sh * 0.0041667 //2
-                    topPadding: root.sh * 0.0083333 //4
-
-                    Text {
-                        text: "AUDIO"
-                        color: root.tertiaryColor
-                        font.family: root.globalFont
-                        font.pixelSize: root.sh * 0.0208333 //10
-                    }
-                    Rectangle {
-                        id: audioBtn
-                        property bool sel: focusRow === 2
-                        color: sel ? root.accentColor : root.surfaceColor
-                        border.color: sel ? root.accentColor : root.tertiaryColor
-                        width: root.sw * 0.1875
-                        height: root.sh * 0.05
-                        border.width: root.sh * 0.003125 //2
-
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-                                if (audioBtn.sel) detailRoot.cycleAudio(1)
-                                else focusRow = 2
-                            }
-                        }
-                        Text {
-                            anchors.centerIn: parent
-                            text: "◄ " + detailRoot.audioLabel() + " ►"
-                            color: audioBtn.sel ? root.surfaceColor : root.primaryColor
-                            font.family: root.globalFont
-                            font.pixelSize: root.sh * 0.025 //12
-                        }
-                    }
-                }
-
-                // Subtitles: per-show language / Off (◄/►). When the file has subs.
-                Column {
-                    visible: detailRoot.subLangs.length > 0
-                    spacing: root.sh * 0.0041667 //2
-                    topPadding: root.sh * 0.0083333 //4
-
-                    Text {
-                        text: "SUBTITLES"
-                        color: root.tertiaryColor
-                        font.family: root.globalFont
-                        font.pixelSize: root.sh * 0.0208333 //10
-                    }
-                    Rectangle {
-                        id: subBtn
-                        property bool sel: focusRow === 3
-                        color: sel ? root.accentColor : root.surfaceColor
-                        border.color: sel ? root.accentColor : root.tertiaryColor
-                        width: root.sw * 0.1875
-                        height: root.sh * 0.05
-                        border.width: root.sh * 0.003125 //2
-
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-                                if (subBtn.sel) detailRoot.cycleSub(1)
-                                else focusRow = 3
-                            }
-                        }
-                        Text {
-                            anchors.centerIn: parent
-                            text: "◄ " + detailRoot.subLabel() + " ►"
-                            color: subBtn.sel ? root.surfaceColor : root.primaryColor
-                            font.family: root.globalFont
-                            font.pixelSize: root.sh * 0.025 //12
-                        }
-                    }
-                }
-
-                // Volume: per-title gain in dB (◄/►). Focus row 4.
-                Column {
-                    spacing: root.sh * 0.0041667 //2
-                    topPadding: root.sh * 0.0083333 //4
-
-                    Text {
-                        text: "VOLUME"
-                        color: root.tertiaryColor
-                        font.family: root.globalFont
-                        font.pixelSize: root.sh * 0.0208333 //10
-                    }
-                    Rectangle {
-                        id: volumeBtn
-                        property bool sel: focusRow === 4
-                        color: sel ? root.accentColor : root.surfaceColor
-                        border.color: sel ? root.accentColor : root.tertiaryColor
-                        width: root.sw * 0.1875
-                        height: root.sh * 0.05
-                        border.width: root.sh * 0.003125 //2
-
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-                                if (volumeBtn.sel) detailRoot.cycleVolume(1)
-                                else focusRow = 4
-                            }
-                        }
-                        Text {
-                            anchors.centerIn: parent
-                            text: "◄ " + detailRoot.volumeLabel() + " ►"
-                            color: volumeBtn.sel ? root.surfaceColor : root.primaryColor
-                            font.family: root.globalFont
-                            font.pixelSize: root.sh * 0.025 //12
-                        }
-                    }
-                }
-
-                // Upscaler: cycles the "mpv_upscaler" setting (applies to the next
-                // playback). Focus row 5 — the same control as Plex info.
-                Column {
-                    spacing: root.sh * 0.0041667 //2
-                    topPadding: root.sh * 0.0083333 //4
-
-                    Text {
-                        text: "UPSCALER"
-                        color: root.tertiaryColor
-                        font.family: root.globalFont
-                        font.pixelSize: root.sh * 0.0208333 //10
-                    }
-                    Rectangle {
-                        id: upscalerBtn
-                        property bool sel: focusRow === 5
-                        color: sel ? root.accentColor : root.surfaceColor
-                        border.color: sel ? root.accentColor : root.tertiaryColor
-                        width: root.sw * 0.1875
-                        height: root.sh * 0.05
-                        border.width: root.sh * 0.003125 //2
-
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-                                if (upscalerBtn.sel) detailRoot.cycleUpscaler(1)
-                                else focusRow = 5
-                            }
-                        }
-                        Text {
-                            anchors.centerIn: parent
-                            text: "◄ " + detailRoot.upscalers[detailRoot.upscalerIdx].label + " ►"
-                            color: upscalerBtn.sel ? root.surfaceColor : root.primaryColor
-                            font.family: root.globalFont
-                            font.pixelSize: root.sh * 0.025 //12
-                        }
-                    }
-                }
             }
 
             Column {
@@ -738,7 +590,7 @@ FocusScope {
             Item {
                 id: detailThumb
                 width: root.sw * 0.155
-                height: root.sh * 0.32
+                height: root.sh * 0.28
                 visible: thumbImage.status === Image.Ready
 
                 Image {
@@ -752,6 +604,117 @@ FocusScope {
                     verticalAlignment: Image.AlignTop
                     asynchronous: true
                     source: detailRoot.current.thumb || ""
+                }
+            }
+        }
+
+        // Playback settings — full-width rows (label + ◄ value ►), the same
+        // presentation as the Plex info screen, below the play/metadata area.
+        Column {
+            anchors.top: topRow.bottom
+            anchors.topMargin: root.sh * 0.0125
+            anchors.left: parent.left
+            anchors.right: parent.right
+
+            // AUDIO (row 2)
+            Item {
+                width: parent.width
+                visible: detailRoot.audioLangs.length > 1
+                height: visible ? root.sh * 0.048 : 0
+                Rectangle { anchors.fill: parent; color: focusRow === 2 ? root.accentColor : "transparent" }
+                MouseArea { anchors.fill: parent
+                    onClicked: { if (focusRow === 2) detailRoot.cycleAudio(1); else focusRow = 2 } }
+                Text {
+                    text: "Audio"; color: focusRow === 2 ? root.surfaceColor : root.primaryColor
+                    font.family: root.globalFont; font.capitalization: Font.AllUppercase
+                    anchors.left: parent.left; anchors.leftMargin: root.sw * 0.009375
+                    anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375
+                }
+                Row {
+                    anchors.right: parent.right; anchors.rightMargin: root.sw * 0.009375
+                    anchors.verticalCenter: parent.verticalCenter; spacing: root.sw * 0.00625
+                    Text { text: "◄"; color: focusRow === 2 ? root.surfaceColor : root.tertiaryColor
+                        font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
+                    Text { text: detailRoot.audioLabel(); color: focusRow === 2 ? root.surfaceColor : root.primaryColor
+                        font.family: root.globalFont; font.capitalization: Font.AllUppercase; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375 }
+                    Text { text: "►"; color: focusRow === 2 ? root.surfaceColor : root.tertiaryColor
+                        font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
+                }
+            }
+
+            // SUBTITLES (row 3)
+            Item {
+                width: parent.width
+                visible: detailRoot.subLangs.length > 0
+                height: visible ? root.sh * 0.048 : 0
+                Rectangle { anchors.fill: parent; color: focusRow === 3 ? root.accentColor : "transparent" }
+                MouseArea { anchors.fill: parent
+                    onClicked: { if (focusRow === 3) detailRoot.cycleSub(1); else focusRow = 3 } }
+                Text {
+                    text: "Subtitles"; color: focusRow === 3 ? root.surfaceColor : root.primaryColor
+                    font.family: root.globalFont; font.capitalization: Font.AllUppercase
+                    anchors.left: parent.left; anchors.leftMargin: root.sw * 0.009375
+                    anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375
+                }
+                Row {
+                    anchors.right: parent.right; anchors.rightMargin: root.sw * 0.009375
+                    anchors.verticalCenter: parent.verticalCenter; spacing: root.sw * 0.00625
+                    Text { text: "◄"; color: focusRow === 3 ? root.surfaceColor : root.tertiaryColor
+                        font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
+                    Text { text: detailRoot.subLabel(); color: focusRow === 3 ? root.surfaceColor : root.primaryColor
+                        font.family: root.globalFont; font.capitalization: Font.AllUppercase; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375 }
+                    Text { text: "►"; color: focusRow === 3 ? root.surfaceColor : root.tertiaryColor
+                        font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
+                }
+            }
+
+            // VOLUME (row 4)
+            Item {
+                width: parent.width
+                height: root.sh * 0.048
+                Rectangle { anchors.fill: parent; color: focusRow === 4 ? root.accentColor : "transparent" }
+                MouseArea { anchors.fill: parent
+                    onClicked: { if (focusRow === 4) detailRoot.cycleVolume(1); else focusRow = 4 } }
+                Text {
+                    text: "Volume"; color: focusRow === 4 ? root.surfaceColor : root.primaryColor
+                    font.family: root.globalFont; font.capitalization: Font.AllUppercase
+                    anchors.left: parent.left; anchors.leftMargin: root.sw * 0.009375
+                    anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375
+                }
+                Row {
+                    anchors.right: parent.right; anchors.rightMargin: root.sw * 0.009375
+                    anchors.verticalCenter: parent.verticalCenter; spacing: root.sw * 0.00625
+                    Text { text: "◄"; color: focusRow === 4 ? root.surfaceColor : root.tertiaryColor
+                        font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
+                    Text { text: detailRoot.volumeLabel(); color: focusRow === 4 ? root.surfaceColor : root.primaryColor
+                        font.family: root.globalFont; font.capitalization: Font.AllUppercase; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375 }
+                    Text { text: "►"; color: focusRow === 4 ? root.surfaceColor : root.tertiaryColor
+                        font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
+                }
+            }
+
+            // UPSCALER (row 5)
+            Item {
+                width: parent.width
+                height: root.sh * 0.048
+                Rectangle { anchors.fill: parent; color: focusRow === 5 ? root.accentColor : "transparent" }
+                MouseArea { anchors.fill: parent
+                    onClicked: { if (focusRow === 5) detailRoot.cycleUpscaler(1); else focusRow = 5 } }
+                Text {
+                    text: "Upscaler"; color: focusRow === 5 ? root.surfaceColor : root.primaryColor
+                    font.family: root.globalFont; font.capitalization: Font.AllUppercase
+                    anchors.left: parent.left; anchors.leftMargin: root.sw * 0.009375
+                    anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375
+                }
+                Row {
+                    anchors.right: parent.right; anchors.rightMargin: root.sw * 0.009375
+                    anchors.verticalCenter: parent.verticalCenter; spacing: root.sw * 0.00625
+                    Text { text: "◄"; color: focusRow === 5 ? root.surfaceColor : root.tertiaryColor
+                        font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
+                    Text { text: detailRoot.upscalers[detailRoot.upscalerIdx].label; color: focusRow === 5 ? root.surfaceColor : root.primaryColor
+                        font.family: root.globalFont; font.capitalization: Font.AllUppercase; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375 }
+                    Text { text: "►"; color: focusRow === 5 ? root.surfaceColor : root.tertiaryColor
+                        font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
                 }
             }
         }
