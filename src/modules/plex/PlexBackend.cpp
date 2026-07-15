@@ -2108,9 +2108,16 @@ PlexBackend::~PlexBackend() {
 void PlexBackend::play_theme(const QString &themePath, int volumePercent) {
     // A pending deferred stop is superseded by any new play request.
     if (m_themeStopTimer) m_themeStopTimer->stop();
-    // Already playing this exact theme — leave it running so a browse -> info
-    // (or info -> back) navigation to the same show doesn't restart the song.
-    if (!themePath.isEmpty() && themePath == m_currentTheme
+    // Already playing this show's theme — leave it running so navigating to the
+    // same show doesn't restart the song. The list data (Continue Watching, etc.)
+    // and the full item detail can carry DIFFERENT /theme/<id> suffixes for the
+    // same show, so compare only the /library/metadata/<show> prefix; otherwise
+    // the detail landing would restart the theme the hover had already started.
+    auto themeShowKey = [](const QString &p) -> QString {
+        const int i = p.indexOf(QStringLiteral("/theme/"));
+        return i >= 0 ? p.left(i) : p;
+    };
+    if (!themePath.isEmpty() && themeShowKey(themePath) == themeShowKey(m_currentTheme)
         && m_themeProcess && m_themeProcess->state() != QProcess::NotRunning)
         return;
     stop_theme();
