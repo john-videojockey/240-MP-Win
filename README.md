@@ -6,6 +6,29 @@ Playback experiences are handled via modules to enable new integrations without 
 
 It works in conjunction with [mpv](https://mpv.io/), which the [install script](#install) sets up as a dependency.
 
+## Screenshots
+
+|  |  |
+|--|--|
+| ![Plex Home and Continue Watching](screenshots/plex_cover_view.png)<br>**Plex Home** — Continue Watching (with watch‑progress bars) alongside your own hub rows, over hover fanart with the show's theme music playing. | ![Episode info and playback settings](screenshots/plex_media_info.png)<br>**Info screen** — PREV / PLAY / NEXT, plus per‑title **Audio, Subtitles, Volume and Upscaler** that carry across a whole show. |
+| ![Local Files cover view](screenshots/local_files_cover_view.png)<br>**Local Files** — a Cover browse view rendered from Kodi / TinyMediaManager poster artwork. | ![Plex settings](screenshots/plex_options.png)<br>**Settings** — reorder sources, Cover view, fanart backgrounds, theme music, autoplay and more. |
+| ![VCR‑style player controls](screenshots/player_controls.png)<br>**Playback** — mpv fullscreen with a VCR‑style on‑screen control bar (seek, audio, subtitle, crop). |  |
+
+## Highlights added in this port
+
+Beyond rebuilding the platform layer, this port layers on a number of features — all optional, all under **Settings**:
+
+- **Per‑title playback settings** — pick the audio language, subtitle language, volume gain (± dB) and video upscaler right on a title's info screen; the choices carry across every episode of a show. (Plex and Local Files.)
+- **Video upscalers** — optional mpv GLSL shaders (**ArtCNN, FSRCNNX, Anime4K**, plus a High‑Quality preset), GPU‑accelerated so even the heavy ones stay smooth — handy for bringing SD anime up to a 4K panel.
+- **Plex Home dashboard** — a landing screen with Continue Watching, Recently Added and your own hub rows, over hover fanart with theme music.
+- **Watch‑progress bars** on Continue Watching posters (both the Home rows and the dedicated list).
+- **“Up next”** — finishing an episode (or backing out during the credits) drops you on the *next* episode's info, not the one you just watched.
+- **Cast & Extras** on the Plex info screen — play trailers and featurettes inline, or open an actor's filmography.
+- **Seamless theme music** — a show's theme starts on hover while browsing and carries, uninterrupted, into its info screen.
+- **Local Files watched tracking** — a ✓ on played files and on folders whose every video is watched; a folder holding a single video jumps straight to its info.
+- **Single composed window** — the mpv video window is married to the app, so it's one taskbar button and one Alt‑Tab entry, and the menu returns cleanly on top when playback ends.
+- **Full controller & touchscreen parity** — anything the keyboard does, a gamepad does (bumpers page the lists); footer hints adapt to the last device you touched.
+
 ## What's different in the Windows port
 
 The philosophy and module system are untouched (see [ARCHITECTURE.md](ARCHITECTURE.md)); the platform layer was rebuilt for Windows rather than translated line-by-line:
