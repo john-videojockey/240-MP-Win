@@ -514,6 +514,23 @@ FocusScope {
                     elide: Text.ElideRight
                     font.pixelSize: root.sh * 0.0291667 //14
                 }
+
+                // Watch-progress bar for in-progress items (Continue Watching),
+                // pinned to the poster's bottom edge.
+                Rectangle {
+                    visible: (modelData.viewOffset || 0) > 0 && (modelData.duration || 0) > 0
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: posterBox.border.width
+                    height: Math.max(2, Math.round(root.sh * 0.008))
+                    color: Qt.rgba(0, 0, 0, 0.55)
+                    Rectangle {
+                        anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+                        width: parent.width * Math.min(1, (modelData.viewOffset || 0) / Math.max(1, modelData.duration || 0))
+                        color: root.accentColor
+                    }
+                }
             }
         }
     }
