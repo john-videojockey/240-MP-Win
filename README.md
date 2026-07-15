@@ -121,23 +121,13 @@ irm https://github.com/john-videojockey/240-MP-Win/releases/latest/download/inst
 
 Full options (autostart, custom folder, uninstall) and the manual zip install are in **[INSTALL.md](INSTALL.md)**. Building from source is covered in **[BUILDING.md](BUILDING.md)**.
 
-## FAQs
-
-- Why didn't you use Kodi/Plex HTPC/Jellyfin Media Player?
-    - Those are all excellent. 240-MP is deliberately simpler — something that feels like a VCR from my youth. See the [upstream FAQ](https://github.com/anthonycaccese/240-MP#faqs) for the whole philosophy.
-- Where does the name "240-MP" come from?
-    - 240 refers to the longest [VHS tape length](https://en.wikipedia.org/wiki/VHS#Tape_lengths) and the upstream project's CRT display target of [240p](https://consolemods.org/wiki/CRT:What_is_240p%3F). MP means "Media Player" and plays on the "SP/LP/EP/SLP" VHS recording-quality terminology.
-- Does it output 240p?
-    - No — the UI scales to your display's resolution. On a modern TV over HDMI it renders at native resolution; it just *looks* gloriously 1985.
-- Can I keep using my Raspberry Pi / Mac?
-    - Yes — use [upstream 240-MP](https://github.com/anthonycaccese/240-MP) there. Settings concepts are identical, so switching between them is painless.
-
 ## Credits & Acknowledgments
 
 - This is a Windows port of [240-MP](https://github.com/anthonycaccese/240-MP) by Anthony Caccese — all of the app's design, modules, and views are his work.
 - The `VCR OSD Mono` font was created by Riciery Santos Leal (a.k.a. mrmanet) https://www.dafont.com/vcr-osd-mono.font
 - Like upstream, this port was built with substantial help from [Claude Code](https://www.anthropic.com/product/claude-code).
 - Thank you to Plex for providing an open and free [API](https://developer.plex.tv/), and to [the mpv team](https://mpv.io/) for a simple, extensible and cross platform media player.
+- Jellyfin and YouTube remain untested in this port so far. Do not hesitate to report any bugs!
 
 ## License
 
