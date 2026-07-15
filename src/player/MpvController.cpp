@@ -353,7 +353,9 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     m_connectTimer->start();
     // Begin looking for mpv's window so we can marry it to the menu window.
     if (m_mainWindow) {
+        m_mpvHwnd = 0;                     // clear any stale handle from a prior play
         m_adoptTries = 0;
+        m_adoptTimer->setInterval(120);   // reset from the post-marriage fast watch
         m_adoptTimer->start();
     }
 }
@@ -367,6 +369,19 @@ void MpvController::tryAdoptMpvWindow() {
         m_adoptTimer->stop();
         return;
     }
+    // Once married, the same timer switches to a fast watch for mpv's window
+    // closing. mpv destroys its window a noticeable beat before the process exits
+    // (it saves state, tears down, …), so acting on the window's disappearance —
+    // rather than onProcessFinished — raises the menu before Windows can paint a
+    // frame of it behind whatever it re-activated.
+    if (m_mpvHwnd) {
+        if (!isWindowAlive(m_mpvHwnd)) {
+            m_mpvHwnd = 0;
+            m_adoptTimer->stop();
+            raiseAppWindow();
+        }
+        return;
+    }
     if (++m_adoptTries > 80) {   // ~10 s — cover a slow-to-appear mpv window
         m_adoptTimer->stop();
         qWarning("[MpvController] gave up marrying mpv window (not found / ownership refused)");
@@ -375,7 +390,7 @@ void MpvController::tryAdoptMpvWindow() {
     const quintptr hwnd = adoptMpvWindow(m_mainWindow->winId(), m_process->processId());
     if (hwnd) {
         m_mpvHwnd = hwnd;
-        m_adoptTimer->stop();
+        m_adoptTimer->setInterval(16);   // ~1 frame — snappy close detection
         qInfo("[MpvController] married mpv window to the app window");
     }
 }

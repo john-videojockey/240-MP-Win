@@ -70,3 +70,7 @@ void minimizeMpvWindow(quintptr mpvHwnd);
 // mpv window it was behind has closed). Called when playback ends so the menu
 // returns on top instead of behind another app's window.
 void forceForegroundWindow(quintptr hwnd);
+
+// True while the given handle is still a live window. Used to detect mpv's window
+// closing (which precedes process exit) so the menu can be raised right then.
+bool isWindowAlive(quintptr hwnd);

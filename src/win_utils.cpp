@@ -227,6 +227,11 @@ void forceForegroundWindow(quintptr hwnd) {
         AttachThreadInput(thisThread, fgThread, FALSE);
 }
 
+bool isWindowAlive(quintptr hwnd) {
+    HWND h = reinterpret_cast<HWND>(hwnd);
+    return h && IsWindow(h);
+}
+
 void prependToolDirsToPath(const QString &appRoot) {
     const QStringList candidates = {
         appRoot + QStringLiteral("/mpv"),
