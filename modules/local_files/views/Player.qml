@@ -116,7 +116,7 @@ FocusScope {
         var dur = lastKnownDurationMs
         if (isPlaylist(filePath) || isImage(filePath)) return
         if (dur > 0 && pos >= dur * 0.95)
-            localFilesBackend.clearPosition(filePath)
+            localFilesBackend.set_watched(filePath, true)   // finished → mark played
         else if (pos > 5000)
             localFilesBackend.savePosition(filePath, pos, -1, dur)
     }
@@ -182,7 +182,7 @@ FocusScope {
                 // Single file: clear if near completion, save otherwise.
                 // Images carry no resume position, so they never write history.
                 if (dur > 0 && pos >= dur * 0.95)
-                    localFilesBackend.clearPosition(filePath)
+                    localFilesBackend.set_watched(filePath, true)   // finished → mark played
                 else if (pos > 5000)
                     localFilesBackend.savePosition(filePath, pos, -1, dur)
             }

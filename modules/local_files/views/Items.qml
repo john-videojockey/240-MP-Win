@@ -10,6 +10,7 @@ FocusScope {
     property string folderName: navParams.folderName || ""
 
     signal navigateTo(string path, var params, var listState)
+    signal replaceWith(string path, var params)
     signal goBack()
 
     property var items: []
@@ -52,6 +53,18 @@ FocusScope {
         return it && !it.isFolder
                && !localFilesBackend.isImage(it.path)
                && !localFilesBackend.isPlaylist(it.path)
+    }
+
+    // A folder that resolves to exactly one video (no folders/other items) jumps
+    // straight to its media info, skipping this one-item list. Replaces (not pushes)
+    // so BACK returns to the parent folder. Never at the media root.
+    function maybeSkipToSingleVideo() {
+        if (folderPath === localFilesBackend.mediaRoot()) return false
+        if (items.length === 1 && isVideoFile(items[0])) {
+            replaceWith("Detail.qml", { items: items, index: 0, folderName: folderName })
+            return true
+        }
+        return false
     }
 
     function currentItem() {
@@ -270,6 +283,25 @@ FocusScope {
                     elide: Text.ElideRight
                     font.pixelSize: root.sh * 0.0291667 //14
                 }
+
+                // Watched badge (a file that's been played, or a fully-played folder).
+                Rectangle {
+                    visible: modelData.watched === true
+                    anchors.top: parent.top
+                    anchors.right: parent.right
+                    anchors.margins: root.sh * 0.0083333
+                    width: root.sh * 0.0333333
+                    height: width
+                    radius: width / 2
+                    color: root.accentColor
+                    Text {
+                        anchors.centerIn: parent
+                        text: "✓"
+                        color: root.surfaceColor
+                        font.family: root.globalFont
+                        font.pixelSize: root.sh * 0.025
+                    }
+                }
             }
         }
     }
@@ -354,6 +386,18 @@ FocusScope {
                     PropertyAction { target: rowText; property: "x"; value: 0 }
                 }
             }
+
+            // Watched checkmark at the row's right edge (played file / played folder).
+            Text {
+                visible: modelData.watched === true
+                text: "✓"
+                color: root.accentColor
+                font.family: root.globalFont
+                anchors.right: parent.right
+                anchors.rightMargin: root.sw * 0.0125
+                anchors.verticalCenter: parent.verticalCenter
+                font.pixelSize: root.sh * 0.0416667
+            }
         }
     }
 
@@ -384,6 +428,7 @@ FocusScope {
                 loadedOnce = true
                 var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
                 applyItems(loaded, restore)
+                maybeSkipToSingleVideo()
                 return
             }
             if (JSON.stringify(loaded) === JSON.stringify(items)) return
@@ -407,6 +452,7 @@ FocusScope {
             loadedOnce = true
             var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
             applyItems(cached, restore)
+            if (maybeSkipToSingleVideo()) return
         } else {
             isLoading = true
         }

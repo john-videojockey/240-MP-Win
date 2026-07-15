@@ -105,6 +105,12 @@ static QString normKey(const QString &path) {
     return QDir::fromNativeSeparators(path);
 }
 
+// Watched flag for a path in an already-loaded history map (avoids re-reading the
+// history file once per item during a scan).
+static bool isWatchedIn(const QVariantMap &history, const QString &path) {
+    return history.value(normKey(path)).toMap().value("watched").toBool();
+}
+
 QVariantMap LocalFilesBackend::loadHistory() const {
     QFile file(historyFilePath());
     if (!file.open(QIODevice::ReadOnly))
@@ -586,6 +592,30 @@ bool LocalFilesBackend::folderContainsVideo(const QString &path, int depth) cons
     return false;
 }
 
+bool LocalFilesBackend::folderFullyWatched(const QString &path, const QVariantMap &history,
+                                           int depth) const {
+    if (depth > 5) return false;   // too deep to reason about — treat as not-all-watched
+    QDir dir(path);
+    bool anyVideo = false;
+    for (const QString &name : dir.entryList(QDir::Files)) {
+        const QString suffix = QFileInfo(name).suffix().toLower();
+        if (!kMediaExts.contains(suffix) || kImageExts.contains(suffix)
+            || kPlaylistExts.contains(suffix))
+            continue;
+        anyVideo = true;
+        if (!isWatchedIn(history, dir.absoluteFilePath(name)))
+            return false;   // an unwatched video — folder isn't fully played
+    }
+    for (const QString &sub : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        const QString subPath = dir.absoluteFilePath(sub);
+        if (!folderContainsVideo(subPath, depth + 1)) continue;   // no videos below — ignore
+        anyVideo = true;
+        if (!folderFullyWatched(subPath, history, depth + 1))
+            return false;
+    }
+    return anyVideo;
+}
+
 // Gather a media folder's videos across its subfolders into one flat, enriched
 // list (used when a show/movie folder has all its videos at the root). Depth-
 // capped so a stray deep tree can't stall the scan; artwork/nfo files skipped.
@@ -788,7 +818,23 @@ void LocalFilesBackend::probe_tracks(const QString &path) {
 }
 
 QVariantList LocalFilesBackend::getItems(const QString &path) {
-    const QVariantList items = scanItems(path, m_mediaRoot);
+    QVariantList items = scanItems(path, m_mediaRoot);
+    // Tag each entry with a "watched" flag: a video that has been played, or a
+    // folder whose whole video tree has. History is read once and shared.
+    const QVariantMap history = loadHistory();
+    for (int i = 0; i < items.size(); ++i) {
+        QVariantMap m = items[i].toMap();
+        const QString p = m.value("path").toString();
+        if (m.value("isFolder").toBool()) {
+            m["watched"] = folderFullyWatched(p, history, 0);
+        } else {
+            const QString suffix = QFileInfo(p).suffix().toLower();
+            if (kMediaExts.contains(suffix) && !kImageExts.contains(suffix)
+                && !kPlaylistExts.contains(suffix))
+                m["watched"] = isWatchedIn(history, p);
+        }
+        items[i] = m;
+    }
     updateCache(QDir(path).absolutePath(), items);
     return items;
 }

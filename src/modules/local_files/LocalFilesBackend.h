@@ -99,6 +99,9 @@ private:
     static bool folderHasNfoOrArtwork(const QDir &dir);
     bool folderContainsVideo(const QString &path, int depth) const;
     void collectVideos(const QString &path, QVariantList &out, int depth) const;
+    // True if the folder tree holds at least one video and every video in it has
+    // been watched (per the given history) — drives the "all played" folder mark.
+    bool folderFullyWatched(const QString &path, const QVariantMap &history, int depth) const;
 
     // Listing cache. m_cache mirrors the on-disk file; updateCache persists.
     QString cacheFilePath() const;
