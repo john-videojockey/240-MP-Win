@@ -116,7 +116,7 @@ Everything Raspberry-Pi-specific (KMS/DRM hand-off, per-Pi decode profiles, syst
 One-liner (PowerShell — no admin needed):
 
 ```powershell
-irm https://github.com/john_videojockey/240-MP-Win/releases/latest/download/install.ps1 | iex
+irm https://github.com/john-videojockey/240-MP-Win/releases/latest/download/install.ps1 | iex
 ```
 
 Full options (autostart, custom folder, uninstall) and the manual zip install are in **[INSTALL.md](INSTALL.md)**. Building from source is covered in **[BUILDING.md](BUILDING.md)**.

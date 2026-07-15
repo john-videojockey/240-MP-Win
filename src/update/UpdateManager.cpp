@@ -16,7 +16,7 @@
 namespace {
 
 const QString kDefaultFeedUrl =
-    QStringLiteral("https://api.github.com/repos/john_videojockey/240-MP-Win/releases/latest");
+    QStringLiteral("https://api.github.com/repos/john-videojockey/240-MP-Win/releases/latest");
 
 const QString kAssetSuffix = QStringLiteral("-windows-x64.zip");
 

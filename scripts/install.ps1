@@ -8,7 +8,7 @@
     and installs the mpv playback engine via winget/scoop/choco if missing.
 
     One-liner (PowerShell):
-        irm https://github.com/john_videojockey/240-MP-Win/releases/latest/download/install.ps1 | iex
+        irm https://github.com/john-videojockey/240-MP-Win/releases/latest/download/install.ps1 | iex
 
     Or with options:
         .\install.ps1 -Autostart          # also start 240-MP at logon
@@ -23,7 +23,7 @@
 [CmdletBinding()]
 param(
     [string]$InstallDir = "$env:LOCALAPPDATA\Programs\240-MP",
-    [string]$Repo = 'john_videojockey/240-MP-Win',
+    [string]$Repo = 'john-videojockey/240-MP-Win',
     [switch]$Autostart,
     [switch]$SkipDeps,
     [switch]$NoShortcut,

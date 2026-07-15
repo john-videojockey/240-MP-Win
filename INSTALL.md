@@ -7,7 +7,7 @@ Requirements: Windows 10 21H2 or later (Windows 11 recommended), x64.
 Open **PowerShell** (no admin needed) and run:
 
 ```powershell
-irm https://github.com/john_videojockey/240-MP-Win/releases/latest/download/install.ps1 | iex
+irm https://github.com/john-videojockey/240-MP-Win/releases/latest/download/install.ps1 | iex
 ```
 
 The script:
@@ -34,7 +34,7 @@ Useful variations (download the script first for these):
 
 1. Install mpv: `winget install shinchiro.mpv` (or grab a build from [mpv.io/installation](https://mpv.io/installation/) and put it on your PATH — **or** drop `mpv.exe` and its files into a `mpv\` folder inside the 240-MP folder; 240-MP checks there first).
 2. Optionally install yt-dlp for the YouTube module: `winget install yt-dlp.yt-dlp`.
-3. Download `240-MP-<version>-windows-x64.zip` from [Releases](https://github.com/john_videojockey/240-MP-Win/releases), extract it anywhere you like, and run `240mp.exe`.
+3. Download `240-MP-<version>-windows-x64.zip` from [Releases](https://github.com/john-videojockey/240-MP-Win/releases), extract it anywhere you like, and run `240mp.exe`.
 
 ## First run
 
@@ -61,7 +61,7 @@ Use **Settings → Update** inside the app — it checks GitHub Releases, downlo
 ## Uninstall
 
 ```powershell
-irm https://github.com/john_videojockey/240-MP-Win/releases/latest/download/install.ps1 | iex; & "$env:TEMP\install.ps1" -Uninstall
+irm https://github.com/john-videojockey/240-MP-Win/releases/latest/download/install.ps1 | iex; & "$env:TEMP\install.ps1" -Uninstall
 ```
 
 …or simply download `install.ps1` and run `.\install.ps1 -Uninstall`, or delete `%LOCALAPPDATA%\Programs\240-MP` and the Start Menu/Startup shortcuts yourself. Delete `%APPDATA%\240-MP` too if you want your settings gone.
