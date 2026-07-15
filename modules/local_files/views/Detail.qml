@@ -408,7 +408,11 @@ FocusScope {
                             property bool sel: focusRow === 0 && (!detailRoot.hasSiblings || playCol === 1)
                             color: sel ? root.accentColor : root.surfaceColor
                             border.color: sel ? root.accentColor : root.tertiaryColor
-                            width: detailRoot.hasSiblings ? root.sw * 0.1 : root.sw * 0.1875
+                            // Fill the rest of the 0.1875 cluster so PREV+PLAY+NEXT
+                            // total exactly matches the WATCHED/TRACKED row below.
+                            width: detailRoot.hasSiblings
+                                   ? root.sw * 0.1875 - 2 * (root.sw * 0.0375 + root.sw * 0.0046875)
+                                   : root.sw * 0.1875
                             height: parent.height
                             border.width: root.sh * 0.003125 //2
 
