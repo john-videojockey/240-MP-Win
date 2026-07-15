@@ -137,6 +137,24 @@ FocusScope {
             moduleId: ""
         })
 
+        // Default Upscaler — the real-time upscaler used for any title that has no
+        // per-show/movie override (those are set from a title's info screen).
+        // Display shows a label; the lowercase id is what gets stored.
+        var upIds = ["off", "artcnn", "fsrcnnx", "anime4k", "hq"]
+        var upLabels = ["Off", "ArtCNN", "FSRCNNX", "Anime4K", "High Quality"]
+        var upCur = upIds.indexOf((appSettings["mpv_upscaler"] || "off").toString().toLowerCase())
+        if (upCur < 0) upCur = 0
+        items.push({
+            type: "list_single",
+            key: "mpv_upscaler",
+            label: "Default Upscaler",
+            options: upLabels,
+            values: upIds,
+            value: upLabels[upCur],
+            description: "Real-time upscaler for titles without a per-show override. ArtCNN is a good all-rounder; Anime4K suits SD/grainy anime.",
+            moduleId: ""
+        })
+
         // SCREEN SAVER section — single control: OFF disables, a number sets the
         // timeout for both menu idle and playback pause (handled inside mpv).
         items.push({
