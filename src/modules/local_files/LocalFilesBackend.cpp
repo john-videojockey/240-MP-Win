@@ -13,6 +13,10 @@
 #include <QFileSystemWatcher>
 #include <QTimer>
 #include <QtConcurrent/QtConcurrentRun>
+#include <QProcess>
+#include <QStandardPaths>
+#include <QJsonArray>
+#include <QSet>
 
 // supported image types
 static const QStringList kImageExts = {
@@ -726,6 +730,61 @@ QVariantList LocalFilesBackend::scanItems(const QString &path, const QString &me
         result.append(item);
     }
     return result;
+}
+
+// Friendly name for an ISO 639-2 language code (ffprobe reports these). Falls back
+// to the uppercased code for anything not in the common set.
+static QString langLabel(const QString &code) {
+    static const QHash<QString, QString> kNames = {
+        {"eng","ENGLISH"}, {"jpn","JAPANESE"}, {"spa","SPANISH"}, {"fre","FRENCH"},
+        {"fra","FRENCH"}, {"ger","GERMAN"}, {"deu","GERMAN"}, {"ita","ITALIAN"},
+        {"kor","KOREAN"}, {"chi","CHINESE"}, {"zho","CHINESE"}, {"rus","RUSSIAN"},
+        {"por","PORTUGUESE"}, {"dut","DUTCH"}, {"nld","DUTCH"}, {"pol","POLISH"},
+        {"ara","ARABIC"}, {"hin","HINDI"}, {"tur","TURKISH"}, {"swe","SWEDISH"},
+        {"nor","NORWEGIAN"}, {"dan","DANISH"}, {"fin","FINNISH"}, {"tha","THAI"},
+        {"vie","VIETNAMESE"}, {"ind","INDONESIAN"}, {"heb","HEBREW"}, {"ukr","UKRAINIAN"},
+        {"ces","CZECH"}, {"cze","CZECH"}, {"hun","HUNGARIAN"}, {"ell","GREEK"},
+        {"gre","GREEK"}, {"ron","ROMANIAN"}, {"und","UNKNOWN"},
+    };
+    const QString c = code.toLower();
+    return kNames.value(c, c.toUpper());
+}
+
+void LocalFilesBackend::probe_tracks(const QString &path) {
+    const QString ff = QStandardPaths::findExecutable(QStringLiteral("ffprobe"));
+    if (ff.isEmpty()) { emit tracksReady(path, QVariantMap{}); return; }
+
+    QString local = path;
+    if (local.startsWith("file:")) local = QUrl(local).toLocalFile();
+
+    auto *proc = new QProcess(this);
+    const QStringList args = {
+        "-v", "quiet", "-print_format", "json", "-show_streams", local
+    };
+    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+            [this, proc, path](int, QProcess::ExitStatus) {
+        const QByteArray out = proc->readAllStandardOutput();
+        proc->deleteLater();
+        const QJsonArray streams = QJsonDocument::fromJson(out).object()["streams"].toArray();
+        // Distinct languages per kind, preserving file order.
+        QVariantList audio, subtitle;
+        QSet<QString> aSeen, sSeen;
+        for (const auto &sv : streams) {
+            const QJsonObject s = sv.toObject();
+            const QString type = s["codec_type"].toString();
+            QString lang = s["tags"].toObject()["language"].toString().toLower();
+            if (lang.isEmpty()) lang = "und";
+            if (type == "audio" && !aSeen.contains(lang)) {
+                aSeen.insert(lang);
+                audio.append(QVariantMap{{"lang", lang}, {"label", langLabel(lang)}});
+            } else if (type == "subtitle" && !sSeen.contains(lang)) {
+                sSeen.insert(lang);
+                subtitle.append(QVariantMap{{"lang", lang}, {"label", langLabel(lang)}});
+            }
+        }
+        emit tracksReady(path, QVariantMap{{"audio", audio}, {"subtitle", subtitle}});
+    });
+    proc->start(ff, args);
 }
 
 QVariantList LocalFilesBackend::getItems(const QString &path) {

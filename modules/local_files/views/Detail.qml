@@ -66,6 +66,58 @@ FocusScope {
         appCore.save_setting("", "mpv_volume_gain_active", String(volumeDb))
     }
 
+    // Per-show audio/subtitle language, probed from the file with ffprobe and
+    // remembered per movie/show like the other options. Selection is by language
+    // so it carries across episodes (mpv picks the matching track each time).
+    // lang "" = Default (mpv / the global settings choose); "off" (subs) = disabled.
+    property var audioLangs: []   // [{lang,label}] present in the current file
+    property var subLangs: []
+    property var audioOptions: [{ lang: "", label: "DEFAULT" }].concat(audioLangs)
+    property var subOptions: [{ lang: "", label: "DEFAULT" }, { lang: "off", label: "OFF" }].concat(subLangs)
+    property int audioIdx: 0
+    property int subIdx: 0
+    function audioLabel() { return (audioOptions[audioIdx] || {}).label || "DEFAULT" }
+    function subLabel()   { return (subOptions[subIdx] || {}).label || "DEFAULT" }
+    function cycleAudio(dir) {
+        if (audioOptions.length < 2) return
+        audioIdx = (audioIdx + dir + audioOptions.length) % audioOptions.length
+        appCore.save_map_setting("", "audio_lang_overrides", titleKey(), audioOptions[audioIdx].lang)
+        appCore.save_setting("", "mpv_alang_active", audioOptions[audioIdx].lang)
+    }
+    function cycleSub(dir) {
+        if (subOptions.length < 2) return
+        subIdx = (subIdx + dir + subOptions.length) % subOptions.length
+        appCore.save_map_setting("", "sub_lang_overrides", titleKey(), subOptions[subIdx].lang)
+        appCore.save_setting("", "mpv_sub_choice_active", subOptions[subIdx].lang)
+    }
+    function probeCurrent() {
+        if (current && current.path) localFilesBackend.probe_tracks(String(current.path))
+    }
+    // Resolve the per-show language overrides against the probed options and publish
+    // the active values for the player. "" (audio) / "" (subs) mean "no override".
+    function resolveTrackSelection() {
+        var ao = appCore.get_map_setting("", "audio_lang_overrides", titleKey())
+        audioIdx = 0
+        for (var i = 0; i < audioOptions.length; i++)
+            if (audioOptions[i].lang === ao) { audioIdx = i; break }
+        var so = appCore.get_map_setting("", "sub_lang_overrides", titleKey())
+        subIdx = 0
+        for (var j = 0; j < subOptions.length; j++)
+            if (subOptions[j].lang === so) { subIdx = j; break }
+        appCore.save_setting("", "mpv_alang_active", audioOptions[audioIdx].lang)
+        appCore.save_setting("", "mpv_sub_choice_active", subOptions[subIdx].lang)
+    }
+
+    Connections {
+        target: localFilesBackend
+        function onTracksReady(path, tracks) {
+            if (String(path) !== String((current && current.path) || "")) return
+            audioLangs = (tracks && tracks.audio) ? tracks.audio : []
+            subLangs   = (tracks && tracks.subtitle) ? tracks.subtitle : []
+            resolveTrackSelection()
+        }
+    }
+
     // Saved resume position for the current video (drives the RSUM label)
     property int savedPos: 0
     // Watched flag, and Continue Watching membership (in progress + not removed)
@@ -111,6 +163,7 @@ FocusScope {
         if (next < 0 || next >= videoIndices.length) return
         index = videoIndices[next]
         refreshSaved()
+        probeCurrent()   // re-probe the new episode's tracks (selection carries by lang)
     }
 
     function refreshSaved() {
@@ -186,23 +239,48 @@ FocusScope {
         var vovr = appCore.get_map_setting("", "volume_overrides", titleKey())
         volumeDb = (vovr && vovr !== "") ? parseInt(vovr) : 0
         appCore.save_setting("", "mpv_volume_gain_active", String(volumeDb))
+
+        // Reset audio/sub overrides to "no override" until the probe resolves them,
+        // then probe the file for its languages.
+        appCore.save_setting("", "mpv_alang_active", "")
+        appCore.save_setting("", "mpv_sub_choice_active", "")
+        probeCurrent()
     }
 
     focus: true
 
-    Keys.onUpPressed: if (focusRow > 0) focusRow--
-    Keys.onDownPressed: if (focusRow < 3) focusRow++
+    // Rows: 0 play, 1 actions, 2 audio (>1 lang), 3 subtitles (any), 4 volume,
+    // 5 upscaler. Audio/subtitle appear only when the probe found tracks; Up/Down
+    // skip empty rows.
+    function rowAvailable(r) {
+        if (r <= 1) return true
+        if (r === 2) return audioLangs.length > 1
+        if (r === 3) return subLangs.length > 0
+        if (r === 4) return true
+        if (r === 5) return true
+        return false
+    }
+    Keys.onUpPressed: {
+        for (var r = focusRow - 1; r >= 0; r--) if (rowAvailable(r)) { focusRow = r; break }
+    }
+    Keys.onDownPressed: {
+        for (var r = focusRow + 1; r <= 5; r++) if (rowAvailable(r)) { focusRow = r; break }
+    }
     Keys.onLeftPressed: {
         if (focusRow === 0) { if (hasSiblings && playCol > 0) playCol-- }
         else if (focusRow === 1) { if (actionCol > 0) actionCol-- }
-        else if (focusRow === 2) detailRoot.cycleVolume(-1)
-        else if (focusRow === 3) detailRoot.cycleUpscaler(-1)
+        else if (focusRow === 2) detailRoot.cycleAudio(-1)
+        else if (focusRow === 3) detailRoot.cycleSub(-1)
+        else if (focusRow === 4) detailRoot.cycleVolume(-1)
+        else if (focusRow === 5) detailRoot.cycleUpscaler(-1)
     }
     Keys.onRightPressed: {
         if (focusRow === 0) { if (hasSiblings && playCol < 2) playCol++ }
         else if (focusRow === 1) { if (actionCol < 1) actionCol++ }
-        else if (focusRow === 2) detailRoot.cycleVolume(1)
-        else if (focusRow === 3) detailRoot.cycleUpscaler(1)
+        else if (focusRow === 2) detailRoot.cycleAudio(1)
+        else if (focusRow === 3) detailRoot.cycleSub(1)
+        else if (focusRow === 4) detailRoot.cycleVolume(1)
+        else if (focusRow === 5) detailRoot.cycleUpscaler(1)
     }
     Keys.onReturnPressed: {
         if (focusRow === 1) {
@@ -210,8 +288,10 @@ FocusScope {
             else toggleTracked()
             return
         }
-        if (focusRow === 2) { detailRoot.cycleVolume(1); return }
-        if (focusRow === 3) { detailRoot.cycleUpscaler(1); return }
+        if (focusRow === 2) { detailRoot.cycleAudio(1); return }
+        if (focusRow === 3) { detailRoot.cycleSub(1); return }
+        if (focusRow === 4) { detailRoot.cycleVolume(1); return }
+        if (focusRow === 5) { detailRoot.cycleUpscaler(1); return }
         if (hasSiblings && playCol === 0) stepTo(-1)
         else if (hasSiblings && playCol === 2) stepTo(1)
         else play()
@@ -438,7 +518,83 @@ FocusScope {
                     }
                 }
 
-                // Volume: per-title gain in dB (◄/►). Focus row 2.
+                // Audio: per-show language (◄/►). Only when the file has >1 language.
+                Column {
+                    visible: detailRoot.audioLangs.length > 1
+                    spacing: root.sh * 0.0041667 //2
+                    topPadding: root.sh * 0.0083333 //4
+
+                    Text {
+                        text: "AUDIO"
+                        color: root.tertiaryColor
+                        font.family: root.globalFont
+                        font.pixelSize: root.sh * 0.0208333 //10
+                    }
+                    Rectangle {
+                        id: audioBtn
+                        property bool sel: focusRow === 2
+                        color: sel ? root.accentColor : root.surfaceColor
+                        border.color: sel ? root.accentColor : root.tertiaryColor
+                        width: root.sw * 0.1875
+                        height: root.sh * 0.05
+                        border.width: root.sh * 0.003125 //2
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (audioBtn.sel) detailRoot.cycleAudio(1)
+                                else focusRow = 2
+                            }
+                        }
+                        Text {
+                            anchors.centerIn: parent
+                            text: "◄ " + detailRoot.audioLabel() + " ►"
+                            color: audioBtn.sel ? root.surfaceColor : root.primaryColor
+                            font.family: root.globalFont
+                            font.pixelSize: root.sh * 0.025 //12
+                        }
+                    }
+                }
+
+                // Subtitles: per-show language / Off (◄/►). When the file has subs.
+                Column {
+                    visible: detailRoot.subLangs.length > 0
+                    spacing: root.sh * 0.0041667 //2
+                    topPadding: root.sh * 0.0083333 //4
+
+                    Text {
+                        text: "SUBTITLES"
+                        color: root.tertiaryColor
+                        font.family: root.globalFont
+                        font.pixelSize: root.sh * 0.0208333 //10
+                    }
+                    Rectangle {
+                        id: subBtn
+                        property bool sel: focusRow === 3
+                        color: sel ? root.accentColor : root.surfaceColor
+                        border.color: sel ? root.accentColor : root.tertiaryColor
+                        width: root.sw * 0.1875
+                        height: root.sh * 0.05
+                        border.width: root.sh * 0.003125 //2
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (subBtn.sel) detailRoot.cycleSub(1)
+                                else focusRow = 3
+                            }
+                        }
+                        Text {
+                            anchors.centerIn: parent
+                            text: "◄ " + detailRoot.subLabel() + " ►"
+                            color: subBtn.sel ? root.surfaceColor : root.primaryColor
+                            font.family: root.globalFont
+                            font.pixelSize: root.sh * 0.025 //12
+                        }
+                    }
+                }
+
+                // Volume: per-title gain in dB (◄/►). Focus row 4.
                 Column {
                     spacing: root.sh * 0.0041667 //2
                     topPadding: root.sh * 0.0083333 //4
@@ -451,7 +607,7 @@ FocusScope {
                     }
                     Rectangle {
                         id: volumeBtn
-                        property bool sel: focusRow === 2
+                        property bool sel: focusRow === 4
                         color: sel ? root.accentColor : root.surfaceColor
                         border.color: sel ? root.accentColor : root.tertiaryColor
                         width: root.sw * 0.1875
@@ -462,7 +618,7 @@ FocusScope {
                             anchors.fill: parent
                             onClicked: {
                                 if (volumeBtn.sel) detailRoot.cycleVolume(1)
-                                else focusRow = 2
+                                else focusRow = 4
                             }
                         }
                         Text {
@@ -476,7 +632,7 @@ FocusScope {
                 }
 
                 // Upscaler: cycles the "mpv_upscaler" setting (applies to the next
-                // playback). Focus row 3 — the same control as Plex info.
+                // playback). Focus row 5 — the same control as Plex info.
                 Column {
                     spacing: root.sh * 0.0041667 //2
                     topPadding: root.sh * 0.0083333 //4
@@ -489,7 +645,7 @@ FocusScope {
                     }
                     Rectangle {
                         id: upscalerBtn
-                        property bool sel: focusRow === 3
+                        property bool sel: focusRow === 5
                         color: sel ? root.accentColor : root.surfaceColor
                         border.color: sel ? root.accentColor : root.tertiaryColor
                         width: root.sw * 0.1875
@@ -500,7 +656,7 @@ FocusScope {
                             anchors.fill: parent
                             onClicked: {
                                 if (upscalerBtn.sel) detailRoot.cycleUpscaler(1)
-                                else focusRow = 3
+                                else focusRow = 5
                             }
                         }
                         Text {

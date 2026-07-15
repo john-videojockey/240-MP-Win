@@ -52,9 +52,16 @@ public:
     Q_INVOKABLE void        get_subtitle_languages();
     Q_INVOKABLE void        get_image_duration_options();
 
+    // Probe a video's audio/subtitle tracks with ffprobe (async). Emits
+    // tracksReady(path, {audio:[{lang,label}], subtitle:[{lang,label}]}) with the
+    // distinct languages present, so the info screen can offer a per-show
+    // language choice. Empty map if ffprobe isn't available or the probe fails.
+    Q_INVOKABLE void        probe_tracks(const QString &path);
+
 signals:
     void dynamicOptionsReady(const QString &key, const QVariant &options);
     void itemsLoaded(const QString &path, const QVariantList &items);
+    void tracksReady(const QString &path, const QVariant &tracks);
 
 public slots:
     void onSettingChanged(const QString &moduleId, const QString &key, const QVariant &value);

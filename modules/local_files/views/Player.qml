@@ -103,6 +103,9 @@ FocusScope {
         var args = []
         if (mediaTitle) args.push("--force-media-title=" + mediaTitle)
         if (siblings.length > 1) args.push("--script-opts-append=episode-nav=1")
+        // Per-show audio language chosen on the info screen (empty = mpv default).
+        var alang = appCore.get_setting("", "mpv_alang_active")
+        if (alang && alang !== "") args.push("--alang=" + alang)
         return args
     }
 
@@ -212,6 +215,18 @@ FocusScope {
         subtitleLangs = []
         if (subLangString !== "-") {
             subtitleLangs.push(subLangString)
+        }
+
+        // Per-show subtitle override chosen on the info screen: "" follows the
+        // global setting above; "off" disables subs; a language forces subs on in
+        // that language.
+        var subChoice = appCore.get_setting("", "mpv_sub_choice_active")
+        if (subChoice === "off") {
+            subtitleMode = "off"
+            subtitleLangs = []
+        } else if (subChoice && subChoice !== "") {
+            subtitleMode = "on"
+            subtitleLangs = [subChoice]
         }
 
         // Shuffle wins: a shuffled playlist starts fresh & random; resume position
