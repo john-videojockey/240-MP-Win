@@ -433,14 +433,20 @@ FocusScope {
             // onNextEpisodeReady falls back to goBack(). Everything else returns to
             // the detail view here.
             reportStopped(finalPositionMs, finalDurationMs)
-            // Episode watched to the end: advance the return target to the next
-            // episode so BACK never re-shows the one just finished. With autoplay on
-            // we play it here; with autoplay off we only repoint BACK (landOnNextInfo)
-            // so exiting lands on the next episode's info screen. A user quit
-            // ("stopped") keeps the current episode so it can be resumed. Movies and
-            // the last episode fall back to goBack() (empty next detail).
-            if (reason === "eof" && episodeNav) {
-                landOnNextInfo = !autoplayNext
+            // Finished the episode — either a natural end ("eof"), or the user backed
+            // out during the credits: past Plex's ~90% watched threshold it's marked
+            // watched and drops out of Continue Watching, so treat that quit as a
+            // finish too. Advance the return target to the next episode so BACK never
+            // re-shows the one just watched. Only a NATURAL end with autoplay on plays
+            // the next episode through here; every other finish just repoints BACK
+            // (landOnNextInfo) to the next episode's info. A genuine mid-episode quit
+            // keeps the current episode for resume, and a movie / last episode falls
+            // back to goBack() (empty next detail).
+            var dur = finalDurationMs > 0 ? finalDurationMs : playerRoot.lastKnownDurationMs
+            var pos = finalPositionMs > 0 ? finalPositionMs : playerRoot.lastKnownPositionMs
+            var nearEnd = dur > 0 && pos >= dur * 0.9
+            if (episodeNav && (reason === "eof" || (reason === "stopped" && nearEnd))) {
+                landOnNextInfo = (reason !== "eof") || !autoplayNext
                 pendingNextEpisode = true
                 plexBackend.load_next_episode(ratingKey)
                 return
