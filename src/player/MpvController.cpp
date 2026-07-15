@@ -495,6 +495,13 @@ void MpvController::onProcessFinished() {
     m_watchdogTimer->stop();
     m_adoptTimer->stop();
     m_mpvHwnd = 0;   // player window is gone
+    // Take the foreground now, synchronously with the exit — not via the queued
+    // playbackEnded → QML handler, which runs an event-loop hop later, long enough
+    // to show the menu behind whatever Windows re-activated when mpv closed (e.g.
+    // the console the app was launched from). The QML handler still re-asserts it
+    // (and covers the restore-from-minimized case).
+    if (m_mainWindow)
+        raiseAppWindow();
     // Drain any buffered-but-unread IPC data before tearing the socket down.
     // readyRead and QProcess::finished are independent event-loop signals with
     // no ordering guarantee, so mpv's final "end-file" event may still be sitting
