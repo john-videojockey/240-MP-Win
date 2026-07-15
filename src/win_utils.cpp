@@ -232,6 +232,14 @@ bool isWindowAlive(quintptr hwnd) {
     return h && IsWindow(h);
 }
 
+void setWindowTopmost(quintptr hwnd, bool on) {
+    HWND h = reinterpret_cast<HWND>(hwnd);
+    if (!h || !IsWindow(h))
+        return;
+    SetWindowPos(h, on ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+}
+
 void prependToolDirsToPath(const QString &appRoot) {
     const QStringList candidates = {
         appRoot + QStringLiteral("/mpv"),

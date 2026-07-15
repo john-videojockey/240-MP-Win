@@ -378,7 +378,12 @@ void MpvController::tryAdoptMpvWindow() {
         if (!isWindowAlive(m_mpvHwnd)) {
             m_mpvHwnd = 0;
             m_adoptTimer->stop();
+            // mpv's window is gone; the menu (topmost since marriage) is already on
+            // top of every ordinary window. Take focus, then drop topmost so normal
+            // stacking resumes.
             raiseAppWindow();
+            if (m_mainWindow)
+                setWindowTopmost(m_mainWindow->winId(), false);
         }
         return;
     }
@@ -391,6 +396,9 @@ void MpvController::tryAdoptMpvWindow() {
     if (hwnd) {
         m_mpvHwnd = hwnd;
         m_adoptTimer->setInterval(16);   // ~1 frame — snappy close detection
+        // Make the menu topmost now (mpv, owned, stays above it and keeps covering
+        // the video) so it's already above ordinary windows when mpv's window closes.
+        setWindowTopmost(m_mainWindow->winId(), true);
         qInfo("[MpvController] married mpv window to the app window");
     }
 }
@@ -514,9 +522,12 @@ void MpvController::onProcessFinished() {
     // playbackEnded → QML handler, which runs an event-loop hop later, long enough
     // to show the menu behind whatever Windows re-activated when mpv closed (e.g.
     // the console the app was launched from). The QML handler still re-asserts it
-    // (and covers the restore-from-minimized case).
-    if (m_mainWindow)
+    // (and covers the restore-from-minimized case). Also always clear topmost here
+    // (set during playback) so it can never be left stuck if the close-watch missed.
+    if (m_mainWindow) {
         raiseAppWindow();
+        setWindowTopmost(m_mainWindow->winId(), false);
+    }
     // Drain any buffered-but-unread IPC data before tearing the socket down.
     // readyRead and QProcess::finished are independent event-loop signals with
     // no ordering guarantee, so mpv's final "end-file" event may still be sitting

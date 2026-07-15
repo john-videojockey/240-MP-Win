@@ -74,3 +74,10 @@ void forceForegroundWindow(quintptr hwnd);
 // True while the given handle is still a live window. Used to detect mpv's window
 // closing (which precedes process exit) so the menu can be raised right then.
 bool isWindowAlive(quintptr hwnd);
+
+// Toggle a window's always-on-top (WS_EX_TOPMOST) state without activating it.
+// The menu is made topmost during playback so that when the owned mpv window
+// closes, the menu is already above every ordinary window — no frame where another
+// window shows through — then dropped back to normal once playback ends. mpv, being
+// owned by the menu, stays above it either way, so the video is never covered.
+void setWindowTopmost(quintptr hwnd, bool on);
