@@ -51,6 +51,8 @@ Everything Raspberry-Pi-specific (KMS/DRM hand-off, per-Pi decode profiles, syst
 
 ## Current Features
 
+> **Note:** **Jellyfin and YouTube remain untested in this port so far** — Plex and Local Files are the focus. They're ported but unverified, so don't hesitate to [report any bugs](https://github.com/john-videojockey/240-MP-Win/issues)!
+
 ### Local Files Module ([Wiki](https://github.com/anthonycaccese/240-MP/wiki/Module:-Local-Files))
 - Supported file types: `"mp4", "mkv", "avi", "mov", "m4v", "webm", "wmv", "flv", "f4v", "mpg", "mpeg", "vob"`
 - Playlist support using `m3u` and `m3u8` files
@@ -127,7 +129,6 @@ Full options (autostart, custom folder, uninstall) and the manual zip install ar
 - The `VCR OSD Mono` font was created by Riciery Santos Leal (a.k.a. mrmanet) https://www.dafont.com/vcr-osd-mono.font
 - Like upstream, this port was built with substantial help from [Claude Code](https://www.anthropic.com/product/claude-code).
 - Thank you to Plex for providing an open and free [API](https://developer.plex.tv/), and to [the mpv team](https://mpv.io/) for a simple, extensible and cross platform media player.
-- Jellyfin and YouTube remain untested in this port so far. Do not hesitate to report any bugs!
 
 ## License
 
