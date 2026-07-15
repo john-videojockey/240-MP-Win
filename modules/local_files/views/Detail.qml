@@ -25,7 +25,7 @@ FocusScope {
     property bool hasSiblings: videoIndices.length > 1
 
     // Focus rows: 0 = play cluster (PREV/PLAY/NEXT via playCol), 1 = actions
-    // (WATCHED / TRACKED via actionCol), 2 = upscaler.
+    // (WATCHED / TRACKED via actionCol), 2 = volume, 3 = upscaler.
     property int focusRow: 0
     // 0=PREV, 1=PLAY, 2=NEXT (PREV/NEXT only exist with siblings)
     property int playCol: 1
@@ -42,8 +42,9 @@ FocusScope {
     ]
     property int upscalerIdx: 0
     // Per-title key: the current video's parent folder (a movie folder, or a
-    // show's season folder), so the choice is remembered per movie/show.
-    function upscalerKey() {
+    // show's season folder), so choices are remembered per movie/show. Shared by
+    // the upscaler and the volume gain.
+    function titleKey() {
         var p = String((current && current.path) || "")
         var cut = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
         return "file:" + (cut > 0 ? p.substring(0, cut) : p)
@@ -51,8 +52,18 @@ FocusScope {
     function cycleUpscaler(dir) {
         upscalerIdx = (upscalerIdx + dir + upscalers.length) % upscalers.length
         var id = upscalers[upscalerIdx].id
-        appCore.save_map_setting("", "upscaler_overrides", upscalerKey(), id)   // remember per title
-        appCore.save_setting("", "mpv_upscaler_active", id)                     // apply to next play
+        appCore.save_map_setting("", "upscaler_overrides", titleKey(), id)   // remember per title
+        appCore.save_setting("", "mpv_upscaler_active", id)                  // apply to next play
+    }
+
+    // Per-title volume gain (dB, default 0), remembered per movie/show like the
+    // upscaler. Applied to the next playback via mpv --volume-gain.
+    property int volumeDb: 0
+    function volumeLabel() { return (volumeDb > 0 ? "+" : "") + volumeDb + " dB" }
+    function cycleVolume(dir) {
+        volumeDb = Math.max(-20, Math.min(12, volumeDb + dir))
+        appCore.save_map_setting("", "volume_overrides", titleKey(), String(volumeDb))
+        appCore.save_setting("", "mpv_volume_gain_active", String(volumeDb))
     }
 
     // Saved resume position for the current video (drives the RSUM label)
@@ -164,27 +175,34 @@ FocusScope {
 
         // Per-title override if set, else the global default. Publish it as the
         // active value so playing straight from here uses this title's upscaler.
-        var ovr = appCore.get_map_setting("", "upscaler_overrides", upscalerKey())
+        var ovr = appCore.get_map_setting("", "upscaler_overrides", titleKey())
         var up = ((ovr && ovr !== "") ? ovr
                   : (appCore.get_setting("", "mpv_upscaler") || "off")).toString().toLowerCase()
         for (var ui = 0; ui < upscalers.length; ui++)
             if (upscalers[ui].id === up) { upscalerIdx = ui; break }
         appCore.save_setting("", "mpv_upscaler_active", upscalers[upscalerIdx].id)
+
+        // Per-title volume gain (dB), published as the active value for playback.
+        var vovr = appCore.get_map_setting("", "volume_overrides", titleKey())
+        volumeDb = (vovr && vovr !== "") ? parseInt(vovr) : 0
+        appCore.save_setting("", "mpv_volume_gain_active", String(volumeDb))
     }
 
     focus: true
 
     Keys.onUpPressed: if (focusRow > 0) focusRow--
-    Keys.onDownPressed: if (focusRow < 2) focusRow++
+    Keys.onDownPressed: if (focusRow < 3) focusRow++
     Keys.onLeftPressed: {
         if (focusRow === 0) { if (hasSiblings && playCol > 0) playCol-- }
         else if (focusRow === 1) { if (actionCol > 0) actionCol-- }
-        else if (focusRow === 2) detailRoot.cycleUpscaler(-1)
+        else if (focusRow === 2) detailRoot.cycleVolume(-1)
+        else if (focusRow === 3) detailRoot.cycleUpscaler(-1)
     }
     Keys.onRightPressed: {
         if (focusRow === 0) { if (hasSiblings && playCol < 2) playCol++ }
         else if (focusRow === 1) { if (actionCol < 1) actionCol++ }
-        else if (focusRow === 2) detailRoot.cycleUpscaler(1)
+        else if (focusRow === 2) detailRoot.cycleVolume(1)
+        else if (focusRow === 3) detailRoot.cycleUpscaler(1)
     }
     Keys.onReturnPressed: {
         if (focusRow === 1) {
@@ -192,7 +210,8 @@ FocusScope {
             else toggleTracked()
             return
         }
-        if (focusRow === 2) { detailRoot.cycleUpscaler(1); return }
+        if (focusRow === 2) { detailRoot.cycleVolume(1); return }
+        if (focusRow === 3) { detailRoot.cycleUpscaler(1); return }
         if (hasSiblings && playCol === 0) stepTo(-1)
         else if (hasSiblings && playCol === 2) stepTo(1)
         else play()
@@ -419,8 +438,45 @@ FocusScope {
                     }
                 }
 
-                // Upscaler: cycles the global "mpv_upscaler" setting (applies to
-                // the next playback). Focus row 2 — the same control as Plex info.
+                // Volume: per-title gain in dB (◄/►). Focus row 2.
+                Column {
+                    spacing: root.sh * 0.0041667 //2
+                    topPadding: root.sh * 0.0083333 //4
+
+                    Text {
+                        text: "VOLUME"
+                        color: root.tertiaryColor
+                        font.family: root.globalFont
+                        font.pixelSize: root.sh * 0.0208333 //10
+                    }
+                    Rectangle {
+                        id: volumeBtn
+                        property bool sel: focusRow === 2
+                        color: sel ? root.accentColor : root.surfaceColor
+                        border.color: sel ? root.accentColor : root.tertiaryColor
+                        width: root.sw * 0.1875
+                        height: root.sh * 0.05
+                        border.width: root.sh * 0.003125 //2
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (volumeBtn.sel) detailRoot.cycleVolume(1)
+                                else focusRow = 2
+                            }
+                        }
+                        Text {
+                            anchors.centerIn: parent
+                            text: "◄ " + detailRoot.volumeLabel() + " ►"
+                            color: volumeBtn.sel ? root.surfaceColor : root.primaryColor
+                            font.family: root.globalFont
+                            font.pixelSize: root.sh * 0.025 //12
+                        }
+                    }
+                }
+
+                // Upscaler: cycles the "mpv_upscaler" setting (applies to the next
+                // playback). Focus row 3 — the same control as Plex info.
                 Column {
                     spacing: root.sh * 0.0041667 //2
                     topPadding: root.sh * 0.0083333 //4
@@ -433,7 +489,7 @@ FocusScope {
                     }
                     Rectangle {
                         id: upscalerBtn
-                        property bool sel: focusRow === 2
+                        property bool sel: focusRow === 3
                         color: sel ? root.accentColor : root.surfaceColor
                         border.color: sel ? root.accentColor : root.tertiaryColor
                         width: root.sw * 0.1875
@@ -444,7 +500,7 @@ FocusScope {
                             anchors.fill: parent
                             onClicked: {
                                 if (upscalerBtn.sel) detailRoot.cycleUpscaler(1)
-                                else focusRow = 2
+                                else focusRow = 3
                             }
                         }
                         Text {

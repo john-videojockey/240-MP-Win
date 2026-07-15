@@ -338,6 +338,13 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
          << "--fullscreen";
     appendVideoArgs(args);
     appendUpscalerArgs(args);
+    // Per-title volume gain (dB) resolved by the info screen. Additive over mpv's
+    // own volume, and not saved by watch-later, so it's authoritative per play.
+    if (m_appCore) {
+        const double gain = m_appCore->get_setting(QString(), "mpv_volume_gain_active").toString().toDouble();
+        if (gain != 0.0)
+            args << QString("--volume-gain=%1").arg(gain);
+    }
     // mpv runs as a separate process and can't see the app's FontLoader font.
     // --osd-fonts-dir loads the bundled VCR OSD Mono straight into the OSD
     // libass instance (used by the OSC scripts), no system install needed.
