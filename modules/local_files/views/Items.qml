@@ -57,14 +57,20 @@ FocusScope {
 
     // A folder that resolves to exactly one video (no folders/other items) jumps
     // straight to its media info, skipping this one-item list. Replaces (not pushes)
-    // so BACK returns to the parent folder. Never at the media root.
+    // so BACK returns to the parent folder. Never at the media root. The actual
+    // replaceWith is deferred so it doesn't run a re-entrant setSource from inside
+    // Component.onCompleted / the itemsLoaded handler (which corrupts the nav stack).
     function maybeSkipToSingleVideo() {
         if (folderPath === localFilesBackend.mediaRoot()) return false
         if (items.length === 1 && isVideoFile(items[0])) {
-            replaceWith("Detail.qml", { items: items, index: 0, folderName: folderName })
+            Qt.callLater(itemsRoot.doSingleVideoSkip)
             return true
         }
         return false
+    }
+    function doSingleVideoSkip() {
+        if (items.length === 1 && isVideoFile(items[0]))
+            replaceWith("Detail.qml", { items: itemsRoot.items, index: 0, folderName: itemsRoot.folderName })
     }
 
     function currentItem() {

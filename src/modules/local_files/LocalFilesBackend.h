@@ -102,6 +102,8 @@ private:
     // True if the folder tree holds at least one video and every video in it has
     // been watched (per the given history) — drives the "all played" folder mark.
     bool folderFullyWatched(const QString &path, const QVariantMap &history, int depth) const;
+    // Tag each item with a "watched" flag (played video / fully-played folder).
+    void enrichWatched(QVariantList &items) const;
 
     // Listing cache. m_cache mirrors the on-disk file; updateCache persists.
     QString cacheFilePath() const;

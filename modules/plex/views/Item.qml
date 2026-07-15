@@ -288,21 +288,30 @@ FocusScope {
                                : relatedSection.y
 
     Component.onCompleted: {
-        if (item.ratingKey) plexBackend.load_item_detail(item.ratingKey)
         focusRow = 0
+
+        // Read the theme settings and start the theme FIRST, before any slower work
+        // below (detail load, config writes). A theme playing on hover in browse /
+        // Continue Watching only carries over gap-free if play_theme — which cancels
+        // the deferred stop armed when the browse view was torn down — runs promptly.
+        // Toggle settings persist as a boolean (true/false), not "ON"/"OFF".
+        var stv = appCore.get_setting(moduleRoot.moduleId, "show_themes")
+        showThemes = (stv === true || stv === "ON")
+        var tv = parseInt(appCore.get_setting(moduleRoot.moduleId, "theme_volume"))
+        if (tv > 0) themeVolume = tv
+        // Start from the passed-in item (its theme path is already known) so the
+        // hover theme carries over with no restart — play_theme is idempotent;
+        // applyDetail re-asserts it once the full detail arrives.
+        if (showThemes && item.theme)
+            plexBackend.play_theme(item.theme, themeVolume)
+
+        if (item.ratingKey) plexBackend.load_item_detail(item.ratingKey)
 
         var bg = appCore.get_setting(moduleRoot.moduleId, "info_background")
         infoBg = (bg === undefined || bg === null || bg === "")
                  ? true : (bg === true || bg === "ON")
         var op = parseInt(appCore.get_setting(moduleRoot.moduleId, "info_background_opacity"))
         if (op > 0) infoBgOpacity = op / 100
-
-        // Toggle settings persist as a boolean (true/false), not "ON"/"OFF" —
-        // accept both, matching how info_background is read above.
-        var stv = appCore.get_setting(moduleRoot.moduleId, "show_themes")
-        showThemes = (stv === true || stv === "ON")
-        var tv = parseInt(appCore.get_setting(moduleRoot.moduleId, "theme_volume"))
-        if (tv > 0) themeVolume = tv
 
         // Per-title override if set, else the global default. Publish it as the
         // active value so playing straight from here uses this title's upscaler.
@@ -317,13 +326,6 @@ FocusScope {
         var vovr = appCore.get_map_setting("", "volume_overrides", titleKey())
         volumeDb = (vovr && vovr !== "") ? parseInt(vovr) : 0
         appCore.save_setting("", "mpv_volume_gain_active", String(volumeDb))
-
-        // Start the theme immediately from the passed-in item (its theme path is
-        // already known), so a theme playing on hover in browse carries over with
-        // no restart — play_theme is idempotent. applyDetail re-asserts it once
-        // the full detail arrives.
-        if (showThemes && item.theme)
-            plexBackend.play_theme(item.theme, themeVolume)
 
         var sr = appCore.get_setting(moduleRoot.moduleId, "show_related")
         showRelated = (sr === undefined || sr === null || sr === "") ? true

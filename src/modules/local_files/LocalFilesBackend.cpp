@@ -817,10 +817,9 @@ void LocalFilesBackend::probe_tracks(const QString &path) {
     proc->start(ff, args);
 }
 
-QVariantList LocalFilesBackend::getItems(const QString &path) {
-    QVariantList items = scanItems(path, m_mediaRoot);
-    // Tag each entry with a "watched" flag: a video that has been played, or a
-    // folder whose whole video tree has. History is read once and shared.
+// Tag each entry with a "watched" flag: a video that has been played, or a folder
+// whose whole video tree has. History is read once and shared across the items.
+void LocalFilesBackend::enrichWatched(QVariantList &items) const {
     const QVariantMap history = loadHistory();
     for (int i = 0; i < items.size(); ++i) {
         QVariantMap m = items[i].toMap();
@@ -835,6 +834,11 @@ QVariantList LocalFilesBackend::getItems(const QString &path) {
         }
         items[i] = m;
     }
+}
+
+QVariantList LocalFilesBackend::getItems(const QString &path) {
+    QVariantList items = scanItems(path, m_mediaRoot);
+    enrichWatched(items);
     updateCache(QDir(path).absolutePath(), items);
     return items;
 }
@@ -895,7 +899,8 @@ void LocalFilesBackend::rescanAsync(const QString &clean) {
     // for seconds, and the UI shows the LOADING splash (or the cached listing)
     // meanwhile. Result hops back to the main thread before touching state.
     auto future = QtConcurrent::run([this, clean, mediaRoot]() {
-        const QVariantList items = scanItems(clean, mediaRoot);
+        QVariantList items = scanItems(clean, mediaRoot);
+        enrichWatched(items);   // played-state marks, same as getItems
         QMetaObject::invokeMethod(this, [this, clean, items]() {
             updateCache(clean, items);
             emit itemsLoaded(clean, items);
