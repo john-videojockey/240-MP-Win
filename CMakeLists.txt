@@ -75,7 +75,11 @@ add_custom_command(TARGET 240mp POST_BUILD
     COMMENT "Copying SDL2.dll beside the executable"
 )
 if(DEFINED OPENSSL_ROOT_DIR)
-    file(GLOB _openssl_dlls "${OPENSSL_ROOT_DIR}/bin/libcrypto-3-x64.dll")
+    # Normalize to forward slashes first. A backslash path — e.g. the CI runner's
+    # D:\a\_temp\... — gets baked verbatim into cmake_install.cmake, where CMake
+    # rejects the "\a" as "Invalid character escape" and the install step fails.
+    file(TO_CMAKE_PATH "${OPENSSL_ROOT_DIR}" _openssl_root)
+    file(GLOB _openssl_dlls "${_openssl_root}/bin/libcrypto-3-x64.dll")
     if(_openssl_dlls)
         add_custom_command(TARGET 240mp POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
