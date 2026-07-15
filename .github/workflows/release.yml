@@ -42,19 +42,29 @@ jobs:
           Expand-Archive "${env:RUNNER_TEMP}\sdl2.zip" -DestinationPath "${env:RUNNER_TEMP}\sdl2"
           "SDL2_PREFIX=${env:RUNNER_TEMP}\sdl2\SDL2-$v" >> $env:GITHUB_ENV
 
+      # The GitHub windows runner image no longer ships VS 2022, so a pinned
+      # "Visual Studio 17 2022" generator fails with "could not find any instance
+      # of Visual Studio". Set up MSVC and build with Ninja instead — the same way
+      # the app builds locally, and version-agnostic across runner image changes.
+      - name: Set up MSVC (x64)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Configure
         shell: pwsh
         run: |
-          cmake -B build -G "Visual Studio 17 2022" -A x64 `
+          cmake -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_PREFIX_PATH="${env:QT_ROOT_DIR};${env:SDL2_PREFIX}" `
             -DOPENSSL_ROOT_DIR="${env:OPENSSL_ROOT}" `
             -DAPP_VERSION="${{ github.ref_name }}"
 
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --parallel
 
       - name: Stage install
-        run: cmake --install build --config Release --prefix "${{ github.workspace }}/stage"
+        run: cmake --install build --prefix "${{ github.workspace }}/stage"
 
       - name: Deploy Qt runtime
         shell: pwsh
