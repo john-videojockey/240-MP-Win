@@ -98,10 +98,14 @@ FocusScope {
                 if (d.subtitleStreams[j].id === d.selectedSubtitleId) { subtitleIdx = j; break }
             }
         }
-        // Theme song for this item (if enabled and one exists). play_theme
-        // restarts cleanly, so a PREV/NEXT swap to another episode is fine.
-        if (detailRoot.showThemes && d.theme)
-            plexBackend.play_theme(d.theme, detailRoot.themeVolume)
+        // Theme song for this item (if enabled and one exists). An episode's own
+        // detail carries no theme — only the show does — so fall back to the
+        // passed-in item's theme (the show's, set on the browse/Continue Watching
+        // entry). Without this the async detail would stop the hover theme the
+        // moment it lands. play_theme restarts cleanly, so a PREV/NEXT swap is fine.
+        var themeToPlay = d.theme || item.theme
+        if (detailRoot.showThemes && themeToPlay)
+            plexBackend.play_theme(themeToPlay, detailRoot.themeVolume)
         else
             plexBackend.stop_theme()
     }
