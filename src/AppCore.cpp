@@ -196,6 +196,32 @@ void AppCore::save_setting_list(const QString &moduleId, const QString &key, con
         emit moduleSettingChanged(moduleId, key, QVariant(values));
 }
 
+void AppCore::save_map_setting(const QString &moduleId, const QString &mapKey,
+                               const QString &entryKey, const QString &value) {
+    QJsonObject config = loadConfig();
+    QJsonObject section = moduleId.isEmpty() ? config["app"].toObject()
+                                             : config["modules"].toObject()[moduleId].toObject();
+    QJsonObject map = section[mapKey].toObject();
+    map[entryKey] = value;
+    section[mapKey] = map;
+    if (moduleId.isEmpty()) {
+        config["app"] = section;
+    } else {
+        QJsonObject modules = config["modules"].toObject();
+        modules[moduleId] = section;
+        config["modules"] = modules;
+    }
+    saveConfig(config);
+}
+
+QString AppCore::get_map_setting(const QString &moduleId, const QString &mapKey,
+                                 const QString &entryKey) {
+    const QJsonObject config = loadConfig();
+    const QJsonObject section = moduleId.isEmpty() ? config["app"].toObject()
+                                                   : config["modules"].toObject()[moduleId].toObject();
+    return section[mapKey].toObject()[entryKey].toString();
+}
+
 QVariant AppCore::get_module_info(const QString &moduleId) {
     for (const auto &m : m_modules) {
         if (m.id == moduleId) {

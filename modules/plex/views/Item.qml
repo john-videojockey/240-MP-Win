@@ -255,9 +255,18 @@ FocusScope {
         { id: "hq",      label: "HIGH QUALITY" }
     ]
     property int upscalerIdx: 0
+    // Per-title key: the show (for episodes) else the movie/item, so the choice is
+    // remembered per show/movie in the "upscaler_overrides" map.
+    function upscalerKey() {
+        var rk = (item.type === "episode" && item.grandparentRatingKey)
+                 ? item.grandparentRatingKey : item.ratingKey
+        return "plex:" + rk
+    }
     function cycleUpscaler(dir) {
         upscalerIdx = (upscalerIdx + dir + upscalers.length) % upscalers.length
-        appCore.save_setting("", "mpv_upscaler", upscalers[upscalerIdx].id)
+        var id = upscalers[upscalerIdx].id
+        appCore.save_map_setting("", "upscaler_overrides", upscalerKey(), id)   // remember per title
+        appCore.save_setting("", "mpv_upscaler_active", id)                     // apply to next play
     }
 
     // Scroll the section stack so the section holding the current focusRow snaps
@@ -285,9 +294,14 @@ FocusScope {
         var tv = parseInt(appCore.get_setting(moduleRoot.moduleId, "theme_volume"))
         if (tv > 0) themeVolume = tv
 
-        var up = (appCore.get_setting("", "mpv_upscaler") || "off").toString().toLowerCase()
+        // Per-title override if set, else the global default. Publish it as the
+        // active value so playing straight from here uses this title's upscaler.
+        var ovr = appCore.get_map_setting("", "upscaler_overrides", upscalerKey())
+        var up = ((ovr && ovr !== "") ? ovr
+                  : (appCore.get_setting("", "mpv_upscaler") || "off")).toString().toLowerCase()
         for (var ui = 0; ui < upscalers.length; ui++)
             if (upscalers[ui].id === up) { upscalerIdx = ui; break }
+        appCore.save_setting("", "mpv_upscaler_active", upscalers[upscalerIdx].id)
 
         // Start the theme immediately from the passed-in item (its theme path is
         // already known), so a theme playing on hover in browse carries over with

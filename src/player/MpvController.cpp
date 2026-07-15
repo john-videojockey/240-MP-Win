@@ -568,7 +568,12 @@ void MpvController::appendVideoArgs(QStringList &args) const {
 
 void MpvController::appendUpscalerArgs(QStringList &args) const {
     if (!m_appCore) return;
-    const QString sel = m_appCore->get_setting(QString(), "mpv_upscaler").toString().toLower();
+    // "mpv_upscaler_active" is the per-play value the info screen resolves (its
+    // per-title override, else the global default). Fall back to the global
+    // "mpv_upscaler" for any play path that didn't set it.
+    QString sel = m_appCore->get_setting(QString(), "mpv_upscaler_active").toString().toLower();
+    if (sel.isEmpty())
+        sel = m_appCore->get_setting(QString(), "mpv_upscaler").toString().toLower();
     if (sel.isEmpty() || sel == "off") return;
 
     // Built-in high-quality scalers — no external files needed.
@@ -586,10 +591,13 @@ void MpvController::appendUpscalerArgs(QStringList &args) const {
     // the platform-specific list separator; a missing file makes mpv log and play
     // without it, so a not-yet-downloaded shader degrades to no upscaling.
     QStringList shaders;
+    bool heavy = false;   // large shaders that hang the D3D11 HLSL compiler
     if (sel == "artcnn") {
         shaders << "ArtCNN_C4F32.glsl";
+        heavy = true;
     } else if (sel == "fsrcnnx") {
         shaders << "FSRCNNX_x2_16-0-4-1.glsl";
+        heavy = true;
     } else if (sel == "anime4k") {
         // Mode A (Fast): clamp + restore + a 2x upscale chain, balanced for
         // mid-range GPUs.
@@ -602,6 +610,14 @@ void MpvController::appendUpscalerArgs(QStringList &args) const {
     } else {
         return;
     }
+    // Big shaders (ArtCNN, FSRCNNX) take ~40 s per pass to translate HLSL->DXBC on
+    // the D3D11 backend, which hangs playback startup. Vulkan compiles them in a
+    // fraction of the time (libplacebo emits SPIR-V directly, no HLSL step); mpv's
+    // shader cache (on by default) then makes repeat plays instant. Small shaders
+    // like Anime4K compile fast on D3D11, so they keep the default backend.
+    if (heavy)
+        args << "--gpu-api=vulkan";
+
     const QString dir = m_appRoot + "/shaders/upscalers/";
     for (const QString &s : shaders)
         args << QString("--glsl-shaders-append=%1").arg(dir + s);

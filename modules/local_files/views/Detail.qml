@@ -41,9 +41,18 @@ FocusScope {
         { id: "hq",      label: "HIGH QUALITY" }
     ]
     property int upscalerIdx: 0
+    // Per-title key: the current video's parent folder (a movie folder, or a
+    // show's season folder), so the choice is remembered per movie/show.
+    function upscalerKey() {
+        var p = String((current && current.path) || "")
+        var cut = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
+        return "file:" + (cut > 0 ? p.substring(0, cut) : p)
+    }
     function cycleUpscaler(dir) {
         upscalerIdx = (upscalerIdx + dir + upscalers.length) % upscalers.length
-        appCore.save_setting("", "mpv_upscaler", upscalers[upscalerIdx].id)
+        var id = upscalers[upscalerIdx].id
+        appCore.save_map_setting("", "upscaler_overrides", upscalerKey(), id)   // remember per title
+        appCore.save_setting("", "mpv_upscaler_active", id)                     // apply to next play
     }
 
     // Saved resume position for the current video (drives the RSUM label)
@@ -153,9 +162,14 @@ FocusScope {
         var op = parseInt(appCore.get_setting(moduleRoot.moduleId, "info_background_opacity"))
         if (op > 0) infoBgOpacity = op / 100
 
-        var up = (appCore.get_setting("", "mpv_upscaler") || "off").toString().toLowerCase()
+        // Per-title override if set, else the global default. Publish it as the
+        // active value so playing straight from here uses this title's upscaler.
+        var ovr = appCore.get_map_setting("", "upscaler_overrides", upscalerKey())
+        var up = ((ovr && ovr !== "") ? ovr
+                  : (appCore.get_setting("", "mpv_upscaler") || "off")).toString().toLowerCase()
         for (var ui = 0; ui < upscalers.length; ui++)
             if (upscalers[ui].id === up) { upscalerIdx = ui; break }
+        appCore.save_setting("", "mpv_upscaler_active", upscalers[upscalerIdx].id)
     }
 
     focus: true

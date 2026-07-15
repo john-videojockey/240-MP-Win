@@ -42,6 +42,14 @@ public:
     // from a QML JS array, unlike a QVariant which can arrive wrapped as a QJSValue
     // and serialize to null. Use this for array-valued settings (e.g. library_order).
     Q_INVOKABLE void save_setting_list(const QString &moduleId, const QString &key, const QStringList &values);
+    // Store/read one entry of a string→string map setting. The entry key is used
+    // verbatim (indexed into the JSON object), so it may contain dots or slashes —
+    // unlike save_setting's dot-notation. Used for per-title overrides keyed by a
+    // ratingKey or file path.
+    Q_INVOKABLE void save_map_setting(const QString &moduleId, const QString &mapKey,
+                                      const QString &entryKey, const QString &value);
+    Q_INVOKABLE QString get_map_setting(const QString &moduleId, const QString &mapKey,
+                                        const QString &entryKey);
     Q_INVOKABLE QVariant get_module_info(const QString &moduleId);
     Q_INVOKABLE QVariant get_module_settings_schema(const QString &moduleId);
     Q_INVOKABLE void invoke_module_action(const QString &moduleId, const QString &slotName);
