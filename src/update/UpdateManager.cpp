@@ -351,6 +351,10 @@ void UpdateManager::applyWindows() {
     // the old folder back and opens the zip in Explorer for a manual install.
     static const char kHelper[] = R"HELPER(param([int]$AppPid, [string]$Zip, [string]$InstallDir)
 $ErrorActionPreference = 'Stop'
+# Never sit inside the folder we're about to rename: a process whose current
+# directory is $InstallDir holds a handle that blocks the move — that's what
+# stranded the update in an .new folder. Move to a neutral directory first.
+Set-Location -LiteralPath $env:TEMP
 $log = Join-Path (Split-Path $Zip) 'apply.log'
 Start-Transcript -Path $log -Append | Out-Null
 try {
@@ -371,7 +375,14 @@ try {
     }
     if (-not (Test-Path (Join-Path $new '240mp.exe'))) { throw '240mp.exe missing from update package' }
 
-    Move-Item $InstallDir $old
+    # Retry the swap briefly — antivirus or a lingering handle can still hold the
+    # folder for a moment right after the app exits.
+    $moved = $false
+    for ($i = 0; $i -lt 20 -and -not $moved; $i++) {
+        try { Move-Item $InstallDir $old -ErrorAction Stop; $moved = $true }
+        catch { Start-Sleep -Milliseconds 500 }
+    }
+    if (-not $moved) { throw "could not move $InstallDir (still in use after 10s)" }
     try {
         Move-Item $new $InstallDir
     } catch {
@@ -409,7 +420,10 @@ try {
                              QStringLiteral("-File"), QDir::toNativeSeparators(scriptPath),
                              QString::number(QCoreApplication::applicationPid()),
                              zipPath,
-                             QDir::toNativeSeparators(m_appRoot)});
+                             QDir::toNativeSeparators(m_appRoot)},
+                            // Start the helper OUTSIDE the install dir — inheriting it
+                            // as the working directory would relock the folder.
+                            QDir::tempPath());
     // Give the detached helper a beat to start before the app exits.
     QTimer::singleShot(200, qApp, &QCoreApplication::quit);
 }
