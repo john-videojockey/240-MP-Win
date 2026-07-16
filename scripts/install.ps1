@@ -5,7 +5,8 @@
 .DESCRIPTION
     Downloads the latest 240-MP release zip from GitHub, installs it to a
     per-user folder (no admin rights needed), creates a Start Menu shortcut,
-    and installs the mpv playback engine via winget/scoop/choco if missing.
+    and installs the runtime helpers it uses — mpv (playback), yt-dlp (YouTube)
+    and ffmpeg (Local Files extra thumbnails) — via winget/scoop/choco if missing.
 
     One-liner (PowerShell):
         irm https://github.com/john-videojockey/240-MP-Win/releases/latest/download/install.ps1 | iex
@@ -100,8 +101,9 @@ if ($Uninstall) {
 
 # ── Dependencies: mpv (required for playback), yt-dlp (YouTube module) ────────
 if (-not $SkipDeps) {
-    $haveMpv  = [bool](Get-Command mpv    -ErrorAction SilentlyContinue)
-    $haveYtdl = [bool](Get-Command yt-dlp -ErrorAction SilentlyContinue)
+    $haveMpv    = [bool](Get-Command mpv    -ErrorAction SilentlyContinue)
+    $haveYtdl   = [bool](Get-Command yt-dlp -ErrorAction SilentlyContinue)
+    $haveFfmpeg = [bool](Get-Command ffmpeg -ErrorAction SilentlyContinue)
     $winget   = Get-Command winget -ErrorAction SilentlyContinue
     $scoop    = Get-Command scoop  -ErrorAction SilentlyContinue
     $choco    = Get-Command choco  -ErrorAction SilentlyContinue
@@ -127,6 +129,13 @@ if (-not $SkipDeps) {
         elseif ($scoop)  { scoop install yt-dlp }
         elseif ($choco)  { choco install yt-dlp -y }
         else             { Write-Warning 'yt-dlp not installed - the YouTube module will be unavailable.' }
+    }
+    if (-not $haveFfmpeg) {
+        Write-Host 'Installing ffmpeg (optional; used for Local Files extra thumbnails, and by yt-dlp)...'
+        if ($winget)     { winget install -e --id Gyan.FFmpeg --accept-source-agreements --accept-package-agreements }
+        elseif ($scoop)  { scoop install ffmpeg }
+        elseif ($choco)  { choco install ffmpeg -y }
+        else             { Write-Warning 'ffmpeg not installed - Local Files extras will show a play icon instead of a thumbnail.' }
     }
 }
 

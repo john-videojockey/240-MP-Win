@@ -12,19 +12,29 @@ irm https://github.com/john-videojockey/240-MP-Win/releases/latest/download/inst
 
 The script:
 
-1. Installs **mpv** (the playback engine) and **yt-dlp** (used by the YouTube module) via winget — falling back to scoop or chocolatey if that's what you use.
+1. Installs the runtime helpers via winget (falling back to scoop or chocolatey): **mpv** (playback), **yt-dlp** (YouTube module) and **ffmpeg** (Local Files extra thumbnails).
 2. Downloads the latest release zip, verifies its SHA-256 checksum, and installs it to `%LOCALAPPDATA%\Programs\240-MP`.
 3. Creates a Start Menu shortcut.
 
-Useful variations (download the script first for these):
+> **Execution policy?** The one-liner pipes the script straight into PowerShell (`| iex`), so a restrictive execution policy **does not apply** — nothing is saved or run as a `.ps1` file. That's why it's the recommended form.
+
+### Passing options
+
+Wrap the same download in a script block so it stays execution-policy-free while taking arguments:
 
 ```powershell
-.\install.ps1 -Autostart      # also start 240-MP automatically at logon
-.\install.ps1 -SkipDeps       # don't install/touch mpv or yt-dlp
-.\install.ps1 -SkipUpscalers  # don't download the upscaler shaders
-.\install.ps1 -InstallDir D:\Apps\240-MP
-.\install.ps1 -Uninstall      # remove the app + shortcuts (your settings survive)
+& ([scriptblock]::Create((irm https://github.com/john-videojockey/240-MP-Win/releases/latest/download/install.ps1))) -Autostart
 ```
+
+| Switch | Effect |
+|---|---|
+| `-Autostart` | also start 240-MP automatically at logon |
+| `-SkipDeps` | don't install/touch mpv, yt-dlp or ffmpeg |
+| `-SkipUpscalers` | don't download the upscaler shaders |
+| `-InstallDir <path>` | install somewhere other than `%LOCALAPPDATA%\Programs\240-MP` |
+| `-Uninstall` | remove the app + shortcuts (your settings survive) |
+
+(If you prefer to download `install.ps1` and run it as a file, an execution policy that blocks unsigned scripts will stop it — use `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Autostart`, or just use the script-block form above.)
 
 > The per-user install location is what lets the in-app updater (Settings → Update)
 > swap in new versions without a UAC prompt. If you move the app somewhere that
@@ -34,7 +44,7 @@ Useful variations (download the script first for these):
 ## Option 2 — manual
 
 1. Install mpv: `winget install shinchiro.mpv` (or grab a build from [mpv.io/installation](https://mpv.io/installation/) and put it on your PATH — **or** drop `mpv.exe` and its files into a `mpv\` folder inside the 240-MP folder; 240-MP checks there first).
-2. Optionally install yt-dlp for the YouTube module: `winget install yt-dlp.yt-dlp`.
+2. Optionally install yt-dlp (YouTube module) and ffmpeg (Local Files extra thumbnails): `winget install yt-dlp.yt-dlp Gyan.FFmpeg`.
 3. Download `240-MP-<version>-windows-x64.zip` from [Releases](https://github.com/john-videojockey/240-MP-Win/releases), extract it anywhere you like, and run `240mp.exe`.
 
 ## First run
