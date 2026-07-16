@@ -643,6 +643,43 @@ void LocalFilesBackend::collectVideos(const QString &path, QVariantList &out, in
         collectVideos(dir.absoluteFilePath(sub), out, depth + 1);
 }
 
+QVariantMap LocalFilesBackend::series_episodes(const QString &videoPath) {
+    const QFileInfo fi(videoPath);
+    QDir parent = fi.absoluteDir();
+    const bool inSeason = isSeasonFolder(parent.dirName());
+
+    // Enrich the file itself so we can tell an episode (it sits in a "Season NN"
+    // folder, or its .nfo carries an episode number) from a plain movie.
+    QVariantMap self;
+    self["name"]     = fi.fileName();
+    self["path"]     = fi.absoluteFilePath();
+    self["isFolder"] = false;
+    enrichVideoItem(self, fi.absoluteFilePath());
+    const bool isSeries = inSeason || self.value("episode").toInt() > 0;
+
+    // A movie carries no series — just itself, and callers won't auto-advance it.
+    if (!isSeries)
+        return QVariantMap{{"episodes", QVariantList{self}}, {"index", 0}, {"isSeries", false}};
+
+    // Show root: the season folder's parent when inside "Season NN", else the
+    // containing folder. collectVideos gathers every episode below it in natural
+    // season-then-episode order, so index+1 crosses season boundaries.
+    QString showRoot = parent.absolutePath();
+    if (inSeason) { QDir g(parent); if (g.cdUp()) showRoot = g.absolutePath(); }
+
+    QVariantList episodes;
+    collectVideos(showRoot, episodes, 0);
+    if (episodes.isEmpty()) episodes.append(self);
+
+    int index = 0;
+    const QString target = fi.absoluteFilePath();
+    for (int i = 0; i < episodes.size(); ++i) {
+        if (episodes.at(i).toMap().value("path").toString()
+                .compare(target, Qt::CaseInsensitive) == 0) { index = i; break; }
+    }
+    return QVariantMap{{"episodes", episodes}, {"index", index}, {"isSeries", true}};
+}
+
 // Synchronous scan (runs on a worker thread via loadItems): mediaRoot is
 // passed by value so a settings change mid-scan can't race the member.
 QVariantList LocalFilesBackend::scanItems(const QString &path, const QString &mediaRoot) const {

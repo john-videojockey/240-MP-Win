@@ -47,6 +47,12 @@ public:
     // Cheap boolean (no artwork enrichment) for deciding whether to show the
     // Continue Watching row / landing — safe to call on the UI thread.
     Q_INVOKABLE bool         has_continue_watching();
+    // Ordered list of every episode in the show `videoPath` belongs to, across all
+    // its season folders — powers PREV/NEXT and finish->next-episode, including
+    // crossing from the end of one season into the next. Returns
+    // { episodes: [...], index: <current pos>, isSeries: bool }; isSeries is false
+    // for a plain movie (episodes = just itself), so callers don't auto-advance it.
+    Q_INVOKABLE QVariantMap  series_episodes(const QString &videoPath);
     Q_INVOKABLE void        get_resume_playback_options();
     Q_INVOKABLE void        get_auto_subtitles_options();
     Q_INVOKABLE void        get_subtitle_languages();

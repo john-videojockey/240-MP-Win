@@ -32,6 +32,15 @@ FocusScope {
         internalLoader.setSource(resolved, { "navParams": params || {} })
     }
 
+    // Merge fields into the view below the current one (the nav-stack top), so a
+    // player can repoint the detail screen it will return to — e.g. onto the next
+    // episode after playback finishes, or after an OSC episode swap.
+    function updateBackItem(params) {
+        if (navStack.length === 0) return
+        var top = navStack[navStack.length - 1]
+        top.params = Object.assign({}, top.params, params || {})
+    }
+
     function navigateBack() {
         if (navStack.length === 0) {
             moduleRoot.goBack()
@@ -59,6 +68,7 @@ FocusScope {
             ignoreUnknownSignals: true
             function onNavigateTo(path, params, listState) { moduleRoot.navigateTo(path, params, listState) }
             function onReplaceWith(path, params) { moduleRoot.replaceWith(path, params) }
+            function onUpdateBackItem(params) { moduleRoot.updateBackItem(params) }
             function onGoBack() { moduleRoot.navigateBack() }
         }
     }

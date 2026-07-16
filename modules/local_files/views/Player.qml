@@ -6,15 +6,22 @@ FocusScope {
     property var navParams: ({})
 
     signal goBack()
+    // Repoint the detail screen we'll return to (nav-stack top) onto a different
+    // episode — used after an OSC episode swap and after a finished episode, so
+    // BACK lands on whatever is now current rather than the one we started on.
+    signal updateBackItem(var params)
 
     property string filePath:    navParams.filePath || ""
     property string itemTitle:   navParams.title    || ""
-    // Display title for the mpv OSC, and the folder's sibling videos so the
-    // OSC's |< / >| can step through them (passed by Detail.qml; absent when
-    // playing playlists/images straight from the list).
+    // Display title for the mpv OSC, and the show's sibling episodes so the OSC's
+    // |< / >| — and finish->next — can step through them (passed by Detail.qml;
+    // absent when playing playlists/images straight from the list).
     property string mediaTitle:   navParams.mediaTitle || navParams.title || ""
     property var    siblings:     navParams.siblings || []
     property int    siblingIndex: navParams.siblingIndex !== undefined ? navParams.siblingIndex : -1
+    // True when the siblings are a show's episodes (across seasons) — gates the
+    // automatic advance to the next episode when one finishes.
+    property bool   isSeries:     navParams.isSeries === true
 
     property bool   overlayVisible:      false
     property int    savedPositionMs:     0
@@ -139,6 +146,9 @@ FocusScope {
             lastKnownPositionMs  = 0
             lastKnownDurationMs  = 0
             lastKnownPlaylistPos = -1
+            // Keep the detail screen we'd return to pointed at the episode now
+            // playing, so exiting lands on it (not the one we started from).
+            updateBackItem({ items: [{ path: filePath, name: itemTitle, isFolder: false }], index: 0 })
             mpvController.loadAndPlay(filePath, 0.0, 0, subFlag, [], subtitleLangs, loopOn, -1, 0.0, "", false, "", false, [], imageDurationSec, imageContent, playerExtraArgs())
         }
 
@@ -185,6 +195,17 @@ FocusScope {
                     localFilesBackend.set_watched(filePath, true)   // finished → mark played
                 else if (pos > 5000)
                     localFilesBackend.savePosition(filePath, pos, -1, dur)
+            }
+
+            // A finished episode advances the return target to the next episode
+            // (across a season boundary too, since siblings span the whole series),
+            // so exiting lands on the next episode's info instead of the one just
+            // watched. A partial quit keeps the current episode for resume.
+            if (isSeries && !isPlaylist(filePath) && !isImage(filePath)
+                && dur > 0 && pos >= dur * 0.95
+                && siblingIndex >= 0 && (siblingIndex + 1) < siblings.length) {
+                var nx = siblings[siblingIndex + 1]
+                updateBackItem({ items: [{ path: nx.path, name: nx.name, isFolder: false }], index: 0 })
             }
             goBack()
         }

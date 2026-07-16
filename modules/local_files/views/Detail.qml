@@ -23,6 +23,9 @@ FocusScope {
     // not part of the PREV/NEXT rotation).
     property var videoIndices: []
     property bool hasSiblings: videoIndices.length > 1
+    // True when the current file is a show episode: PREV/NEXT then span the whole
+    // series (across seasons) and finishing one advances to the next.
+    property bool isSeries: false
 
     // Focus rows: 0 = play cluster (PREV/PLAY/NEXT via playCol), 1 = actions
     // (WATCHED / TRACKED via actionCol), 2 = volume, 3 = upscaler.
@@ -204,11 +207,23 @@ FocusScope {
             title: current.name,
             mediaTitle: mediaTitleFor(current),
             siblings: siblingList(),
-            siblingIndex: videoIndices.indexOf(index)
+            siblingIndex: videoIndices.indexOf(index),
+            isSeries: isSeries
         }, { currentIndex: index })
     }
 
     Component.onCompleted: {
+        // For a show episode, swap the PREV/NEXT list to the entire series (every
+        // season), so it spans season boundaries and works even when we arrived
+        // from Continue Watching (which hands over a mixed list). A movie keeps the
+        // folder listing it was opened with. Bootstraps from current.path alone, so
+        // the Player can repoint us to the next episode with just its path.
+        var series = localFilesBackend.series_episodes(current.path || "")
+        if (series && series.isSeries === true && series.episodes && series.episodes.length > 0) {
+            items = series.episodes
+            index = series.index
+            isSeries = true
+        }
         var vids = []
         for (var i = 0; i < items.length; i++) {
             var it = items[i]
