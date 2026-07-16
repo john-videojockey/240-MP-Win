@@ -346,6 +346,53 @@ static bool isArtworkImage(const QString &baseName) {
     return false;
 }
 
+// Pull a season/episode out of a filename: "S01E02", "S1 E2", "S01.E02",
+// "1x02", etc. Lets shows with no season folders and no per-file nfo still be
+// recognized (and ordered) as a series.
+static bool parseSeasonEpisode(const QString &name, int &season, int &episode) {
+    static const QRegularExpression reSE(
+        QStringLiteral("[Ss](\\d{1,2})[\\s._-]*[Ee](\\d{1,3})"));
+    QRegularExpressionMatch m = reSE.match(name);
+    if (m.hasMatch()) { season = m.captured(1).toInt(); episode = m.captured(2).toInt(); return true; }
+    // NxNN form (1x02), with boundaries so it doesn't grab "1920x1080" etc.
+    static const QRegularExpression reX(
+        QStringLiteral("(?<![\\dA-Za-z])(\\d{1,2})[Xx](\\d{1,3})(?![\\dxX])"));
+    m = reX.match(name);
+    if (m.hasMatch()) { season = m.captured(1).toInt(); episode = m.captured(2).toInt(); return true; }
+    return false;
+}
+
+// Bonus content, not an episode: a video in an "Extras"/"Featurettes"/…​ folder
+// anywhere up to the show root, or one with a Kodi extras filename suffix.
+static bool isExtraVideo(const QString &absPath, const QString &showRoot) {
+    static const QStringList kExtraDirs = {
+        QStringLiteral("extras"), QStringLiteral("featurettes"),
+        QStringLiteral("behind the scenes"), QStringLiteral("behindthescenes"),
+        QStringLiteral("deleted scenes"), QStringLiteral("deletedscenes"),
+        QStringLiteral("interviews"), QStringLiteral("trailers"),
+        QStringLiteral("shorts"), QStringLiteral("scenes"),
+        QStringLiteral("specials"), QStringLiteral("bonus"), QStringLiteral("other")
+    };
+    static const QStringList kExtraSuffixes = {
+        QStringLiteral("-trailer"), QStringLiteral("-behindthescenes"),
+        QStringLiteral("-featurette"), QStringLiteral("-deleted"),
+        QStringLiteral("-interview"), QStringLiteral("-scene"),
+        QStringLiteral("-short"), QStringLiteral("-clip"),
+        QStringLiteral("-sample"), QStringLiteral("-bonus"), QStringLiteral("-other")
+    };
+    const QString root = QDir(showRoot).absolutePath();
+    QDir d = QFileInfo(absPath).absoluteDir();
+    for (int guard = 0; guard < 8; ++guard) {
+        if (kExtraDirs.contains(d.dirName().toLower())) return true;
+        if (d.absolutePath().compare(root, Qt::CaseInsensitive) == 0) break;
+        if (!d.cdUp()) break;
+    }
+    const QString base = QFileInfo(absPath).completeBaseName().toLower();
+    for (const QString &s : kExtraSuffixes)
+        if (base.endsWith(s)) return true;
+    return false;
+}
+
 // First existing "<base>.<ext>" image in dir for any of the given base names
 // (checked in order), as a file:// URL string QML's Image can load directly.
 QString LocalFilesBackend::findArtFile(const QDir &dir, const QStringList &baseNames) {
@@ -490,6 +537,15 @@ void LocalFilesBackend::enrichVideoItem(QVariantMap &item, const QString &filePa
     if (!thumb.isEmpty())  item["thumb"]  = thumb;
     if (!art.isEmpty())    item["art"]    = art;
     if (!poster.isEmpty()) item["poster"] = poster;
+
+    // Season/episode from the filename (SxxExx / 1x02) as a baseline, so a show
+    // with no season folders and no nfo is still recognized and ordered. A per-
+    // file/show nfo below overrides these when it carries its own numbers.
+    int fsn = 0, fep = 0;
+    if (parseSeasonEpisode(base, fsn, fep)) {
+        item["season"]  = fsn;
+        item["episode"] = fep;
+    }
 
     // Per-file nfo ("<name>.nfo") is authoritative. Failing that, a folder-level
     // movie.nfo applies — a movie folder holds one video, so its metadata is the
@@ -646,29 +702,47 @@ void LocalFilesBackend::collectVideos(const QString &path, QVariantList &out, in
 QVariantMap LocalFilesBackend::series_episodes(const QString &videoPath) {
     const QFileInfo fi(videoPath);
     QDir parent = fi.absoluteDir();
+    QDir grand(parent);
+    const bool haveGrand = grand.cdUp();
     const bool inSeason = isSeasonFolder(parent.dirName());
+    // A tvshow.nfo marks the show root: its video subfolders are seasons even when
+    // they carry irregular names (not "Season NN"); a flat show may have it too.
+    const bool grandIsShow  = haveGrand && QFileInfo::exists(grand.filePath(QStringLiteral("tvshow.nfo")));
+    const bool parentIsShow = QFileInfo::exists(parent.filePath(QStringLiteral("tvshow.nfo")));
 
-    // Enrich the file itself so we can tell an episode (it sits in a "Season NN"
-    // folder, or its .nfo carries an episode number) from a plain movie.
+    // Show root: the season/show folder's parent when the file is one season deep
+    // (regular naming or nfo-marked), else the containing folder — a flat show, or
+    // a movie folder.
+    QString showRoot = parent.absolutePath();
+    if ((inSeason || grandIsShow) && haveGrand)
+        showRoot = grand.absolutePath();
+
     QVariantMap self;
     self["name"]     = fi.fileName();
     self["path"]     = fi.absoluteFilePath();
     self["isFolder"] = false;
     enrichVideoItem(self, fi.absoluteFilePath());
-    const bool isSeries = inSeason || self.value("episode").toInt() > 0;
 
-    // A movie carries no series — just itself, and callers won't auto-advance it.
+    // A series episode: sits in a season, under a tvshow.nfo, or its name/nfo
+    // carries an episode number — but never if it is itself bonus content. A plain
+    // movie (or an extra) carries no series, so callers won't auto-advance it.
+    const bool selfIsExtra = isExtraVideo(fi.absoluteFilePath(), showRoot);
+    const bool isSeries = !selfIsExtra
+        && (inSeason || grandIsShow || parentIsShow || self.value("episode").toInt() > 0);
     if (!isSeries)
         return QVariantMap{{"episodes", QVariantList{self}}, {"index", 0}, {"isSeries", false}};
 
-    // Show root: the season folder's parent when inside "Season NN", else the
-    // containing folder. collectVideos gathers every episode below it in natural
-    // season-then-episode order, so index+1 crosses season boundaries.
-    QString showRoot = parent.absolutePath();
-    if (inSeason) { QDir g(parent); if (g.cdUp()) showRoot = g.absolutePath(); }
-
+    // Every video under the show root in natural order (season-then-episode for
+    // regular names, plain alphabetical for irregular ones), minus bonus content —
+    // extras belong in Cast & Extras, not the episode rotation.
+    QVariantList all;
+    collectVideos(showRoot, all, 0);
     QVariantList episodes;
-    collectVideos(showRoot, episodes, 0);
+    for (const QVariant &v : all) {
+        const QVariantMap m = v.toMap();
+        if (!isExtraVideo(m.value("path").toString(), showRoot))
+            episodes.append(m);
+    }
     if (episodes.isEmpty()) episodes.append(self);
 
     int index = 0;
