@@ -125,6 +125,24 @@ jobs:
           cd artifacts
           sha256sum zip-windows-x64/*.zip | sed 's|  .*/|  |' > SHA256SUMS
 
+      # Release body = this version's CHANGELOG section (if present) followed by
+      # the standard download / install / update footer.
+      - name: Build release notes
+        shell: bash
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          awk -v v="## [$ver]" 'index($0,v)==1{f=1;next} f&&/^## \[/{exit} f{print}' CHANGELOG.md > cl.md || true
+          : > RELEASE_NOTES.md
+          if [ -s cl.md ]; then { echo "## What's New"; echo; cat cl.md; echo; echo '---'; echo; } >> RELEASE_NOTES.md; fi
+          {
+            printf '### Downloads:\n\n| Platform | File |\n|---|---|\n'
+            printf '| Windows 10/11 (x64) | `240-MP-%s-windows-x64.zip` |\n\n' "$GITHUB_REF_NAME"
+            printf '### Install:\n\n```powershell\nirm https://github.com/%s/releases/latest/download/install.ps1 | iex\n```\n\n' "$GITHUB_REPOSITORY"
+            printf '…or download the zip, extract anywhere, and run `240mp.exe` (needs mpv on PATH or in an `mpv\\` subfolder — see [INSTALL.md](INSTALL.md)).\n\n'
+            printf '### Update:\n\nUse **Settings → Update** inside the app, or re-run the install one-liner.\n'
+          } >> RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:
@@ -136,21 +154,4 @@ jobs:
             artifacts/zip-windows-x64/*.zip
             artifacts/SHA256SUMS
             scripts/install.ps1
-          body: |
-            ### Downloads:
-
-            | Platform | File |
-            |---|---|
-            | Windows 10/11 (x64) | `240-MP-${{ github.ref_name }}-windows-x64.zip` |
-
-            ### Install:
-
-            ```powershell
-            irm https://github.com/${{ github.repository }}/releases/latest/download/install.ps1 | iex
-            ```
-
-            …or download the zip, extract anywhere, and run `240mp.exe` (needs mpv on PATH or in an `mpv\` subfolder — see [INSTALL.md](INSTALL.md)).
-
-            ### Update:
-
-            Use **Settings → Update** inside the app, or re-run the install one-liner.
+          body_path: RELEASE_NOTES.md
