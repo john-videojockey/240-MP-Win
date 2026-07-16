@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   handled. Episode order falls back to natural/alphabetical for irregular names.
   Bonus content is kept out of the episode rotation (it lives in Cast & Extras).
 
+### Fixed
+- **Self-update** left the new version stranded in an `<install>.new` folder
+  instead of applying: the apply helper inherited the install folder as its
+  working directory, which blocked the folder swap. (The fix ships in the updater,
+  so the first hop onto a fixed build must be a manual re-install.)
+
 ## [0.1.1] - 2026-07-15
 
 ### Added
