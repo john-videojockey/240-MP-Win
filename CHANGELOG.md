@@ -17,7 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the playback settings) listing the show/movie's `.nfo` cast and its bonus
   videos — files in `Extras` / `Featurettes` / `Behind the Scenes` /
   `Deleted Scenes` / `Specials` / `Trailers` folders, and Kodi `-trailer` /
-  `-featurette` / `-deleted` / … named files. Extras play directly.
+  `-featurette` / `-deleted` / … named files. Extras play directly, and get a
+  thumbnail auto-generated from the video (via ffmpeg) when they have no artwork.
+- **Scrolling Cast & Extras labels.** A highlighted card's title/character now
+  scrolls horizontally so long names aren't just truncated (Plex and Local Files).
 
 ### Changed
 - **Broader Local Files episode detection.** Shows are now recognized from
