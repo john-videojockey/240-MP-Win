@@ -53,6 +53,11 @@ public:
     // { episodes: [...], index: <current pos>, isSeries: bool }; isSeries is false
     // for a plain movie (episodes = just itself), so callers don't auto-advance it.
     Q_INVOKABLE QVariantMap  series_episodes(const QString &videoPath);
+    // Cast & Extras cards for the info screen: the show/movie's nfo actors, plus
+    // its bonus videos (Extras/Featurettes/Specials/... folders and -trailer/…
+    // named files) as playable "extra" cards. Extras come first, each carrying its
+    // "path" so the view can hand it straight to the player.
+    Q_INVOKABLE QVariantList get_cast_extras(const QString &videoPath);
     Q_INVOKABLE void        get_resume_playback_options();
     Q_INVOKABLE void        get_auto_subtitles_options();
     Q_INVOKABLE void        get_subtitle_languages();

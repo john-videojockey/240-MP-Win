@@ -27,6 +27,13 @@ FocusScope {
     // series (across seasons) and finishing one advances to the next.
     property bool isSeries: false
 
+    // Cast & Extras cards (nfo actors + playable bonus videos), fetched on load.
+    property var castExtras: []
+    property int castIndex: 0
+    // Reveal-on-scroll: the body holds still until focus reaches Cast & Extras
+    // (row 6), then shifts up to bring that row into view (like the Plex screen).
+    property real sectionScroll: focusRow < 6 ? 0 : castSection.y
+
     // Focus rows: 0 = play cluster (PREV/PLAY/NEXT via playCol), 1 = actions
     // (WATCHED / TRACKED via actionCol), 2 = volume, 3 = upscaler.
     property int focusRow: 0
@@ -212,6 +219,19 @@ FocusScope {
         }, { currentIndex: index })
     }
 
+    // Play a bonus video (trailer/featurette/…) straight from Cast & Extras — a
+    // one-off with no siblings, so it never advances into the episode rotation.
+    function playExtra(path, name) {
+        navigateTo("Player.qml", {
+            filePath: path,
+            title: name,
+            mediaTitle: name,
+            siblings: [],
+            siblingIndex: -1,
+            isSeries: false
+        }, { currentIndex: index })
+    }
+
     Component.onCompleted: {
         // For a show episode, swap the PREV/NEXT list to the entire series (every
         // season), so it spans season boundaries and works even when we arrived
@@ -234,6 +254,7 @@ FocusScope {
         }
         videoIndices = vids
         refreshSaved()
+        castExtras = localFilesBackend.get_cast_extras(current.path || "")
 
         var bg = appCore.get_setting(moduleRoot.moduleId, "info_background")
         infoBg = (bg === undefined || bg === null || bg === "")
@@ -265,21 +286,22 @@ FocusScope {
     focus: true
 
     // Rows: 0 play, 1 actions, 2 audio (>1 lang), 3 subtitles (any), 4 volume,
-    // 5 upscaler. Audio/subtitle appear only when the probe found tracks; Up/Down
-    // skip empty rows.
+    // 5 upscaler, 6 cast & extras. Audio/subtitle appear only when the probe found
+    // tracks; cast & extras only when present. Up/Down skip empty rows.
     function rowAvailable(r) {
         if (r <= 1) return true
         if (r === 2) return audioLangs.length > 1
         if (r === 3) return subLangs.length > 0
         if (r === 4) return true
         if (r === 5) return true
+        if (r === 6) return detailRoot.castExtras.length > 0
         return false
     }
     Keys.onUpPressed: {
         for (var r = focusRow - 1; r >= 0; r--) if (rowAvailable(r)) { focusRow = r; break }
     }
     Keys.onDownPressed: {
-        for (var r = focusRow + 1; r <= 5; r++) if (rowAvailable(r)) { focusRow = r; break }
+        for (var r = focusRow + 1; r <= 6; r++) if (rowAvailable(r)) { focusRow = r; break }
     }
     Keys.onLeftPressed: {
         if (focusRow === 0) { if (hasSiblings && playCol > 0) playCol-- }
@@ -288,6 +310,8 @@ FocusScope {
         else if (focusRow === 3) detailRoot.cycleSub(-1)
         else if (focusRow === 4) detailRoot.cycleVolume(-1)
         else if (focusRow === 5) detailRoot.cycleUpscaler(-1)
+        else if (focusRow === 6 && detailRoot.castExtras.length > 0)
+            detailRoot.castIndex = (detailRoot.castIndex - 1 + detailRoot.castExtras.length) % detailRoot.castExtras.length
     }
     Keys.onRightPressed: {
         if (focusRow === 0) { if (hasSiblings && playCol < 2) playCol++ }
@@ -296,6 +320,8 @@ FocusScope {
         else if (focusRow === 3) detailRoot.cycleSub(1)
         else if (focusRow === 4) detailRoot.cycleVolume(1)
         else if (focusRow === 5) detailRoot.cycleUpscaler(1)
+        else if (focusRow === 6 && detailRoot.castExtras.length > 0)
+            detailRoot.castIndex = (detailRoot.castIndex + 1) % detailRoot.castExtras.length
     }
     Keys.onReturnPressed: {
         if (focusRow === 1) {
@@ -307,6 +333,13 @@ FocusScope {
         if (focusRow === 3) { detailRoot.cycleSub(1); return }
         if (focusRow === 4) { detailRoot.cycleVolume(1); return }
         if (focusRow === 5) { detailRoot.cycleUpscaler(1); return }
+        if (focusRow === 6 && detailRoot.castExtras.length > 0) {
+            // Extras play; cast cards are informational.
+            var card = detailRoot.castExtras[detailRoot.castIndex]
+            if (card && card.kind === "extra" && card.path)
+                detailRoot.playExtra(card.path, card.title)
+            return
+        }
         if (hasSiblings && playCol === 0) stepTo(-1)
         else if (hasSiblings && playCol === 2) stepTo(1)
         else play()
@@ -370,6 +403,15 @@ FocusScope {
         width: root.sw * 0.76875 //492
         height: root.sh * 0.525 //252
         clip: true
+
+        // Content wrapper: holds still until focus reaches Cast & Extras (row 6),
+        // then shifts up (y) to reveal it. The clipping Item above hides overflow.
+        Item {
+            id: contentWrap
+            anchors.left: parent.left
+            anchors.right: parent.right
+            y: -detailRoot.sectionScroll
+            Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
         Row {
             id: topRow
@@ -630,6 +672,7 @@ FocusScope {
         // Playback settings — full-width rows (label + ◄ value ►), the same
         // presentation as the Plex info screen, below the play/metadata area.
         Column {
+            id: settingsCol
             anchors.top: topRow.bottom
             anchors.topMargin: root.sh * 0.0125
             anchors.left: parent.left
@@ -736,6 +779,119 @@ FocusScope {
                         font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
                 }
             }
+        }
+
+        // SECTION: Cast & Extras — nfo actors (portrait headshots) and playable
+        // bonus videos (landscape), revealed by scrolling down past the settings.
+        Item {
+            id: castSection
+            visible: detailRoot.castExtras.length > 0
+            anchors.top: settingsCol.bottom
+            anchors.topMargin: visible ? root.sh * 0.03 : 0
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: visible ? (ceLabel.height + root.sh * 0.0083333 + ceList.height) : 0
+
+            Text {
+                id: ceLabel
+                text: "Cast & Extras"
+                color: detailRoot.focusRow === 6 ? root.accentColor : root.secondaryColor
+                font.family: root.globalFont
+                font.capitalization: Font.AllUppercase
+                anchors.top: parent.top
+                anchors.left: parent.left
+                font.pixelSize: root.sh * 0.0375
+            }
+
+            ListView {
+                id: ceList
+                model: detailRoot.castExtras
+                orientation: ListView.Horizontal
+                anchors.top: ceLabel.bottom
+                anchors.topMargin: root.sh * 0.0083333
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: root.sh * 0.245
+                spacing: root.sw * 0.0125
+                clip: true
+                interactive: true
+                flickableDirection: Flickable.HorizontalFlick
+                currentIndex: detailRoot.castIndex
+                onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
+
+                delegate: Item {
+                    property bool isExtra: modelData.kind === "extra"
+                    height: ceList.height
+                    // Extras get a 16:9 thumbnail, cast a 2:3 headshot, so the two
+                    // read differently at a glance.
+                    width: (ceList.height * 0.66) * (isExtra ? (16 / 9) : (2 / 3))
+                    property bool sel: detailRoot.focusRow === 6 && detailRoot.castIndex === index
+
+                    Column {
+                        anchors.fill: parent
+                        spacing: root.sh * 0.0083333
+
+                        Rectangle {
+                            id: ceBox
+                            width: parent.width
+                            height: ceList.height * 0.66
+                            color: "transparent"
+                            border.color: sel ? root.accentColor : root.tertiaryColor
+                            border.width: sel ? Math.max(2, Math.floor(root.sh * 0.00625)) : 1
+
+                            Image {
+                                id: ceImg
+                                anchors.fill: parent
+                                anchors.margins: ceBox.border.width
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                source: modelData.image || ""
+                            }
+                            // Imageless/broken card: a play glyph for extras, an
+                            // initial for cast.
+                            Text {
+                                visible: !modelData.image || ceImg.status === Image.Error
+                                anchors.centerIn: parent
+                                text: modelData.kind === "extra" ? "▶" : (modelData.title || "?").charAt(0)
+                                color: root.secondaryColor
+                                font.family: root.globalFont
+                                font.capitalization: Font.AllUppercase
+                                font.pixelSize: root.sh * 0.05
+                            }
+                        }
+                        Text {
+                            width: parent.width
+                            text: modelData.title || ""
+                            color: sel ? root.accentColor : root.primaryColor
+                            font.family: root.globalFont
+                            font.capitalization: Font.AllUppercase
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                            font.pixelSize: root.sh * 0.0233333
+                        }
+                        Text {
+                            width: parent.width
+                            text: modelData.subtitle || ""
+                            color: root.tertiaryColor
+                            font.family: root.globalFont
+                            font.capitalization: Font.AllUppercase
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                            font.pixelSize: root.sh * 0.02
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            if (detailRoot.focusRow === 6 && detailRoot.castIndex === index)
+                                inputManager.touchKey("select")
+                            else { detailRoot.focusRow = 6; detailRoot.castIndex = index }
+                        }
+                    }
+                }
+            }
+        }
         }
     }
 

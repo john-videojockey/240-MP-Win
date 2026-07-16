@@ -478,6 +478,36 @@ QVariantMap LocalFilesBackend::parseNfo(const QString &nfoPath) {
     return meta;
 }
 
+// Actors from a Kodi/TMM nfo: each <actor> with <name>/<role>/<thumb>. Capped so
+// a huge cast doesn't bloat the info screen. thumb is whatever the nfo holds (a
+// scraper URL or a local path); the view falls back to an initial when absent.
+static QVariantList parseActors(const QString &nfoPath) {
+    QFile f(nfoPath);
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    QVariantList actors;
+    QVariantMap cur;
+    bool inActor = false;
+    QXmlStreamReader xml(&f);
+    while (!xml.atEnd()) {
+        const auto tok = xml.readNext();
+        if (tok == QXmlStreamReader::StartElement) {
+            const QString n = xml.name().toString().toLower();
+            if (n == "actor") { inActor = true; cur.clear(); }
+            else if (inActor && n == "name")  cur["name"] = xml.readElementText().trimmed();
+            else if (inActor && n == "role")  cur["role"] = xml.readElementText().trimmed();
+            else if (inActor && n == "thumb" && !cur.contains("thumb"))
+                cur["thumb"] = xml.readElementText().trimmed();
+        } else if (tok == QXmlStreamReader::EndElement
+                   && xml.name().toString().toLower() == "actor") {
+            if (!cur.value("name").toString().isEmpty()) actors.append(cur);
+            inActor = false;
+            if (actors.size() >= 30) break;
+        }
+    }
+    return actors;
+}
+
 // Folder entries: Kodi-convention artwork inside the folder plus a
 // tvshow.nfo / movie.nfo for the display title.
 void LocalFilesBackend::enrichFolderItem(QVariantMap &item, const QString &folderPath) const {
@@ -752,6 +782,68 @@ QVariantMap LocalFilesBackend::series_episodes(const QString &videoPath) {
                 .compare(target, Qt::CaseInsensitive) == 0) { index = i; break; }
     }
     return QVariantMap{{"episodes", episodes}, {"index", index}, {"isSeries", true}};
+}
+
+QVariantList LocalFilesBackend::get_cast_extras(const QString &videoPath) {
+    const QFileInfo fi(videoPath);
+    QDir parent = fi.absoluteDir();
+    QDir grand(parent);
+    const bool haveGrand = grand.cdUp();
+    const bool inSeason = isSeasonFolder(parent.dirName());
+    const bool grandIsShow = haveGrand && QFileInfo::exists(grand.filePath(QStringLiteral("tvshow.nfo")));
+
+    // The show/movie root: the same resolution series_episodes uses, so extras are
+    // gathered from the whole show, not just the current season folder.
+    QString showRoot = parent.absolutePath();
+    if ((inSeason || grandIsShow) && haveGrand)
+        showRoot = grand.absolutePath();
+
+    QVariantList out;
+
+    // Extras first (playable): every bonus video under the show/movie root — the
+    // non-episode files (Extras/Featurettes/Specials/... folders, -trailer/... names).
+    QVariantList all;
+    collectVideos(showRoot, all, 0);
+    for (const QVariant &v : all) {
+        const QVariantMap m = v.toMap();
+        const QString p = m.value("path").toString();
+        if (!isExtraVideo(p, showRoot))
+            continue;
+        const QFileInfo ei(p);
+        out.append(QVariantMap{
+            {"kind",     QStringLiteral("extra")},
+            {"title",    ei.completeBaseName()},
+            {"subtitle", ei.absoluteDir().dirName()},   // the extras folder it lives in
+            {"image",    m.value("thumb", m.value("art"))},
+            {"path",     p},
+        });
+    }
+
+    // Cast: actors from the show's tvshow.nfo, else the movie/per-file nfo.
+    const QString base = fi.completeBaseName();
+    const QStringList nfoCandidates = {
+        QDir(showRoot).filePath(QStringLiteral("tvshow.nfo")),
+        parent.filePath(base + QStringLiteral(".nfo")),
+        parent.filePath(QStringLiteral("movie.nfo")),
+        parent.filePath(parent.dirName() + QStringLiteral(".nfo")),
+    };
+    for (const QString &nfo : nfoCandidates) {
+        if (!QFileInfo::exists(nfo))
+            continue;
+        const QVariantList actors = parseActors(nfo);
+        for (const QVariant &a : actors) {
+            const QVariantMap am = a.toMap();
+            out.append(QVariantMap{
+                {"kind",     QStringLiteral("cast")},
+                {"title",    am.value("name")},
+                {"subtitle", am.value("role")},
+                {"image",    am.value("thumb")},
+            });
+        }
+        if (!actors.isEmpty())
+            break;   // first nfo with a cast wins
+    }
+    return out;
 }
 
 // Synchronous scan (runs on a worker thread via loadItems): mediaRoot is
