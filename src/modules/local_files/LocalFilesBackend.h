@@ -58,6 +58,10 @@ public:
     // named files) as playable "extra" cards. Extras come first, each carrying its
     // "path" so the view can hand it straight to the player.
     Q_INVOKABLE QVariantList get_cast_extras(const QString &videoPath);
+    // For each "extra" card without artwork, generate a poster frame with ffmpeg
+    // (cached under DATA_ROOT/thumbs), emitting extraThumbReady(path, url) as each
+    // finishes so the info screen can fill the card in. No-op without ffmpeg.
+    Q_INVOKABLE void         generate_extra_thumbs(const QVariantList &extras);
     Q_INVOKABLE void        get_resume_playback_options();
     Q_INVOKABLE void        get_auto_subtitles_options();
     Q_INVOKABLE void        get_subtitle_languages();
@@ -73,6 +77,7 @@ signals:
     void dynamicOptionsReady(const QString &key, const QVariant &options);
     void itemsLoaded(const QString &path, const QVariantList &items);
     void tracksReady(const QString &path, const QVariant &tracks);
+    void extraThumbReady(const QString &path, const QString &thumbUrl);
 
 public slots:
     void onSettingChanged(const QString &moduleId, const QString &key, const QVariant &value);
@@ -100,6 +105,9 @@ private:
     QVariantMap parentNfoMeta(const QDir &startDir) const;
     void enrichFolderItem(QVariantMap &item, const QString &folderPath) const;
     void enrichVideoItem(QVariantMap &item, const QString &filePath) const;
+    // Cache path (DATA_ROOT/thumbs/<hash>.jpg) for a generated extra thumbnail,
+    // keyed by the file's path + size + mtime so it regenerates if the file changes.
+    QString thumbCachePath(const QString &videoPath) const;
 
     // Smart show/movie folder handling: a "media folder" (one carrying .nfo or
     // scraper artwork) presents as content. Any subfolder that looks like a season

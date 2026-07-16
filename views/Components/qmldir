@@ -1,4 +1,5 @@
 module Components
 AppBar AppBar.qml
 LoadingText LoadingText.qml
+MarqueeText MarqueeText.qml
 singleton NavUtil NavUtil.qml

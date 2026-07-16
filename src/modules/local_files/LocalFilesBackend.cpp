@@ -15,6 +15,7 @@
 #include <QtConcurrent/QtConcurrentRun>
 #include <QProcess>
 #include <QStandardPaths>
+#include <QCryptographicHash>
 #include <QJsonArray>
 #include <QSet>
 
@@ -810,11 +811,20 @@ QVariantList LocalFilesBackend::get_cast_extras(const QString &videoPath) {
         if (!isExtraVideo(p, showRoot))
             continue;
         const QFileInfo ei(p);
+        // Sidecar artwork if any, else an already-generated frame from the cache;
+        // otherwise empty and generate_extra_thumbs() fills it in asynchronously.
+        QString img = m.value("thumb").toString();
+        if (img.isEmpty()) img = m.value("art").toString();
+        if (img.isEmpty()) {
+            const QString cache = thumbCachePath(p);
+            if (QFileInfo::exists(cache) && QFileInfo(cache).size() > 0)
+                img = QUrl::fromLocalFile(cache).toString();
+        }
         out.append(QVariantMap{
             {"kind",     QStringLiteral("extra")},
             {"title",    ei.completeBaseName()},
             {"subtitle", ei.absoluteDir().dirName()},   // the extras folder it lives in
-            {"image",    m.value("thumb", m.value("art"))},
+            {"image",    img},
             {"path",     p},
         });
     }
@@ -844,6 +854,55 @@ QVariantList LocalFilesBackend::get_cast_extras(const QString &videoPath) {
             break;   // first nfo with a cast wins
     }
     return out;
+}
+
+QString LocalFilesBackend::thumbCachePath(const QString &videoPath) const {
+    QString local = videoPath;
+    if (local.startsWith(QStringLiteral("file:"))) local = QUrl(local).toLocalFile();
+    const QFileInfo fi(local);
+    const QString key = fi.absoluteFilePath() + QStringLiteral("|")
+                        + QString::number(fi.size()) + QStringLiteral("|")
+                        + QString::number(fi.lastModified().toSecsSinceEpoch());
+    const QString hash = QString::fromLatin1(
+        QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Md5).toHex());
+    return m_dataRoot + QStringLiteral("/thumbs/") + hash + QStringLiteral(".jpg");
+}
+
+void LocalFilesBackend::generate_extra_thumbs(const QVariantList &extras) {
+    const QString ff = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+    if (ff.isEmpty()) return;
+    QDir().mkpath(m_dataRoot + QStringLiteral("/thumbs"));
+    for (const QVariant &v : extras) {
+        const QVariantMap m = v.toMap();
+        if (m.value("kind").toString() != QStringLiteral("extra")) continue;
+        if (!m.value("image").toString().isEmpty()) continue;   // already has artwork
+        const QString path = m.value("path").toString();
+        if (path.isEmpty()) continue;
+        QString local = path;
+        if (local.startsWith(QStringLiteral("file:"))) local = QUrl(local).toLocalFile();
+        const QString outPath = thumbCachePath(local);
+        if (QFileInfo::exists(outPath) && QFileInfo(outPath).size() > 0) {
+            emit extraThumbReady(path, QUrl::fromLocalFile(outPath).toString());
+            continue;
+        }
+        auto *proc = new QProcess(this);
+        // The thumbnail filter picks a representative (non-black) frame from the
+        // head of the file — fast and robust for clips of any length.
+        const QStringList args = {
+            QStringLiteral("-y"), QStringLiteral("-i"), local,
+            QStringLiteral("-vf"), QStringLiteral("thumbnail,scale=360:-2"),
+            QStringLiteral("-frames:v"), QStringLiteral("1"),
+            QStringLiteral("-an"), QStringLiteral("-q:v"), QStringLiteral("4"),
+            outPath
+        };
+        connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+                [this, proc, path, outPath](int, QProcess::ExitStatus) {
+            proc->deleteLater();
+            if (QFileInfo::exists(outPath) && QFileInfo(outPath).size() > 0)
+                emit extraThumbReady(path, QUrl::fromLocalFile(outPath).toString());
+        });
+        proc->start(ff, args);
+    }
 }
 
 // Synchronous scan (runs on a worker thread via loadItems): mediaRoot is

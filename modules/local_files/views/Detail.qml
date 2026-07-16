@@ -126,6 +126,19 @@ FocusScope {
             subLangs   = (tracks && tracks.subtitle) ? tracks.subtitle : []
             resolveTrackSelection()
         }
+        // A generated extra thumbnail arrived — drop it onto its card. Reassigning
+        // the array refreshes the delegates; castIndex is a separate property, so
+        // the current selection is preserved.
+        function onExtraThumbReady(path, url) {
+            var list = detailRoot.castExtras
+            for (var i = 0; i < list.length; i++) {
+                if (list[i].kind === "extra" && list[i].path === path && !list[i].image) {
+                    list[i].image = url
+                    detailRoot.castExtras = list.slice()
+                    return
+                }
+            }
+        }
     }
 
     // Saved resume position for the current video (drives the RSUM label)
@@ -255,6 +268,7 @@ FocusScope {
         videoIndices = vids
         refreshSaved()
         castExtras = localFilesBackend.get_cast_extras(current.path || "")
+        localFilesBackend.generate_extra_thumbs(castExtras)   // fill in missing extra art
 
         var bg = appCore.get_setting(moduleRoot.moduleId, "info_background")
         infoBg = (bg === undefined || bg === null || bg === "")
@@ -859,25 +873,19 @@ FocusScope {
                                 font.pixelSize: root.sh * 0.05
                             }
                         }
-                        Text {
+                        MarqueeText {
                             width: parent.width
                             text: modelData.title || ""
                             color: sel ? root.accentColor : root.primaryColor
-                            font.family: root.globalFont
-                            font.capitalization: Font.AllUppercase
-                            elide: Text.ElideRight
-                            maximumLineCount: 1
-                            font.pixelSize: root.sh * 0.0233333
+                            pixelSize: root.sh * 0.0233333
+                            active: sel   // scroll the full name while highlighted
                         }
-                        Text {
+                        MarqueeText {
                             width: parent.width
                             text: modelData.subtitle || ""
                             color: root.tertiaryColor
-                            font.family: root.globalFont
-                            font.capitalization: Font.AllUppercase
-                            elide: Text.ElideRight
-                            maximumLineCount: 1
-                            font.pixelSize: root.sh * 0.02
+                            pixelSize: root.sh * 0.02
+                            active: sel
                         }
                     }
 

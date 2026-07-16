@@ -1258,25 +1258,19 @@ FocusScope {
                                 font.pixelSize: root.sh * 0.05
                             }
                         }
-                        Text {
+                        MarqueeText {
                             width: parent.width
                             text: modelData.title || ""
                             color: sel ? root.accentColor : root.primaryColor
-                            font.family: root.globalFont
-                            font.capitalization: Font.AllUppercase
-                            elide: Text.ElideRight
-                            maximumLineCount: 1
-                            font.pixelSize: root.sh * 0.0233333 //~11
+                            pixelSize: root.sh * 0.0233333 //~11
+                            active: sel   // scroll the full name while highlighted
                         }
-                        Text {
+                        MarqueeText {
                             width: parent.width
                             text: modelData.subtitle || ""
                             color: root.tertiaryColor
-                            font.family: root.globalFont
-                            font.capitalization: Font.AllUppercase
-                            elide: Text.ElideRight
-                            maximumLineCount: 1
-                            font.pixelSize: root.sh * 0.02 //~10
+                            pixelSize: root.sh * 0.02 //~10
+                            active: sel
                         }
                     }
 
