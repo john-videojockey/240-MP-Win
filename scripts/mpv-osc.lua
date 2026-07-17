@@ -151,7 +151,7 @@ local function build_left_btns(has_sub, bar_w)
                        action=function() mp.command("seek -" .. SEEK_SECONDS) end}
     local paused = mp.get_property_native("pause", false)
     btns[#btns + 1] = {label=(paused and "PLAY" or "PAUSE"),
-                       width=math.floor(bar_w * 0.095),
+                       width=math.floor(bar_w * 0.095), play=true,
                        action=function() mp.command("no-osd cycle pause") end}
     btns[#btns + 1] = {label=">>", width=math.floor(bar_w * 0.05),
                        action=function() mp.command("seek " .. SEEK_SECONDS) end}
@@ -369,6 +369,12 @@ local function show_menu(timeout)
     menu_visible = true
     menu_shown_at = mp.get_time()
     focus_row    = 1
+    -- Default the highlight to Play/Pause rather than the leftmost button. The
+    -- button row is dynamic (SKIP / |< come and go), so locate it by its marker.
+    focus_btn    = 1
+    for i, b in ipairs(build_left_btns(false, 1000)) do
+        if b.play then focus_btn = i; break end
+    end
     draw_menu()
     update_timer = mp.add_periodic_timer(0.5, draw_menu)
     reset_idle_timer(timeout)

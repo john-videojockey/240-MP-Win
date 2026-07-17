@@ -5,6 +5,12 @@ All notable changes to 240-MP for Windows are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Player controls default to Play/Pause.** Revealing the on-screen controls now
+  highlights Play/Pause instead of the leftmost (Previous File) button.
+
 ## [0.2.0] - 2026-07-16
 
 ### Added
