@@ -313,7 +313,9 @@ local function hide_menu()
 end
 
 local function reset_idle_timer(timeout)
-    if idle_timer then idle_timer:kill() end
+    if idle_timer then idle_timer:kill(); idle_timer = nil end
+    -- Keep the controls up while paused — don't arm the auto-hide countdown.
+    if mp.get_property_native("pause", false) then return end
     idle_timer = mp.add_timeout(timeout or MENU_TIMEOUT, hide_menu)
 end
 
@@ -389,6 +391,18 @@ local function show_menu(timeout)
     mp.add_forced_key_binding("ESC",   "menu-esc",   hide_menu)
     mp.add_forced_key_binding("BS",    "menu-bs",    hide_menu)
 end
+
+-- While the controls are up, a pause holds them open (no countdown); unpausing
+-- restarts the auto-hide. Also refreshes the PLAY/PAUSE label immediately.
+mp.observe_property("pause", "bool", function(_, paused)
+    if not menu_visible then return end
+    if paused then
+        if idle_timer then idle_timer:kill(); idle_timer = nil end
+    else
+        reset_idle_timer(MENU_TIMEOUT)
+    end
+    draw_menu()
+end)
 
 local function toggle_menu()
     if menu_visible then hide_menu() else show_menu(MENU_TIMEOUT) end

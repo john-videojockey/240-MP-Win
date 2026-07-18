@@ -173,6 +173,11 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
          << QString("--log-file=%1").arg(m_logFilePath)
          << (hasOscScript ? "--osc=no" : "--osc=yes")
          << "--osd-level=0"
+         // A tap/click on the video otherwise starts a window drag, and on Windows
+         // that enters a modal move loop that briefly freezes rendering (looks like
+         // a stutter/pause) until release. The window is fullscreen + married, so
+         // dragging it is never wanted anyway.
+         << "--window-dragging=no"
          // Silence mpv's periodic terminal status line ("AV: .. A-V: .."). We
          // capture mpv's stdout/stderr to mirror real messages into the app log,
          // but that status line prints many times a second and would flood both
