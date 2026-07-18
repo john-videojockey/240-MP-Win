@@ -43,6 +43,11 @@ FocusScope {
     property int  actionCol: 0
     property bool episodeItem: (detail && detail.type === "episode") || item.type === "episode"
     property bool adjacentPending: false
+    // A PREV/NEXT swap carries the chosen audio/subtitle across episodes by
+    // language (volume/upscaler are per-show, so they persist on their own).
+    property bool   carryPending:   false
+    property string carryAudioLang: ""
+    property string carrySubLang:   "__off__"
 
     // Watched state (viewCount) and Continue Watching membership (viewOffset),
     // kept locally so the button labels flip without reloading the item.
@@ -76,6 +81,13 @@ FocusScope {
     function requestAdjacent(direction) {
         if (adjacentPending || !detail || !detail.ratingKey) return
         adjacentPending = true
+        // Capture the current audio/subtitle by language so the swapped episode
+        // keeps them instead of reverting to its own stored defaults.
+        var a = detail.audioStreams ? detail.audioStreams[audioIdx] : null
+        carryAudioLang = (a && a.language) ? a.language : ""
+        var s = detail.subtitleStreams ? detail.subtitleStreams[subtitleIdx] : null
+        carrySubLang = (subtitleIdx === 0 || !s) ? "__off__" : (s.language || "")
+        carryPending = true
         plexBackend.load_adjacent_episode(detail.ratingKey, direction)
     }
 
@@ -97,6 +109,25 @@ FocusScope {
             for (var j = 0; j < d.subtitleStreams.length; j++) {
                 if (d.subtitleStreams[j].id === d.selectedSubtitleId) { subtitleIdx = j; break }
             }
+        }
+        // On a PREV/NEXT swap, carry the previous audio/subtitle by language over
+        // the episode's defaults, and re-assert the (per-show) volume/upscaler as
+        // the active values for the next play.
+        if (carryPending) {
+            if (carryAudioLang !== "" && d.audioStreams) {
+                for (var ci = 0; ci < d.audioStreams.length; ci++)
+                    if (d.audioStreams[ci].language === carryAudioLang) { audioIdx = ci; break }
+            }
+            if (carrySubLang === "__off__") {
+                subtitleIdx = 0
+            } else if (carrySubLang !== "" && d.subtitleStreams) {
+                subtitleIdx = 0
+                for (var cj = 1; cj < d.subtitleStreams.length; cj++)
+                    if (d.subtitleStreams[cj].language === carrySubLang) { subtitleIdx = cj; break }
+            }
+            appCore.save_setting("", "mpv_upscaler_active", upscalers[upscalerIdx].id)
+            appCore.save_setting("", "mpv_volume_gain_active", String(volumeDb))
+            carryPending = false
         }
         // Theme song for this item (if enabled and one exists). An episode's own
         // detail carries no theme — only the show does — so fall back to the
@@ -149,6 +180,10 @@ FocusScope {
                 type: d.type || "episode",
                 title: d.title || "",
                 grandparentTitle: d.grandparentTitle || "",
+                // Keep the show key so titleKey() (per-show volume/upscaler) stays
+                // stable, and carry the show's theme (an episode carries none).
+                grandparentRatingKey: d.grandparentRatingKey || item.grandparentRatingKey || "",
+                theme: item.theme,
                 parentIndex: d.parentIndex,
                 index: d.index,
                 thumb: d.thumb || "",

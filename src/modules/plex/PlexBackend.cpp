@@ -1900,16 +1900,17 @@ void PlexBackend::load_adjacent_episode(const QString &currentRatingKey, int dir
         if (metaArr.isEmpty()) { emit adjacentEpisodeReady(direction, QVariantMap{}); return; }
         QJsonObject meta = metaArr[0].toObject();
 
-        const QString seasonKey    = meta["parentRatingKey"].toString();
-        const int     currentIndex = meta["index"].toInt();
-        const QString currentFile  = mediaFilePath(meta);
-        if (meta["type"].toString() != "episode" || seasonKey.isEmpty()) {
+        const QString showKey     = meta["grandparentRatingKey"].toString();
+        const QString currentFile = mediaFilePath(meta);
+        if (meta["type"].toString() != "episode" || showKey.isEmpty()) {
             emit adjacentEpisodeReady(direction, QVariantMap{}); return;
         }
 
-        auto *childReply = plexGet(QUrl(uri + "/library/metadata/" + seasonKey + "/children"), token);
+        // Every episode of the show, in season-then-episode order — spanning
+        // seasons, so stepping off the end of one season lands in the next.
+        auto *childReply = plexGet(QUrl(uri + "/library/metadata/" + showKey + "/allLeaves"), token);
         connect(childReply, &QNetworkReply::finished, this,
-                [this, childReply, currentRatingKey, currentIndex, currentFile, direction, uri, token]() {
+                [this, childReply, currentRatingKey, currentFile, direction, uri, token]() {
             childReply->deleteLater();
             if (childReply->error() != QNetworkReply::NoError) {
                 if (childReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 498) {
@@ -1919,21 +1920,19 @@ void PlexBackend::load_adjacent_episode(const QString &currentRatingKey, int dir
             }
             QJsonArray eps = QJsonDocument::fromJson(childReply->readAll())
                              .object()["MediaContainer"].toObject()["Metadata"].toArray();
-            // Nearest sibling in the requested direction, skipping entries
-            // backed by the same physical file (stacked multi-episode files).
+            // Locate the current episode, then take the nearest neighbour in the
+            // requested direction, skipping entries backed by the same physical
+            // file (stacked multi-episode files).
+            int pos = -1;
+            for (int i = 0; i < eps.size(); ++i)
+                if (eps[i].toObject()["ratingKey"].toString() == currentRatingKey) { pos = i; break; }
+            if (pos < 0) { emit adjacentEpisodeReady(direction, QVariantMap{}); return; }
             QString bestKey;
-            int bestIndex = 0;
-            for (const auto &ev : eps) {
-                QJsonObject e = ev.toObject();
-                int idx = e["index"].toInt();
-                const QString file = mediaFilePath(e);
-                const bool sameFile = (!currentFile.isEmpty() && file == currentFile);
-                if (sameFile) continue;
-                const bool candidate = (direction > 0) ? idx > currentIndex : idx < currentIndex;
-                if (!candidate) continue;
-                const bool better = bestKey.isEmpty()
-                                    || ((direction > 0) ? idx < bestIndex : idx > bestIndex);
-                if (better) { bestIndex = idx; bestKey = e["ratingKey"].toString(); }
+            for (int i = pos + direction; i >= 0 && i < eps.size(); i += direction) {
+                const QJsonObject e = eps[i].toObject();
+                if (!currentFile.isEmpty() && mediaFilePath(e) == currentFile) continue;
+                bestKey = e["ratingKey"].toString();
+                break;
             }
             if (bestKey.isEmpty()) { emit adjacentEpisodeReady(direction, QVariantMap{}); return; }
 
