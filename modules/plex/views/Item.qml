@@ -786,6 +786,31 @@ FocusScope {
                     }
                 }
             }
+
+            // Episodes browser (shows only) — a full-width button directly under
+            // the WATCHED/TRACKED actions, matching the play cluster width.
+            Rectangle {
+                id: episodesBtn
+                visible: detailRoot.episodeItem
+                property bool sel: focusRow === 2
+                width: root.sw * 0.1875
+                height: root.sh * 0.05
+                color: sel ? root.accentColor : root.surfaceColor
+                border.color: sel ? root.accentColor : root.tertiaryColor
+                border.width: root.sh * 0.003125 //2
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: { if (episodesBtn.sel) detailRoot.openEpisodes(); else focusRow = 2 }
+                }
+                Text {
+                    anchors.centerIn: parent
+                    text: "EPISODES"
+                    color: episodesBtn.sel ? root.surfaceColor : root.primaryColor
+                    font.family: root.globalFont
+                    font.pixelSize: root.sh * 0.025 //12
+                }
+            }
             }
 
             Column {
@@ -895,44 +920,12 @@ FocusScope {
             }
         }
 
-        // EPISODES row — opens the season/episode browser (shows only), directly
-        // below the WATCHED/TRACKED actions.
-        Item {
-            id: episodesRow
-            visible: detailRoot.episodeItem
-            anchors.top: itemDetails.bottom
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.topMargin: root.sh * 0.0083333
-            height: visible ? root.sh * 0.048 : 0
-
-            MouseArea {
-                anchors.fill: parent
-                onClicked: { if (focusRow === 2) detailRoot.openEpisodes(); else focusRow = 2 }
-            }
-            Rectangle { anchors.fill: parent; color: focusRow === 2 ? root.accentColor : "transparent" }
-            Text {
-                text: "Episodes"
-                color: focusRow === 2 ? root.surfaceColor : root.primaryColor
-                font.family: root.globalFont; font.capitalization: Font.AllUppercase
-                anchors.left: parent.left; anchors.leftMargin: root.sw * 0.009375
-                anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375
-            }
-            Text {
-                text: "►"
-                color: focusRow === 2 ? root.surfaceColor : root.tertiaryColor
-                font.family: root.globalFont
-                anchors.right: parent.right; anchors.rightMargin: root.sw * 0.009375
-                anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333
-            }
-        }
-
         // AUDIO row — the playback settings begin directly under the details, with
         // no "Playback Settings:" label or gap (compact, like the Local Files view).
         Item {
             id: audioRow
             visible: detail && detail.audioStreams && detail.audioStreams.length > 0
-            anchors.top: episodesRow.bottom
+            anchors.top: itemDetails.bottom
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.topMargin: root.sh * 0.0083333
