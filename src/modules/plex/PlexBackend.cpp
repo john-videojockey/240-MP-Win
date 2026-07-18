@@ -2022,6 +2022,68 @@ void PlexBackend::fetch_markers(const QString &ratingKey) {
     });
 }
 
+void PlexBackend::load_show_episodes(const QString &showKey) {
+    QString uri = serverUrl(), token = serverToken();
+    // Show metadata first (synopsis / title / art / theme for the header).
+    auto *showReply = plexGet(QUrl(uri + "/library/metadata/" + showKey), token);
+    connect(showReply, &QNetworkReply::finished, this, [this, showReply, showKey, uri, token]() {
+        showReply->deleteLater();
+        QVariantMap out{{"title", ""}, {"summary", ""}, {"art", ""}, {"theme", ""}};
+        if (showReply->error() == QNetworkReply::NoError) {
+            const QJsonArray sa = QJsonDocument::fromJson(showReply->readAll())
+                                  .object()["MediaContainer"].toObject()["Metadata"].toArray();
+            if (!sa.isEmpty()) {
+                const QJsonObject s = sa[0].toObject();
+                out["title"]   = s["title"].toString();
+                out["summary"] = s["summary"].toString();
+                out["art"]     = s["art"].toString();
+                out["theme"]   = s["theme"].toString();
+            }
+        }
+        // Then every episode, grouped by season (QMap keeps seasons in order).
+        auto *leavesReply = plexGet(QUrl(uri + "/library/metadata/" + showKey + "/allLeaves"), token);
+        connect(leavesReply, &QNetworkReply::finished, this,
+                [this, leavesReply, showKey, out]() mutable {
+            leavesReply->deleteLater();
+            QMap<int, QVariantList> epsBySeason;
+            QMap<int, QString> titleBySeason;
+            if (leavesReply->error() == QNetworkReply::NoError) {
+                const QJsonArray eps = QJsonDocument::fromJson(leavesReply->readAll())
+                                       .object()["MediaContainer"].toObject()["Metadata"].toArray();
+                for (const auto &ev : eps) {
+                    const QJsonObject e = ev.toObject();
+                    const int sn = e["parentIndex"].toInt();
+                    epsBySeason[sn].append(QVariantMap{
+                        {"ratingKey",            e["ratingKey"].toString()},
+                        {"type",                 QStringLiteral("episode")},
+                        {"title",                e["title"].toString()},
+                        {"index",                e["index"].toInt()},
+                        {"parentIndex",          sn},
+                        {"thumb",                e["thumb"].toString()},
+                        {"grandparentRatingKey", e["grandparentRatingKey"].toString()},
+                        {"grandparentTitle",     e["grandparentTitle"].toString()},
+                        {"art",                  out["art"]},
+                        {"theme",                out["theme"]},
+                        {"viewCount",            e["viewCount"].toInt()},
+                    });
+                    if (!titleBySeason.contains(sn))
+                        titleBySeason[sn] = e["parentTitle"].toString();
+                }
+            }
+            QVariantList seasons;
+            for (auto it = epsBySeason.constBegin(); it != epsBySeason.constEnd(); ++it) {
+                seasons.append(QVariantMap{
+                    {"season",   it.key()},
+                    {"title",    titleBySeason.value(it.key(), QStringLiteral("Season %1").arg(it.key()))},
+                    {"episodes", it.value()},
+                });
+            }
+            out["seasons"] = seasons;
+            emit showEpisodesReady(showKey, out);
+        });
+    });
+}
+
 void PlexBackend::play_extra(const QString &ratingKey, const QString &sessionId) {
     const QString uri = serverUrl(), token = serverToken();
     auto *metaReply = plexGet(QUrl(uri + "/library/metadata/" + ratingKey), token);

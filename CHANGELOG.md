@@ -5,6 +5,19 @@ All notable changes to 240-MP for Windows are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Plex Episodes browser.** The info screen has a new **Episodes** row (below the
+  Watched/Tracked buttons) opening a season-by-season view — the show synopsis on
+  top, then one screenshot row per season under a season header; pick an episode to
+  open its info.
+
+### Changed
+- **Plex PREV/NEXT crosses seasons** on the info screen (it now walks the whole
+  show rather than only the current season), and carries the chosen audio/subtitle
+  by language and the per-show volume/upscaler across episodes.
+
 ## [0.3.0] - 2026-07-18
 
 ### Added
