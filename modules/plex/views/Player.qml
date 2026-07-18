@@ -55,8 +55,30 @@ FocusScope {
     property string carryAudioLang:     ""        // language code of the chosen audio track
     property string carrySubLang:       "__off__" // language code, or "__off__" when subtitles are off
 
+    // Skip Intro (Plex intro markers). intro_skip is Off / Auto / Button.
+    property var    segments:         []
+    property var    activeSegment:    null
+    property bool   skipPromptShown:  false
+    property bool   introAutoSkipped: false
+    property string introSkipSetting: "Off"
+    property bool   markersFetched:   false
+
     property int lastKnownPositionMs: 0
     property int lastKnownDurationMs: 0
+
+    function findActiveSegment(ms) {
+        for (var i = 0; i < segments.length; i++)
+            if (ms >= segments[i].startMs && ms < segments[i].endMs) return segments[i]
+        return null
+    }
+    function resetSkipState() {
+        segments = []
+        activeSegment = null
+        skipPromptShown = false
+        introAutoSkipped = false
+        markersFetched = false
+        mpvController.clearOsdPrompt()
+    }
 
     focus: true
 
@@ -252,6 +274,9 @@ FocusScope {
     Connections {
         target: plexBackend
         function onErrorOccurred(msg) { console.log("[Player] Backend error: " + msg) }
+        function onSegmentsReady(rk, segs) {
+            if (String(rk) === String(playerRoot.ratingKey)) playerRoot.segments = segs
+        }
         function onStreamUrlReady(url, plexToken) {
             if (pendingNextEpisode) {
                 // Stream URL for the auto-advanced next episode just arrived.
@@ -346,6 +371,7 @@ FocusScope {
         lastKnownPositionMs  = 0
         lastKnownDurationMs  = 0
         sessionId            = newSessionId()
+        resetSkipState()   // new episode → re-fetch its intro markers, drop any prompt
 
         // Repoint the BACK target so exiting returns to THIS episode's detail
         // screen, not the one we auto-advanced from. Item.qml reloads from
@@ -394,6 +420,46 @@ FocusScope {
                 // First position update means mpv is up and playing — drop the
                 // loading indicator (mpv's own window now covers the screen).
                 playerRoot.playbackStarted = true
+
+                // Skip Intro: once playback is up, pull the intro markers; then
+                // watch for the intro segment and auto-skip or show the OSC button.
+                if (!playerRoot.markersFetched && playerRoot.introSkipSetting !== "Off"
+                    && playerRoot.episodeNav && playerRoot.ratingKey) {
+                    playerRoot.markersFetched = true
+                    plexBackend.fetch_markers(playerRoot.ratingKey)
+                }
+                if (playerRoot.segments.length > 0) {
+                    var seg = playerRoot.findActiveSegment(ms)
+                    if (seg && seg !== playerRoot.activeSegment) {
+                        playerRoot.activeSegment = seg
+                        if (playerRoot.introSkipSetting === "Auto") {
+                            if (!playerRoot.introAutoSkipped) {
+                                playerRoot.introAutoSkipped = true
+                                mpvController.seekTo(seg.endMs)
+                            }
+                        } else if (playerRoot.introSkipSetting === "Button" && !playerRoot.skipPromptShown) {
+                            playerRoot.skipPromptShown = true
+                            mpvController.showOsdSkipPrompt()
+                        }
+                    } else if (!seg && playerRoot.activeSegment) {
+                        // Left the intro naturally — drop the prompt.
+                        playerRoot.activeSegment = null
+                        playerRoot.skipPromptShown = false
+                        mpvController.clearOsdPrompt()
+                    }
+                }
+            }
+        }
+
+        // The OSC's SKIP button was activated: jump past the current intro.
+        function onSkipRequested() {
+            if (playerRoot.activeSegment) {
+                playerRoot.introAutoSkipped = true
+                mpvController.seekTo(playerRoot.activeSegment.endMs)
+                mpvController.clearOsdPrompt()
+                // Leave activeSegment set; the seek moves past it and the next
+                // position update clears it naturally (nulling now would re-detect
+                // the same segment at the pre-seek position and re-arm the prompt).
             }
         }
 
@@ -474,6 +540,7 @@ FocusScope {
         // once the user touches it, but accept the legacy "ON" string too.
         var autoplayRaw = appCore.get_setting(moduleRoot.moduleId, "autoplay_next_episode")
         autoplayNext  = (autoplayRaw === true || autoplayRaw === "ON")
+        introSkipSetting = appCore.get_setting(moduleRoot.moduleId, "intro_skip") || "Off"
 
         if (resumeSetting === "ask" && viewOffset > 0) {
             overlayVisible = true

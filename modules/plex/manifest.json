@@ -98,6 +98,15 @@
       "requires_auth": true
     },
     {
+      "key": "intro_skip",
+      "label": "Skip Intro",
+      "type": "list_single",
+      "options": ["Off", "Auto", "Button"],
+      "default": "Off",
+      "requires_auth": true,
+      "description": "Show a Skip Intro button (or auto-skip) using the server's intro markers. Requires Plex's intro detection to have run for the show."
+    },
+    {
       "key": "show_themes",
       "label": "Show Theme Music",
       "type": "toggle",

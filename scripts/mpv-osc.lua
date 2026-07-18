@@ -371,11 +371,14 @@ local function show_menu(timeout)
     menu_visible = true
     menu_shown_at = mp.get_time()
     focus_row    = 1
-    -- Default the highlight to Play/Pause rather than the leftmost button. The
-    -- button row is dynamic (SKIP / |< come and go), so locate it by its marker.
-    focus_btn    = 1
-    for i, b in ipairs(build_left_btns(false, 1000)) do
-        if b.play then focus_btn = i; break end
+    -- Default the highlight to Play/Pause rather than the leftmost button — unless
+    -- a Skip prompt is up, where the skip-overlay-state handler already parked the
+    -- highlight on SKIP. The button row is dynamic, so find Play/Pause by marker.
+    if not skip_active then
+        focus_btn = 1
+        for i, b in ipairs(build_left_btns(false, 1000)) do
+            if b.play then focus_btn = i; break end
+        end
     end
     draw_menu()
     update_timer = mp.add_periodic_timer(0.5, draw_menu)

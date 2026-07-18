@@ -1993,6 +1993,36 @@ void PlexBackend::load_item_detail(const QString &ratingKey) {
     });
 }
 
+void PlexBackend::fetch_markers(const QString &ratingKey) {
+    QString uri = serverUrl(), token = serverToken();
+    auto *reply = plexGet(QUrl(uri + "/library/metadata/" + ratingKey + "?includeMarkers=1"), token);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, ratingKey]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 498) {
+                handle498([this, ratingKey]{ fetch_markers(ratingKey); }); return;
+            }
+            emit segmentsReady(ratingKey, {});   // best-effort: no markers, no button
+            return;
+        }
+        const QJsonArray metaArr = QJsonDocument::fromJson(reply->readAll())
+                                   .object()["MediaContainer"].toObject()["Metadata"].toArray();
+        QVariantList segments;
+        if (!metaArr.isEmpty()) {
+            const QJsonArray markers = metaArr[0].toObject()["Marker"].toArray();
+            for (const auto &mv : markers) {
+                const QJsonObject m = mv.toObject();
+                if (m["type"].toString() != QStringLiteral("intro")) continue;
+                const int startMs = m["startTimeOffset"].toVariant().toInt();
+                const int endMs   = m["endTimeOffset"].toVariant().toInt();
+                if (endMs > startMs)
+                    segments.append(QVariantMap{{"type", "Intro"}, {"startMs", startMs}, {"endMs", endMs}});
+            }
+        }
+        emit segmentsReady(ratingKey, segments);
+    });
+}
+
 void PlexBackend::play_extra(const QString &ratingKey, const QString &sessionId) {
     const QString uri = serverUrl(), token = serverToken();
     auto *metaReply = plexGet(QUrl(uri + "/library/metadata/" + ratingKey), token);

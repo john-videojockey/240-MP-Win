@@ -7,9 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Skip Intro (Plex).** Using the server's intro markers, the player can auto-skip
+  the intro or show a Skip button — chosen in Plex Settings → Skip Intro
+  (Off / Auto / Button). Requires Plex's intro detection to have run for the show.
+
 ### Changed
 - **Player controls default to Play/Pause.** Revealing the on-screen controls now
   highlights Play/Pause instead of the leftmost (Previous File) button.
+- **Player controls stay visible while paused** instead of auto-hiding after a few
+  seconds.
+
+### Fixed
+- A tap to reveal the player controls no longer briefly freezes the video (mpv's
+  default window-dragging entered a modal move loop on Windows).
 
 ## [0.2.0] - 2026-07-16
 

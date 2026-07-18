@@ -74,6 +74,9 @@ public:
 
     // Playback
     Q_INVOKABLE void load_item_detail(const QString &ratingKey);
+    // Fetch the item's intro markers (Plex's server-side intro detection) and emit
+    // segmentsReady(ratingKey, [{type:"Intro", startMs, endMs}]) — drives Skip Intro.
+    Q_INVOKABLE void fetch_markers(const QString &ratingKey);
     Q_INVOKABLE void request_transcode(const QString &ratingKey, const QString &partKey,
                                        const QString &sessionId,
                                        const QString &audioId, const QString &subtitleId,
@@ -142,6 +145,7 @@ signals:
 
     void itemLoaded(const QVariant &detail);
     void relatedReady(const QVariant &items);
+    void segmentsReady(const QString &ratingKey, const QVariantList &segments);
     void streamUrlReady(const QString &url, const QString &plexToken);
     // Full set of Player.qml params for a resolved extra (streamUrl, plexToken,
     // title, duration, …). The info view merges these with playback defaults.
