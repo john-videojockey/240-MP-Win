@@ -5,13 +5,13 @@ All notable changes to 240-MP for Windows are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-07-19
 
 ### Added
-- **Plex Episodes browser.** The info screen has a new **Episodes** row (below the
-  Watched/Tracked buttons) opening a season-by-season view — the show synopsis on
-  top, then one screenshot row per season under a season header; pick an episode to
-  open its info.
+- **Plex Episodes browser.** An **EPISODES** button beside the Watched/Tracked
+  actions opens a season-by-season view — the show synopsis on top (auto-scrolling
+  when it runs long), then one screenshot row per season under a `SEASON X (YEAR)`
+  header; pick an episode to open its info.
 
 ### Changed
 - **Plex PREV/NEXT crosses seasons** on the info screen (it now walks the whole
@@ -90,6 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Keyboard, gamepad (SDL2) and touchscreen input; per-user install with an
     in-app self-updater; one-line PowerShell installer.
 
+[0.4.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/john-videojockey/240-MP-Win/compare/v0.1.0...v0.1.1
