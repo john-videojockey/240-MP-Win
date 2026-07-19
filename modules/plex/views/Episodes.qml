@@ -78,22 +78,42 @@ FocusScope {
         anchors.leftMargin: root.sw * 0.125
     }
 
-    // Synopsis
-    Text {
+    // Synopsis — capped at ~3 lines; when it overflows it auto-scrolls so the
+    // whole thing is readable hands-free (mirrors the info screen's summary).
+    Item {
         id: synopsis
-        text: episodesRoot.summary
-        visible: text !== ""
-        color: root.secondaryColor
-        font.family: root.globalFont
+        visible: synopsisText.text !== ""
         anchors.top: parent.top
         anchors.topMargin: root.sh * 0.235
         anchors.left: parent.left
         anchors.leftMargin: root.sw * 0.125
         width: root.sw * 0.75
-        wrapMode: Text.WordWrap
-        maximumLineCount: 3
-        elide: Text.ElideRight
-        font.pixelSize: root.sh * 0.0291667
+        height: Math.min(root.sh * 0.11, synopsisText.implicitHeight)
+        clip: true
+
+        Text {
+            id: synopsisText
+            width: parent.width
+            text: episodesRoot.summary
+            color: root.secondaryColor
+            font.family: root.globalFont
+            wrapMode: Text.WordWrap
+            font.pixelSize: root.sh * 0.0291667
+        }
+
+        SequentialAnimation {
+            running: synopsisText.implicitHeight > synopsis.height
+            loops: Animation.Infinite
+            onRunningChanged: if (!running) synopsisText.y = 0
+            PauseAnimation { duration: 3000 }
+            NumberAnimation {
+                target: synopsisText; property: "y"
+                to: synopsis.height - synopsisText.implicitHeight
+                duration: Math.abs(to) * 120
+            }
+            PauseAnimation { duration: 4000 }
+            PropertyAction { target: synopsisText; property: "y"; value: 0 }
+        }
     }
 
     // Season rows
@@ -130,6 +150,17 @@ FocusScope {
                 font.capitalization: Font.AllUppercase
                 anchors.top: parent.top
                 anchors.left: parent.left
+                font.pixelSize: root.sh * 0.03
+            }
+
+            // Season year, opposite the header.
+            Text {
+                text: (modelData.year || 0) > 0 ? modelData.year : ""
+                visible: text !== ""
+                color: seasonDelegate.isCurrentSeason ? root.accentColor : root.tertiaryColor
+                font.family: root.globalFont
+                anchors.top: parent.top
+                anchors.right: parent.right
                 font.pixelSize: root.sh * 0.03
             }
 

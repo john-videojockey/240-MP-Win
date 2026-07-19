@@ -2047,6 +2047,7 @@ void PlexBackend::load_show_episodes(const QString &showKey) {
             leavesReply->deleteLater();
             QMap<int, QVariantList> epsBySeason;
             QMap<int, QString> titleBySeason;
+            QMap<int, int> yearBySeason;
             if (leavesReply->error() == QNetworkReply::NoError) {
                 const QJsonArray eps = QJsonDocument::fromJson(leavesReply->readAll())
                                        .object()["MediaContainer"].toObject()["Metadata"].toArray();
@@ -2068,6 +2069,13 @@ void PlexBackend::load_show_episodes(const QString &showKey) {
                     });
                     if (!titleBySeason.contains(sn))
                         titleBySeason[sn] = e["parentTitle"].toString();
+                    // Season year = the first episode that carries a real air year
+                    // (E1's year is the season premiere; fall back to the date).
+                    if (!yearBySeason.contains(sn)) {
+                        int y = e["year"].toInt();
+                        if (y == 0) y = e["originallyAvailableAt"].toString().left(4).toInt();
+                        if (y != 0) yearBySeason[sn] = y;
+                    }
                 }
             }
             QVariantList seasons;
@@ -2075,6 +2083,7 @@ void PlexBackend::load_show_episodes(const QString &showKey) {
                 seasons.append(QVariantMap{
                     {"season",   it.key()},
                     {"title",    titleBySeason.value(it.key(), QStringLiteral("Season %1").arg(it.key()))},
+                    {"year",     yearBySeason.value(it.key(), 0)},
                     {"episodes", it.value()},
                 });
             }
