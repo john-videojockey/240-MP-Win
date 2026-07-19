@@ -144,23 +144,13 @@ FocusScope {
 
             Text {
                 id: seasonLabel
-                text: modelData.title || ("SEASON " + modelData.season)
+                text: (modelData.title || ("SEASON " + modelData.season))
+                      + ((modelData.year || 0) > 0 ? " (" + modelData.year + ")" : "")
                 color: seasonDelegate.isCurrentSeason ? root.accentColor : root.secondaryColor
                 font.family: root.globalFont
                 font.capitalization: Font.AllUppercase
                 anchors.top: parent.top
                 anchors.left: parent.left
-                font.pixelSize: root.sh * 0.03
-            }
-
-            // Season year, opposite the header.
-            Text {
-                text: (modelData.year || 0) > 0 ? modelData.year : ""
-                visible: text !== ""
-                color: seasonDelegate.isCurrentSeason ? root.accentColor : root.tertiaryColor
-                font.family: root.globalFont
-                anchors.top: parent.top
-                anchors.right: parent.right
                 font.pixelSize: root.sh * 0.03
             }
 
