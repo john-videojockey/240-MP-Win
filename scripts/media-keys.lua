@@ -127,8 +127,8 @@ mp.add_forced_key_binding("MUTE",        "mk-mute",     function() mp.command("n
 mp.add_forced_key_binding("PLAYPAUSE", "mk-playpause", function() mp.command("cycle pause") end)
 mp.add_forced_key_binding("STOP",      "mk-stop",      function() mp.command("quit") end)
 
-mp.add_forced_key_binding("FORWARD", "mk-forward", function() seek_with_menu("no-osd seek " .. SEEK_FORWARD) end)
-mp.add_forced_key_binding("REWIND",  "mk-rewind",  function() seek_with_menu("no-osd seek -" .. SEEK_BACK) end)
+mp.add_forced_key_binding("FORWARD", "mk-forward", function() seek_with_menu("no-osd seek " .. SEEK_FORWARD .. " exact") end)
+mp.add_forced_key_binding("REWIND",  "mk-rewind",  function() seek_with_menu("no-osd seek -" .. SEEK_BACK .. " exact") end)
 
 mp.add_forced_key_binding("NEXT", "mk-next", function() seek_with_menu("no-osd add chapter 1") end)
 mp.add_forced_key_binding("PREV", "mk-prev", function() seek_with_menu("no-osd add chapter -1") end)

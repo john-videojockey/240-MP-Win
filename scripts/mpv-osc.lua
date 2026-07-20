@@ -147,14 +147,18 @@ local function build_left_btns(has_sub, bar_w)
     if show_nav then
         btns[#btns + 1] = {label="|<", width=math.floor(bar_w * 0.05), action=nav_prev}
     end
+    -- "exact" (hr-seek) so the seek lands on a decoded frame and repaints it.
+    -- A default relative seek is inexact (keyframe) and, under D3D11VA hwdec,
+    -- can leave the window black until the next frame — visible as a quick tap
+    -- flashing to black, and staying black while paused.
     btns[#btns + 1] = {label="<<", width=math.floor(bar_w * 0.05),
-                       action=function() mp.command("seek -" .. SEEK_SECONDS) end}
+                       action=function() mp.command("seek -" .. SEEK_SECONDS .. " exact") end}
     local paused = mp.get_property_native("pause", false)
     btns[#btns + 1] = {label=(paused and "PLAY" or "PAUSE"),
                        width=math.floor(bar_w * 0.095), play=true,
                        action=function() mp.command("no-osd cycle pause") end}
     btns[#btns + 1] = {label=">>", width=math.floor(bar_w * 0.05),
-                       action=function() mp.command("seek " .. SEEK_SECONDS) end}
+                       action=function() mp.command("seek " .. SEEK_SECONDS .. " exact") end}
     if show_nav then
         btns[#btns + 1] = {label=">|", width=math.floor(bar_w * 0.05), action=nav_next}
     end
@@ -328,7 +332,7 @@ local function update_nav(action)
         focus_row = 1
     elseif action == "left" then
         if focus_row == 0 then
-            mp.command("seek -" .. SEEK_SECONDS)
+            mp.command("seek -" .. SEEK_SECONDS .. " exact")
         else
             local g = layout()
             local total = g and (#g.btns + 1) or 1
@@ -336,7 +340,7 @@ local function update_nav(action)
         end
     elseif action == "right" then
         if focus_row == 0 then
-            mp.command("seek " .. SEEK_SECONDS)
+            mp.command("seek " .. SEEK_SECONDS .. " exact")
         else
             local g = layout()
             local total = g and (#g.btns + 1) or 1
