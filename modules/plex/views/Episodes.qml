@@ -78,8 +78,9 @@ FocusScope {
         anchors.leftMargin: root.sw * 0.125
     }
 
-    // Synopsis — capped at ~3 lines; when it overflows it auto-scrolls so the
-    // whole thing is readable hands-free (mirrors the info screen's summary).
+    // Synopsis — up to three whole lines; longer text auto-scrolls (by whole
+    // lines, so a partial line is never left clipped) to stay readable hands-free,
+    // mirroring the info screen's summary.
     Item {
         id: synopsis
         visible: synopsisText.text !== ""
@@ -88,7 +89,13 @@ FocusScope {
         anchors.left: parent.left
         anchors.leftMargin: root.sw * 0.125
         width: root.sw * 0.75
-        height: Math.min(root.sh * 0.11, synopsisText.implicitHeight)
+        // Snap the viewport to a whole number of lines: derive the per-line height
+        // from the laid-out text and cap at three lines. This makes the scroll step
+        // line by line instead of nudging by the ~5% sliver a fixed pixel cap left.
+        property real lineH: synopsisText.lineCount > 0
+                             ? synopsisText.contentHeight / synopsisText.lineCount
+                             : synopsisText.font.pixelSize * 1.3
+        height: Math.min(3, synopsisText.lineCount) * lineH
         clip: true
 
         Text {
@@ -102,13 +109,13 @@ FocusScope {
         }
 
         SequentialAnimation {
-            running: synopsisText.implicitHeight > synopsis.height
+            running: synopsisText.lineCount > 3
             loops: Animation.Infinite
             onRunningChanged: if (!running) synopsisText.y = 0
             PauseAnimation { duration: 3000 }
             NumberAnimation {
                 target: synopsisText; property: "y"
-                to: synopsis.height - synopsisText.implicitHeight
+                to: synopsis.height - synopsisText.contentHeight
                 duration: Math.abs(to) * 120
             }
             PauseAnimation { duration: 4000 }
