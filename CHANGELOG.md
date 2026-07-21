@@ -5,6 +5,16 @@ All notable changes to 240-MP for Windows are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-07-21
+
+### Fixed
+- **Seeking no longer flashes the video to black.** The `<<`/`>>` controls, the
+  seek bar's LEFT/RIGHT, and the Fast-Forward/Rewind media keys now do exact
+  seeks, so the destination frame is drawn immediately instead of a black frame
+  (which under hardware decode could linger, and stayed black while paused).
+- **Episodes synopsis scroll** now steps a whole line at a time and no longer
+  clips a sliver of the last line.
+
 ## [0.4.0] - 2026-07-19
 
 ### Added
@@ -90,6 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Keyboard, gamepad (SDL2) and touchscreen input; per-user install with an
     in-app self-updater; one-line PowerShell installer.
 
+[0.4.1]: https://github.com/john-videojockey/240-MP-Win/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.1.1...v0.2.0
