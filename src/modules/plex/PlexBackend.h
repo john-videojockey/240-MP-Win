@@ -44,7 +44,7 @@ public:
     // each hub a { title, key, sectionType, items } map (empty hubs dropped).
     Q_INVOKABLE void load_home_hubs();
     Q_INVOKABLE void load_continue_watching();
-    // Plex-account Watchlist (account-level, via metadata.provider.plex.tv).
+    // Plex-account Watchlist (account-level, via discover.provider.plex.tv).
     // load_watchlist emits watchlistLoaded(items) with only the titles present on
     // the current server (each resolved to its local item by GUID). set_watchlist
     // toggles membership and check_watchlist reports it — both emit

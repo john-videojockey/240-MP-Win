@@ -1309,7 +1309,7 @@ void PlexBackend::fetchWatchlistLocal(int limit, std::function<void(QVariantList
     const QString accToken = accountToken();
     if (accToken.isEmpty()) { callback({}); return; }
     // The Watchlist is account-level, served by Plex Discover (not the PMS).
-    QUrl wl("https://metadata.provider.plex.tv/library/sections/watchlist/all");
+    QUrl wl("https://discover.provider.plex.tv/library/sections/watchlist/all");
     QUrlQuery wq;
     wq.addQueryItem("X-Plex-Container-Start", "0");
     wq.addQueryItem("X-Plex-Container-Size", QString::number(limit));
@@ -1372,7 +1372,7 @@ void PlexBackend::set_watchlist(const QString &guid, bool add) {
         return;
     }
     const QString action = add ? "addToWatchlist" : "removeFromWatchlist";
-    QUrl u("https://metadata.provider.plex.tv/actions/" + action);
+    QUrl u("https://discover.provider.plex.tv/actions/" + action);
     QUrlQuery q; q.addQueryItem("ratingKey", rk); u.setQuery(q);
     auto *r = plexPut(u, accToken);
     connect(r, &QNetworkReply::finished, this, [this, r, guid, add]() {
@@ -1391,7 +1391,7 @@ void PlexBackend::check_watchlist(const QString &guid) {
     if (accToken.isEmpty() || !guid.startsWith("plex://")) {
         emit watchlistStateReady(guid, false); return;
     }
-    QUrl wl("https://metadata.provider.plex.tv/library/sections/watchlist/all");
+    QUrl wl("https://discover.provider.plex.tv/library/sections/watchlist/all");
     QUrlQuery q; q.addQueryItem("X-Plex-Container-Size", "400"); wl.setQuery(q);
     auto *r = plexGet(wl, accToken);
     connect(r, &QNetworkReply::finished, this, [this, r, guid]() {
