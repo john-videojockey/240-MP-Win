@@ -1452,9 +1452,9 @@ void PlexBackend::load_home_hubs() {
             libs = ordered;
         }
 
-        // Slots: 0 = Watchlist (pinned), 1.. = libraries.
+        // Slots: 0 = Continue Watching (pinned), 1.. = libraries.
         auto *hubs = new QVariantList();
-        hubs->append(QVariantMap{{"title","WATCHLIST"},{"key","watchlist"},
+        hubs->append(QVariantMap{{"title","CONTINUE WATCHING"},{"key","continue_watching"},
                                  {"sectionType",QVariant()},{"items",QVariantList()}});
         for (const auto &l : libs)
             hubs->append(QVariantMap{{"title",l.title},{"key",l.key},
@@ -1463,9 +1463,9 @@ void PlexBackend::load_home_hubs() {
         auto *pending = new int(hubs->size());
         auto done = [this, hubs, pending]() {
             if (--(*pending) != 0) return;
-            // Drop only an empty Watchlist row (slot 0); keep library rows even when
-            // nothing is recently added, so every library stays reachable from Home
-            // via its title.
+            // Drop only an empty Continue Watching row (slot 0); keep library rows
+            // even when nothing is recently added, so every library stays reachable
+            // from Home via its title.
             QVariantList out;
             for (int i = 0; i < hubs->size(); ++i) {
                 const QVariantMap h = (*hubs)[i].toMap();
@@ -1480,8 +1480,16 @@ void PlexBackend::load_home_hubs() {
             QVariantMap h = (*hubs)[slot].toMap(); h["items"] = items; (*hubs)[slot] = h;
         };
 
-        // Watchlist (slot 0): the account watchlist, resolved to local items.
-        fetchWatchlistLocal(20, [fill, done](QVariantList items) mutable {
+        // Continue Watching.
+        auto *cwReply = plexGet(QUrl(uri + "/hubs/continueWatching"), token);
+        connect(cwReply, &QNetworkReply::finished, this, [this, cwReply, fill, done]() {
+            cwReply->deleteLater();
+            QVariantList items;
+            if (cwReply->error() == QNetworkReply::NoError)
+                for (const auto &hv : QJsonDocument::fromJson(cwReply->readAll())
+                         .object()["MediaContainer"].toObject()["Hub"].toArray())
+                    for (const auto &mv : hv.toObject()["Metadata"].toArray())
+                        items.append(formatItem(mv.toObject()));
             fill(0, items);
             done();
         });
