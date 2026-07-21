@@ -65,6 +65,12 @@ public:
     // ignores a plain requestActivate from a process that isn't already foreground).
     Q_INVOKABLE void raiseAppWindow();
 
+    // Nudge the player to re-present after a monitor-power-on. If mpv's D3D11
+    // output was lost while the display was off for a long time (and it's paused,
+    // so it never presents past the loss to recover), a forced repaint kicks its
+    // device-lost recovery. No-op when no video is active.
+    void nudgeRedraw();
+
     // Kept for the shared Settings view: the smoothness-vs-crop trade-off only
     // exists on the Raspberry Pi 3 decode path upstream. On Windows the D3D11
     // scaler path always supports crop, so the toggle is never shown.

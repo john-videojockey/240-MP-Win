@@ -1,5 +1,6 @@
 #include "win_utils.h"
 
+#include <QAbstractNativeEventFilter>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -245,6 +246,51 @@ void setWindowTopmost(quintptr hwnd, bool on) {
         return;
     SetWindowPos(h, on ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+}
+
+void redrawWindow(quintptr hwnd) {
+    HWND h = reinterpret_cast<HWND>(hwnd);
+    if (!h || !IsWindow(h))
+        return;
+    RedrawWindow(h, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+}
+
+// ── Display (monitor) power watcher ─────────────────────────────────────────────
+namespace {
+
+// GUID_CONSOLE_DISPLAY_STATE {6FE69556-704A-47A0-8F24-C28D936FDA47}. Declared
+// locally to avoid the INITGUID/link dance for the SDK's DEFINE_GUID symbol.
+const GUID kConsoleDisplayState =
+    { 0x6fe69556, 0x704a, 0x47a0, { 0x8f, 0x24, 0xc2, 0x8d, 0x93, 0x6f, 0xda, 0x47 } };
+
+class DisplayPowerFilter : public QAbstractNativeEventFilter {
+public:
+    std::function<void(int)> cb;
+    bool nativeEventFilter(const QByteArray &type, void *message, qintptr *) override {
+        if (type != "windows_generic_MSG")
+            return false;
+        auto *msg = static_cast<MSG *>(message);
+        if (msg->message == WM_POWERBROADCAST && msg->wParam == PBT_POWERSETTINGCHANGE) {
+            auto *ps = reinterpret_cast<POWERBROADCAST_SETTING *>(msg->lParam);
+            if (ps && IsEqualGUID(ps->PowerSetting, kConsoleDisplayState)
+                   && ps->DataLength >= 1 && cb)
+                cb(int(ps->Data[0]));
+        }
+        return false;   // observe only, never consume
+    }
+};
+
+} // namespace
+
+void installDisplayPowerWatcher(quintptr appHwnd, std::function<void(int)> onDisplayState) {
+    static DisplayPowerFilter *filter = nullptr;
+    if (filter)   // install once
+        return;
+    filter = new DisplayPowerFilter();
+    filter->cb = std::move(onDisplayState);
+    QCoreApplication::instance()->installNativeEventFilter(filter);
+    if (HWND h = reinterpret_cast<HWND>(appHwnd))
+        RegisterPowerSettingNotification(h, &kConsoleDisplayState, DEVICE_NOTIFY_WINDOW_HANDLE);
 }
 
 void prependToolDirsToPath(const QString &appRoot) {

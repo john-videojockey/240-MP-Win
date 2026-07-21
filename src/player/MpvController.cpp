@@ -430,6 +430,14 @@ void MpvController::raiseAppWindow() {
         forceForegroundWindow(m_mainWindow->winId());
 }
 
+void MpvController::nudgeRedraw() {
+    // A video is married only while playing (m_mpvHwnd is cleared when it ends).
+    if (!m_mpvHwnd)
+        return;
+    raiseMpvWindow(m_mpvHwnd);
+    redrawWindow(m_mpvHwnd);
+}
+
 void MpvController::stop() {
     if (m_ipc->state() == QLocalSocket::ConnectedState) {
         sendCommand({"quit"});
@@ -614,6 +622,13 @@ void MpvController::appendVideoArgs(QStringList &args) const {
     // current builds), which composites through the D3D11 swapchain — the
     // scaler path, so crop/zoom (--panscan) always works.
     args << "--hwdec=auto-safe";
+    // BitBlt swapchain instead of the flip model. The flip-model swapchain can
+    // enter an occluded/lost state across display power transitions (a monitor
+    // powered off for hours) that a paused mpv never presents past to recover
+    // from; BitBlt is less prone to that. The tradeoff — losing flip-model HDR/
+    // VRR passthrough — doesn't apply here (SDR, borderless fullscreen). Override
+    // via the "mpv_video_args" setting to restore flip if ever needed.
+    args << "--d3d11-flip=no";
 }
 
 void MpvController::appendUpscalerArgs(QStringList &args) const {

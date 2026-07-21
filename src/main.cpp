@@ -145,5 +145,16 @@ int main(int argc, char *argv[]) {
     // minimize/restore) — see MpvController::tryAdoptMpvWindow.
     mpvController.setMainWindow(rootWindow);
 
+    // Watch the monitor's power state. When it turns back on after being off (a
+    // screen left off overnight over a paused video), nudge mpv to re-present so a
+    // player whose D3D11 output was lost while the display slept recovers instead of
+    // staying frozen. Transitions are logged so a recurrence stays diagnosable.
+    installDisplayPowerWatcher(rootWindow->winId(), [&mpvController](int state) {
+        qInfo("[power] monitor display state -> %s",
+              state == 0 ? "OFF" : state == 1 ? "ON" : "DIMMED");
+        if (state == 1)
+            mpvController.nudgeRedraw();
+    });
+
     return app.exec();
 }

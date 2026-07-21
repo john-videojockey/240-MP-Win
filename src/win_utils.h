@@ -1,6 +1,7 @@
 #pragma once
 #include <QString>
 #include <QtGlobal>
+#include <functional>
 
 // Windows platform glue for 240-MP. Each function is a no-op-safe, call-once
 // setup step invoked from main() before the QML engine loads.
@@ -81,3 +82,14 @@ bool isWindowAlive(quintptr hwnd);
 // window shows through — then dropped back to normal once playback ends. mpv, being
 // owned by the menu, stays above it either way, so the video is never covered.
 void setWindowTopmost(quintptr hwnd, bool on);
+
+// Force a full repaint of a window. Used to nudge mpv into re-presenting after a
+// display power transition, so a paused player whose D3D11 output was lost while
+// the monitor was off recovers instead of staying frozen. No-op on an invalid HWND.
+void redrawWindow(quintptr hwnd);
+
+// Watches the console (monitor) power state. Installs a native event filter and
+// registers for GUID_CONSOLE_DISPLAY_STATE on appHwnd; onDisplayState(state) is
+// then called on monitor off(0)/on(1)/dimmed(2). Call once, after the app window
+// exists. Observe-only — never consumes messages.
+void installDisplayPowerWatcher(quintptr appHwnd, std::function<void(int)> onDisplayState);
