@@ -1336,35 +1336,50 @@ void PlexBackend::fetchWatchlistLocal(int offset, int limit,
         const QString uri = serverUrl(), stoken = serverToken();
         if (guids.isEmpty() || uri.isEmpty()) { callback({}, nextOffset, totalSize); return; }
 
-        // Resolve each watchlist GUID to its local item, preserving order (a bucket
-        // per entry, filled as its /library/all?guid= lookup returns; unresolved
-        // entries — titles not on this server — stay empty and are dropped).
-        auto *bucket = new QVariantList();
-        bucket->resize(guids.size());
-        auto *pending = new int(guids.size());
-        auto finish = [bucket, pending, callback, nextOffset, totalSize]() mutable {
-            if (--(*pending) != 0) return;
-            QVariantList out;
-            for (const auto &v : std::as_const(*bucket))
-                if (v.isValid()) out.append(v);
-            callback(out, nextOffset, totalSize);
-            delete bucket; delete pending;
-        };
-        for (int i = 0; i < guids.size(); ++i) {
+        // Resolve each watchlist GUID to its local item, preserving order. Do this
+        // with BOUNDED CONCURRENCY (a few in flight at a time) plus a per-request
+        // timeout: each /library/all?guid= is an all-library scan, and firing dozens
+        // at once saturates QNAM's per-host connection pool — and if any hang, every
+        // other request to that host (e.g. cover images) stalls until a restart.
+        auto *out       = new QVariantList();
+        out->resize(guids.size());
+        auto *guidList  = new QStringList(guids);
+        auto *next      = new int(0);
+        auto *remaining = new int(guids.size());
+        auto *launch    = new std::function<void()>();
+        *launch = [this, uri, stoken, out, guidList, next, remaining, launch,
+                   nextOffset, totalSize, callback]() {
+            if (*next >= guidList->size()) return;
+            const int i = (*next)++;
             const QUrl lu(uri + "/library/all?guid="
-                          + QString::fromUtf8(QUrl::toPercentEncoding(guids[i])));
-            auto *lr = plexGet(lu, stoken);
-            connect(lr, &QNetworkReply::finished, this, [this, lr, bucket, i, finish]() mutable {
+                          + QString::fromUtf8(QUrl::toPercentEncoding((*guidList)[i])));
+            QNetworkRequest req = plexRequest(lu, stoken);
+            req.setTransferTimeout(15000);   // never let a slow search hang a slot
+            auto *lr = m_nam->get(req);
+            ignoreSslErrors(lr);
+            connect(lr, &QNetworkReply::finished, this,
+                    [this, lr, out, i, next, guidList, remaining, launch,
+                     nextOffset, totalSize, callback]() {
                 lr->deleteLater();
                 if (lr->error() == QNetworkReply::NoError) {
                     const QJsonArray md = QJsonDocument::fromJson(lr->readAll())
                         .object()["MediaContainer"].toObject()["Metadata"].toArray();
                     if (!md.isEmpty())
-                        (*bucket)[i] = formatItem(md.first().toObject());
+                        (*out)[i] = formatItem(md.first().toObject());
                 }
-                finish();
+                if (--(*remaining) == 0) {
+                    QVariantList result;
+                    for (const auto &v : std::as_const(*out))
+                        if (v.isValid()) result.append(v);
+                    callback(result, nextOffset, totalSize);
+                    delete out; delete guidList; delete next; delete remaining; delete launch;
+                } else {
+                    (*launch)();   // a slot freed — start the next GUID
+                }
             });
-        }
+        };
+        const int workers = qMin(4, int(guids.size()));
+        for (int k = 0; k < workers; ++k) (*launch)();
     });
 }
 
@@ -1401,21 +1416,26 @@ void PlexBackend::set_watchlist(const QString &guid, bool add) {
 
 void PlexBackend::check_watchlist(const QString &guid) {
     const QString accToken = accountToken();
-    if (accToken.isEmpty() || !guid.startsWith("plex://")) {
+    const QString rk = guid.section('/', -1);   // Discover ratingKey = last GUID segment
+    if (accToken.isEmpty() || !guid.startsWith("plex://") || rk.isEmpty()) {
         emit watchlistStateReady(guid, false); return;
     }
-    QUrl wl("https://discover.provider.plex.tv/library/sections/watchlist/all");
-    QUrlQuery q; q.addQueryItem("X-Plex-Container-Size", "400"); wl.setQuery(q);
-    auto *r = plexGet(wl, accToken);
+    // Ask Discover for this one title's user state — it carries a "watchlistedAt"
+    // timestamp iff the item is on the watchlist. (Fetching the whole watchlist and
+    // matching is unreliable: Discover caps the page size at 100 and 400s a bigger
+    // request, and a large watchlist wouldn't fit one page anyway.)
+    QUrl u("https://discover.provider.plex.tv/library/metadata/" + rk);
+    QUrlQuery q; q.addQueryItem("includeUserState", "1"); u.setQuery(q);
+    auto *r = plexGet(u, accToken);
     connect(r, &QNetworkReply::finished, this, [this, r, guid]() {
         r->deleteLater();
         bool on = false;
         if (r->error() == QNetworkReply::NoError) {
-            const QString id = guid.section('/', -1);
-            for (const auto &mv : QJsonDocument::fromJson(r->readAll())
-                     .object()["MediaContainer"].toObject()["Metadata"].toArray()) {
-                const QJsonObject o = mv.toObject();
-                if (o["guid"].toString() == guid || o["ratingKey"].toString() == id) { on = true; break; }
+            const QJsonArray md = QJsonDocument::fromJson(r->readAll())
+                .object()["MediaContainer"].toObject()["Metadata"].toArray();
+            if (!md.isEmpty()) {
+                const QJsonObject o = md.first().toObject();
+                on = o.contains("watchlistedAt") && o["watchlistedAt"].toVariant().toLongLong() > 0;
             }
         }
         emit watchlistStateReady(guid, on);
