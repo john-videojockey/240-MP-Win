@@ -190,15 +190,22 @@ void raiseMpvWindow(quintptr mpvHwnd) {
         return;
     if (IsIconic(h))
         ShowWindow(h, SW_RESTORE);
+    else if (!IsWindowVisible(h))
+        ShowWindow(h, SW_SHOW);   // un-hide (minimizeMpvWindow now uses SW_HIDE)
     SetWindowPos(h, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
     SetForegroundWindow(h);
 }
 
 void minimizeMpvWindow(quintptr mpvHwnd) {
     HWND h = reinterpret_cast<HWND>(mpvHwnd);
-    if (!h || !IsWindow(h) || IsIconic(h))
+    if (!h || !IsWindow(h) || !IsWindowVisible(h))
         return;
-    ShowWindow(h, SW_MINIMIZE);
+    // SW_HIDE, not SW_MINIMIZE: minimizing a top-level window leaves Windows'
+    // legacy minimized-caption stub (a small titlebar with restore/close buttons)
+    // at the screen edge. It normally hides behind the taskbar, but a custom
+    // taskbar/dock that doesn't cover that spot leaves it visible in the corner.
+    // Hiding the window removes it entirely; raiseMpvWindow re-shows it on restore.
+    ShowWindow(h, SW_HIDE);
 }
 
 void forceForegroundWindow(quintptr hwnd) {
