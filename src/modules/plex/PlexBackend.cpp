@@ -1336,50 +1336,36 @@ void PlexBackend::fetchWatchlistLocal(int offset, int limit,
         const QString uri = serverUrl(), stoken = serverToken();
         if (guids.isEmpty() || uri.isEmpty()) { callback({}, nextOffset, totalSize); return; }
 
-        // Resolve each watchlist GUID to its local item, preserving order. Do this
-        // with BOUNDED CONCURRENCY (a few in flight at a time) plus a per-request
-        // timeout: each /library/all?guid= is an all-library scan, and firing dozens
-        // at once saturates QNAM's per-host connection pool — and if any hang, every
-        // other request to that host (e.g. cover images) stalls until a restart.
-        auto *out       = new QVariantList();
-        out->resize(guids.size());
-        auto *guidList  = new QStringList(guids);
-        auto *next      = new int(0);
-        auto *remaining = new int(guids.size());
-        auto *launch    = new std::function<void()>();
-        *launch = [this, uri, stoken, out, guidList, next, remaining, launch,
-                   nextOffset, totalSize, callback]() {
-            if (*next >= guidList->size()) return;
-            const int i = (*next)++;
-            const QUrl lu(uri + "/library/all?guid="
-                          + QString::fromUtf8(QUrl::toPercentEncoding((*guidList)[i])));
-            QNetworkRequest req = plexRequest(lu, stoken);
-            req.setTransferTimeout(15000);   // never let a slow search hang a slot
-            auto *lr = m_nam->get(req);
-            ignoreSslErrors(lr);
-            connect(lr, &QNetworkReply::finished, this,
-                    [this, lr, out, i, next, guidList, remaining, launch,
-                     nextOffset, totalSize, callback]() {
-                lr->deleteLater();
-                if (lr->error() == QNetworkReply::NoError) {
-                    const QJsonArray md = QJsonDocument::fromJson(lr->readAll())
-                        .object()["MediaContainer"].toObject()["Metadata"].toArray();
-                    if (!md.isEmpty())
-                        (*out)[i] = formatItem(md.first().toObject());
+        // Resolve the whole page in ONE request: /library/all accepts a comma-joined
+        // guid list. (Firing one search per GUID saturated QNAM's per-host pool and
+        // silently dropped later pages' items to timeouts — the list capped short.)
+        const QUrl lu(uri + "/library/all?guid="
+                      + QString::fromUtf8(QUrl::toPercentEncoding(guids.join(','))));
+        QNetworkRequest req = plexRequest(lu, stoken);
+        req.setTransferTimeout(20000);
+        auto *lr = m_nam->get(req);
+        ignoreSslErrors(lr);
+        connect(lr, &QNetworkReply::finished, this,
+                [this, lr, guids, nextOffset, totalSize, callback]() {
+            lr->deleteLater();
+            // One local item per GUID (a title can exist in several libraries — keep
+            // the first), then emit in the original watchlist order, dropping titles
+            // not on this server.
+            QHash<QString, QVariantMap> byGuid;
+            if (lr->error() == QNetworkReply::NoError) {
+                for (const auto &mv : QJsonDocument::fromJson(lr->readAll())
+                         .object()["MediaContainer"].toObject()["Metadata"].toArray()) {
+                    const QJsonObject o = mv.toObject();
+                    const QString g = o["guid"].toString();
+                    if (!g.isEmpty() && !byGuid.contains(g))
+                        byGuid.insert(g, formatItem(o));
                 }
-                if (--(*remaining) == 0) {
-                    QVariantList result;
-                    for (const auto &v : std::as_const(*out))
-                        if (v.isValid()) result.append(v);
-                    callback(result, nextOffset, totalSize);
-                    delete out; delete guidList; delete next; delete remaining; delete launch;
-                } else {
-                    (*launch)();   // a slot freed — start the next GUID
-                }
-            });
-        };
-        const int workers = qMin(4, int(guids.size()));
-        for (int k = 0; k < workers; ++k) (*launch)();
+            }
+            QVariantList out;
+            for (const QString &g : guids)
+                if (byGuid.contains(g)) out.append(byGuid.value(g));
+            callback(out, nextOffset, totalSize);
+        });
     });
 }
 
