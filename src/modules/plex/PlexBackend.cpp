@@ -1305,27 +1305,36 @@ void PlexBackend::load_continue_watching() {
     });
 }
 
-void PlexBackend::fetchWatchlistLocal(int limit, std::function<void(QVariantList)> callback) {
+void PlexBackend::fetchWatchlistLocal(int offset, int limit,
+        std::function<void(QVariantList, int, int)> callback) {
     const QString accToken = accountToken();
-    if (accToken.isEmpty()) { callback({}); return; }
+    if (accToken.isEmpty()) { callback({}, offset, 0); return; }
     // The Watchlist is account-level, served by Plex Discover (not the PMS).
     QUrl wl("https://discover.provider.plex.tv/library/sections/watchlist/all");
     QUrlQuery wq;
-    wq.addQueryItem("X-Plex-Container-Start", "0");
+    wq.addQueryItem("X-Plex-Container-Start", QString::number(offset));
     wq.addQueryItem("X-Plex-Container-Size", QString::number(limit));
     wl.setQuery(wq);
     auto *r = plexGet(wl, accToken);
-    connect(r, &QNetworkReply::finished, this, [this, r, callback]() mutable {
+    connect(r, &QNetworkReply::finished, this, [this, r, offset, callback]() mutable {
         r->deleteLater();
         QStringList guids;
-        if (r->error() == QNetworkReply::NoError)
-            for (const auto &mv : QJsonDocument::fromJson(r->readAll())
-                     .object()["MediaContainer"].toObject()["Metadata"].toArray()) {
+        int totalSize = 0, windowCount = 0;
+        if (r->error() == QNetworkReply::NoError) {
+            const QJsonObject mc = QJsonDocument::fromJson(r->readAll())
+                                   .object()["MediaContainer"].toObject();
+            totalSize = mc["totalSize"].toInt();
+            const QJsonArray md = mc["Metadata"].toArray();
+            windowCount = md.size();
+            for (const auto &mv : md) {
                 const QString g = mv.toObject()["guid"].toString();
                 if (!g.isEmpty()) guids.append(g);
             }
+        }
+        // Next page starts past this window regardless of how many resolved locally.
+        const int nextOffset = offset + windowCount;
         const QString uri = serverUrl(), stoken = serverToken();
-        if (guids.isEmpty() || uri.isEmpty()) { callback({}); return; }
+        if (guids.isEmpty() || uri.isEmpty()) { callback({}, nextOffset, totalSize); return; }
 
         // Resolve each watchlist GUID to its local item, preserving order (a bucket
         // per entry, filled as its /library/all?guid= lookup returns; unresolved
@@ -1333,12 +1342,12 @@ void PlexBackend::fetchWatchlistLocal(int limit, std::function<void(QVariantList
         auto *bucket = new QVariantList();
         bucket->resize(guids.size());
         auto *pending = new int(guids.size());
-        auto finish = [bucket, pending, callback]() mutable {
+        auto finish = [bucket, pending, callback, nextOffset, totalSize]() mutable {
             if (--(*pending) != 0) return;
             QVariantList out;
             for (const auto &v : std::as_const(*bucket))
                 if (v.isValid()) out.append(v);
-            callback(out);
+            callback(out, nextOffset, totalSize);
             delete bucket; delete pending;
         };
         for (int i = 0; i < guids.size(); ++i) {
@@ -1359,8 +1368,12 @@ void PlexBackend::fetchWatchlistLocal(int limit, std::function<void(QVariantList
     });
 }
 
-void PlexBackend::load_watchlist() {
-    fetchWatchlistLocal(60, [this](QVariantList items) { emit watchlistLoaded(items); });
+void PlexBackend::load_watchlist(int offset) {
+    // 64 per page (an 8×8 grid). offset walks the account watchlist; the local
+    // subset (resolved by GUID) is emitted with paging info for "load more".
+    fetchWatchlistLocal(offset, 64, [this, offset](QVariantList items, int nextOffset, int total) {
+        emit watchlistLoaded(items, offset, nextOffset, total);
+    });
 }
 
 void PlexBackend::set_watchlist(const QString &guid, bool add) {

@@ -49,7 +49,7 @@ public:
     // the current server (each resolved to its local item by GUID). set_watchlist
     // toggles membership and check_watchlist reports it — both emit
     // watchlistStateReady(guid, onWatchlist). The GUID is the item's plex:// guid.
-    Q_INVOKABLE void load_watchlist();
+    Q_INVOKABLE void load_watchlist(int offset);
     Q_INVOKABLE void set_watchlist(const QString &guid, bool add);
     Q_INVOKABLE void check_watchlist(const QString &guid);
     Q_INVOKABLE void load_section_hubs(const QString &sectionId);
@@ -148,7 +148,7 @@ signals:
     void librariesLoaded(const QVariant &libraries);
     void continueWatchingLoaded(const QVariant &items);
     void homeHubsReady(const QVariant &hubs);
-    void watchlistLoaded(const QVariant &items);
+    void watchlistLoaded(const QVariant &items, int offset, int nextOffset, int totalSize);
     void watchlistStateReady(const QString &guid, bool onWatchlist);
     void hubsLoaded(const QVariant &hubs);
     void itemsLoaded(const QVariant &items);
@@ -222,7 +222,8 @@ private:
     // Fetch the account Watchlist and resolve each entry to a local server item by
     // GUID (up to `limit` entries), preserving watchlist order and dropping any not
     // on this server. `callback` receives the local formatItem() maps.
-    void fetchWatchlistLocal(int limit, std::function<void(QVariantList)> callback);
+    void fetchWatchlistLocal(int offset, int limit,
+                             std::function<void(QVariantList, int nextOffset, int totalSize)> callback);
 
     // Connection probing
     void probeConnections(const QJsonArray &connections,

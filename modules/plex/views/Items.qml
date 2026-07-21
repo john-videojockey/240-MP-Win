@@ -34,7 +34,13 @@ FocusScope {
     // them into portrait would discard most of the frame. Structural lists
     // (hubs, categories, playlists-of-lists, …) keep the title list.
     property string browseView: (appCore.get_setting(moduleRoot.moduleId, "browse_view") || "Title")
-    property bool coverMode: browseView === "Cover" && items.length > 0 && itemsAreCovers(items)
+    // Watchlist always uses the poster grid (8 across, Home's horizontal spacing).
+    property bool watchlistMode: listType === "watchlist"
+    property bool coverMode: watchlistMode || (browseView === "Cover" && items.length > 0 && itemsAreCovers(items))
+    // Watchlist paging (load-more): where the next page starts, and whether more exist.
+    property int  wlNextOffset: 0
+    property bool wlHasMore: false
+    property bool wlLoadingMore: false   // load-more in flight (grid stays up, no overlay)
     // Continue Watching always uses portrait posters (show/season cover, not
     // the episode screenshot); other episode-bearing lists use landscape cards.
     property bool gridLandscape: coverMode && anyEpisodes(items) && listType !== "continue_watching"
@@ -48,10 +54,17 @@ FocusScope {
 
     function itemsAreCovers(arr) {
         for (var i = 0; i < arr.length; i++) {
+            if (arr[i].loadMore) continue   // the watchlist "LOAD MORE" sentinel
             var t = arr[i].type
             if (t !== "movie" && t !== "show" && t !== "episode") return false
         }
         return true
+    }
+
+    function loadMoreWatchlist() {
+        if (!wlHasMore || wlLoadingMore) return
+        wlLoadingMore = true
+        plexBackend.load_watchlist(wlNextOffset)
     }
 
     function anyEpisodes(arr) {
@@ -131,9 +144,29 @@ FocusScope {
                 itemListRoot.applyLoadedItems(loadedItems)
         }
 
-        function onWatchlistLoaded(loadedItems) {
-            if (itemListRoot.listType === "watchlist")
-                itemListRoot.applyLoadedItems(loadedItems)
+        function onWatchlistLoaded(loadedItems, offset, nextOffset, totalSize) {
+            if (itemListRoot.listType !== "watchlist") return
+            itemListRoot.wlNextOffset = nextOffset
+            itemListRoot.wlHasMore = nextOffset < totalSize
+            // First page replaces; later pages append. Drop any prior LOAD MORE
+            // sentinel, then re-append it if more pages remain.
+            var base = []
+            for (var i = 0; i < itemListRoot.items.length; i++)
+                if (!itemListRoot.items[i].loadMore) base.push(itemListRoot.items[i])
+            var startNew = (offset === 0) ? 0 : base.length
+            var merged = (offset === 0) ? loadedItems.slice() : base.concat(loadedItems)
+            if (itemListRoot.wlHasMore) merged.push({ loadMore: true })
+            itemListRoot.isLoading = false
+            itemListRoot.wlLoadingMore = false
+            itemListRoot.items = merged
+            var idx = (offset === 0)
+                ? ((itemListRoot.navListState.currentIndex !== undefined)
+                        ? Math.min(itemListRoot.navListState.currentIndex, Math.max(0, merged.length - 1)) : 0)
+                : Math.min(startNew, Math.max(0, merged.length - 1))
+            coverGrid.currentIndex = idx
+            coverGrid.positionViewAtIndex(idx, GridView.Contain)
+            itemList.currentIndex = idx
+            if (itemListRoot.infoBg || itemListRoot.showThemes) hoverArtDebounce.restart()
         }
 
         function onHubsLoaded(loadedHubs) {
@@ -173,6 +206,8 @@ FocusScope {
         var idx = coverMode ? coverGrid.currentIndex : itemList.currentIndex
         var item = items[idx]
         if (!item) return
+
+        if (item.loadMore) { itemListRoot.loadMoreWatchlist(); return }
 
         // Intermediate lists that navigate deeper
         if (listType === "hubs") {
@@ -288,7 +323,7 @@ FocusScope {
         else if (listType === "continue_watching")
             plexBackend.load_continue_watching()
         else if (listType === "watchlist")
-            plexBackend.load_watchlist()
+            plexBackend.load_watchlist(0)
     }
 
     focus: true
@@ -412,7 +447,7 @@ FocusScope {
         visible: coverMode
         text: {
             var it = items[coverGrid.currentIndex]
-            if (!it) return ""
+            if (!it || it.loadMore) return ""
             var base = (it.type === "episode" && it.grandparentTitle)
                        ? (it.grandparentTitle + ": " + (it.title || ""))
                        : (it.title || "")
@@ -443,13 +478,17 @@ FocusScope {
         height: root.sh * 0.525 //252
         clip: true
 
-        // Two rows; cell aspect picks the column count. Portrait 2:3 posters
-        // for movie/show lists, landscape 16:9 cards when episodes are mixed
-        // in (their stills are 16:9; movies then show their fanart instead).
-        property real posterH: root.sh * 0.245
-        property real posterW: posterH * (itemListRoot.gridLandscape ? 16 / 9 : 2 / 3)
-        cellHeight: root.sh * 0.2625
-        cellWidth: posterW + root.sw * 0.0078125 //5
+        // Cell aspect picks the column count. Portrait 2:3 posters for movie/show
+        // lists, landscape 16:9 cards when episodes are mixed in (their stills are
+        // 16:9; movies then show their fanart instead). Watchlist is fixed at 8
+        // columns with Home's horizontal spacing (root.sw*0.0125).
+        property real wlCell: Math.floor(coverGrid.width / 8)   // 8 columns, floor-safe
+        property real posterW: itemListRoot.watchlistMode
+                ? wlCell - root.sw * 0.0125
+                : posterH * (itemListRoot.gridLandscape ? 16 / 9 : 2 / 3)
+        property real posterH: itemListRoot.watchlistMode ? posterW * 1.5 : root.sh * 0.245
+        cellWidth: itemListRoot.watchlistMode ? wlCell : posterW + root.sw * 0.0078125 //5
+        cellHeight: itemListRoot.watchlistMode ? posterH + root.sh * 0.0175 : root.sh * 0.2625
 
         // Arrow keys use GridView's built-in flow-aware navigation.
         Keys.onReturnPressed: itemListRoot.selectItem()
@@ -474,8 +513,31 @@ FocusScope {
                 }
             }
 
+            // "LOAD MORE" tile — the watchlist paging sentinel at the grid's end.
+            Rectangle {
+                visible: modelData.loadMore === true
+                width: coverGrid.posterW
+                height: coverGrid.posterH
+                color: "transparent"
+                border.color: coverGrid.currentIndex === index ? root.accentColor : root.tertiaryColor
+                border.width: coverGrid.currentIndex === index
+                              ? Math.max(2, Math.floor(root.sh * 0.00625)) : 1
+                Text {
+                    anchors.centerIn: parent
+                    width: parent.width - root.sw * 0.0125
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    text: itemListRoot.wlLoadingMore ? "LOADING…" : "LOAD\nMORE ►"
+                    color: coverGrid.currentIndex === index ? root.accentColor : root.secondaryColor
+                    font.family: root.globalFont
+                    font.capitalization: Font.AllUppercase
+                    font.pixelSize: root.sh * 0.025
+                }
+            }
+
             Rectangle {
                 id: posterBox
+                visible: !modelData.loadMore
                 width: coverGrid.posterW
                 height: coverGrid.posterH
                 color: "transparent"
