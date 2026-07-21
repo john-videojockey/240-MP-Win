@@ -131,6 +131,11 @@ FocusScope {
                 itemListRoot.applyLoadedItems(loadedItems)
         }
 
+        function onWatchlistLoaded(loadedItems) {
+            if (itemListRoot.listType === "watchlist")
+                itemListRoot.applyLoadedItems(loadedItems)
+        }
+
         function onHubsLoaded(loadedHubs) {
             if (itemListRoot.listType === "hubs")
                 itemListRoot.applyLoadedItems(loadedHubs)
@@ -282,6 +287,8 @@ FocusScope {
             plexBackend.load_category_items(sectionId, categoryKey)
         else if (listType === "continue_watching")
             plexBackend.load_continue_watching()
+        else if (listType === "watchlist")
+            plexBackend.load_watchlist()
     }
 
     focus: true

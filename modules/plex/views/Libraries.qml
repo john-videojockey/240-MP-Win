@@ -100,10 +100,10 @@ FocusScope {
                 // Replace (don't push) so Home ⇄ list stays a clean toggle and
                 // Back from Home returns here rather than stacking up.
                 browseRoot.replaceWith("Home.qml", {})
-            } else if (lib.key === "continue_watching") {
+            } else if (lib.key === "watchlist") {
                 browseRoot.navigateTo("Items.qml", {
-                    listType: "continue_watching",
-                    title: "CONTINUE WATCHING",
+                    listType: "watchlist",
+                    title: "WATCHLIST",
                     libraryName: lib.title
                 }, { currentIndex: libraryList.currentIndex })
             } else if (lib.key === "live_tv") {

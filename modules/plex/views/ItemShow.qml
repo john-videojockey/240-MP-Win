@@ -17,6 +17,22 @@ FocusScope {
 
     // Focus rows: 0 = play button, 1 = season list
     property int focusRow: 0
+    // Row-0 columns: 0 = PLAY/RSUM, 1 = WATCHLIST bookmark (shown when the show has
+    // a plex:// GUID — new Plex agent). onWatchlist drives the filled/outline glyph.
+    property int  playCol: 0
+    property string watchlistGuid: item.guid || ""
+    property bool watchlistAvailable: watchlistGuid.indexOf("plex://") === 0
+    property bool onWatchlist: false
+    property bool watchlistBusy: false
+
+    onFocusRowChanged: if (focusRow === 0) playCol = 0
+
+    function toggleWatchlist() {
+        if (!watchlistAvailable || watchlistBusy) return
+        watchlistBusy = true
+        onWatchlist = !onWatchlist            // optimistic; reverted on failure
+        plexBackend.set_watchlist(watchlistGuid, onWatchlist)
+    }
 
     // When true, the next childrenLoaded signal carries episodes to play, not seasons to display
     property bool playOnLoad: false
@@ -24,6 +40,13 @@ FocusScope {
 
     Connections {
         target: plexBackend
+
+        function onWatchlistStateReady(guid, on) {
+            if (guid === showRoot.watchlistGuid) {
+                showRoot.onWatchlist = on
+                showRoot.watchlistBusy = false
+            }
+        }
 
         function onChildrenLoaded(loadedItems) {
             if (showRoot.playOnLoad) {
@@ -92,6 +115,7 @@ FocusScope {
         isLoading = true
         focusRow = 0
         if (item.ratingKey) plexBackend.load_children(item.ratingKey)
+        if (watchlistAvailable) { watchlistBusy = true; plexBackend.check_watchlist(watchlistGuid) }
 
         var bg = appCore.get_setting(moduleRoot.moduleId, "info_background")
         infoBg = (bg === undefined || bg === null || bg === "")
@@ -119,8 +143,11 @@ FocusScope {
                 seasonList.currentIndex++
         }
     }
+    Keys.onLeftPressed:  { if (focusRow === 0 && playCol > 0) playCol-- }
+    Keys.onRightPressed: { if (focusRow === 0 && playCol < 1 && watchlistAvailable) playCol++ }
     Keys.onReturnPressed: {
         if (focusRow === 0) {
+            if (playCol === 1 && watchlistAvailable) { showRoot.toggleWatchlist(); return }
             if (seasons.length === 0) return
             showRoot.waitingForOnDeck = true
             plexBackend.load_on_deck_for(item.ratingKey)
@@ -209,31 +236,86 @@ FocusScope {
             height: root.sh * 0.2916667 //140
             spacing: root.sw * 0.0375 //24
 
-            // PLAY / RSUM button
-            Rectangle {
-                id: playButton
-                color: focusRow === 0 ? root.accentColor : root.surfaceColor
-                border.color: focusRow === 0 ? root.accentColor : root.tertiaryColor
-                width: root.sw * 0.1875 //120
-                height: root.sh * 0.1166667 //56
-                border.width: root.sh * 0.003125 //2
+            // PLAY / RSUM + Watchlist bookmark (row-0 columns).
+            Row {
+                spacing: root.sw * 0.0046875 //3
 
-                // Touch: first tap focuses the PLAY button, tapping it while focused
-                // activates it via a synthesized Enter (same path as the keyboard).
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: {
-                        if (focusRow === 0) inputManager.touchKey("select")
-                        else focusRow = 0
+                // PLAY / RSUM button
+                Rectangle {
+                    id: playButton
+                    property bool sel: focusRow === 0 && showRoot.playCol === 0
+                    color: sel ? root.accentColor : root.surfaceColor
+                    border.color: sel ? root.accentColor : root.tertiaryColor
+                    width: root.sw * 0.1875 //120
+                    height: root.sh * 0.1166667 //56
+                    border.width: root.sh * 0.003125 //2
+
+                    // Touch: first tap focuses the PLAY button, tapping it while focused
+                    // activates it via a synthesized Enter (same path as the keyboard).
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            if (playButton.sel) inputManager.touchKey("select")
+                            else { focusRow = 0; showRoot.playCol = 0 }
+                        }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: (item.viewOffset && item.viewOffset > 0) ? "RSUM \u25BA" : "PLAY \u25BA"
+                        color: playButton.sel ? root.surfaceColor : root.primaryColor
+                        font.family: root.globalFont
+                        font.pixelSize: root.sh * 0.05 //24
                     }
                 }
 
-                Text {
-                    anchors.centerIn: parent
-                    text: (item.viewOffset && item.viewOffset > 0) ? "RSUM \u25BA" : "PLAY \u25BA"
-                    color: focusRow === 0 ? root.surfaceColor : root.primaryColor
-                    font.family: root.globalFont
-                    font.pixelSize: root.sh * 0.05 //24
+                // Watchlist bookmark toggle.
+                Rectangle {
+                    id: watchlistBtn
+                    visible: showRoot.watchlistAvailable
+                    property bool sel: focusRow === 0 && showRoot.playCol === 1
+                    width: root.sw * 0.05
+                    height: root.sh * 0.1166667 //56
+                    color: sel ? root.accentColor : root.surfaceColor
+                    border.color: sel ? root.accentColor : root.tertiaryColor
+                    border.width: root.sh * 0.003125 //2
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: { if (watchlistBtn.sel) showRoot.toggleWatchlist()
+                                     else { focusRow = 0; showRoot.playCol = 1 } }
+                    }
+                    // Bookmark glyph: outline when not on the watchlist, filled when on it.
+                    Canvas {
+                        id: bookmark
+                        anchors.centerIn: parent
+                        width: parent.width * 0.34
+                        height: parent.height * 0.42
+                        property bool filled: showRoot.onWatchlist
+                        property color col: watchlistBtn.sel ? root.surfaceColor : root.accentColor
+                        onFilledChanged: requestPaint()
+                        onColChanged: requestPaint()
+                        onWidthChanged: requestPaint()
+                        onHeightChanged: requestPaint()
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.reset()
+                            var w = width, h = height
+                            var lw = Math.max(1.5, w * 0.16)
+                            var notch = h * 0.26
+                            var x0 = lw / 2, y0 = lw / 2, x1 = w - lw / 2, y1 = h - lw / 2
+                            ctx.beginPath()
+                            ctx.moveTo(x0, y0)
+                            ctx.lineTo(x1, y0)
+                            ctx.lineTo(x1, y1)
+                            ctx.lineTo(w / 2, y1 - notch)
+                            ctx.lineTo(x0, y1)
+                            ctx.closePath()
+                            if (filled) { ctx.fillStyle = col; ctx.fill() }
+                            else { ctx.strokeStyle = col; ctx.lineWidth = lw
+                                   ctx.lineJoin = "round"; ctx.stroke() }
+                        }
+                    }
                 }
             }
 

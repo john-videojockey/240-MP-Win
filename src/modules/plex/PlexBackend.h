@@ -44,6 +44,14 @@ public:
     // each hub a { title, key, sectionType, items } map (empty hubs dropped).
     Q_INVOKABLE void load_home_hubs();
     Q_INVOKABLE void load_continue_watching();
+    // Plex-account Watchlist (account-level, via metadata.provider.plex.tv).
+    // load_watchlist emits watchlistLoaded(items) with only the titles present on
+    // the current server (each resolved to its local item by GUID). set_watchlist
+    // toggles membership and check_watchlist reports it — both emit
+    // watchlistStateReady(guid, onWatchlist). The GUID is the item's plex:// guid.
+    Q_INVOKABLE void load_watchlist();
+    Q_INVOKABLE void set_watchlist(const QString &guid, bool add);
+    Q_INVOKABLE void check_watchlist(const QString &guid);
     Q_INVOKABLE void load_section_hubs(const QString &sectionId);
     Q_INVOKABLE void load_items_for_hub(const QString &hubKey);
     Q_INVOKABLE void load_library_all(const QString &sectionId);
@@ -140,6 +148,8 @@ signals:
     void librariesLoaded(const QVariant &libraries);
     void continueWatchingLoaded(const QVariant &items);
     void homeHubsReady(const QVariant &hubs);
+    void watchlistLoaded(const QVariant &items);
+    void watchlistStateReady(const QString &guid, bool onWatchlist);
     void hubsLoaded(const QVariant &hubs);
     void itemsLoaded(const QVariant &items);
     void collectionsLoaded(const QVariant &collections);
@@ -208,6 +218,11 @@ private:
     // Expands any season-type items in rawItems into their child episodes, then calls callback.
     // Order is preserved. callback is called synchronously if no seasons are present.
     void flattenSeasons(const QVariantList &rawItems, std::function<void(const QVariantList &)> callback);
+
+    // Fetch the account Watchlist and resolve each entry to a local server item by
+    // GUID (up to `limit` entries), preserving watchlist order and dropping any not
+    // on this server. `callback` receives the local formatItem() maps.
+    void fetchWatchlistLocal(int limit, std::function<void(QVariantList)> callback);
 
     // Connection probing
     void probeConnections(const QJsonArray &connections,

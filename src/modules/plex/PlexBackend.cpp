@@ -638,6 +638,9 @@ QVariantMap PlexBackend::formatItem(const QJsonObject &m) const {
                                                                       : m["parentTheme"].toString();
     return QVariantMap{
         {"ratingKey",              m["ratingKey"].toString()},
+        // plex:// GUID (new Plex agent) — its last path segment is the Discover
+        // ratingKey the Watchlist actions take; empty on legacy-agent libraries.
+        {"guid",                   m["guid"].toString()},
         {"thumb",                  thumb},
         {"art",                    art},
         {"theme",                  theme},
@@ -1187,110 +1190,96 @@ void PlexBackend::load_libraries_impl() {
     QString token = serverToken();
     if (uri.isEmpty()) { emit errorOccurred("NO SERVER CONFIGURED"); return; }
 
-    // Check continue watching
-    QUrl cwUrl(uri + "/hubs/continueWatching");
-    QUrlQuery cwq; cwq.addQueryItem("limit","1");
-    cwUrl.setQuery(cwq);
-    auto *cwReply = plexGet(cwUrl, token);
-    connect(cwReply, &QNetworkReply::finished, this, [this, cwReply, uri, token]() {
-        cwReply->deleteLater();
-        bool hasCw = false;
-        if (cwReply->error() == QNetworkReply::NoError) {
-            QJsonArray hubs = QJsonDocument::fromJson(cwReply->readAll())
-                              .object()["MediaContainer"].toObject()["Hub"].toArray();
-            hasCw = !hubs.isEmpty() && !hubs[0].toObject()["Metadata"].toArray().isEmpty();
+    // The Watchlist shortcut is pinned first (it replaces the old Continue Watching
+    // row); the library sections follow it.
+    auto *secReply = plexGet(QUrl(uri + "/library/sections"), token);
+    connect(secReply, &QNetworkReply::finished, this, [this, secReply]() {
+        secReply->deleteLater();
+        int secStatus = secReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (secReply->error() != QNetworkReply::NoError) {
+            if (secStatus == 498) {
+                handle498([this]{ load_libraries_impl(); });
+            } else if (secStatus == 401) {
+                // 401 from PMS means this server rejected our token — the plex.tv account
+                // auth is NOT invalidated. Do not delete plex_auth.json. The server may be
+                // running an older version that doesn't accept JWTs yet; the user should
+                // try selecting a different server or update their Plex Media Server.
+                emit errorOccurred("SERVER AUTHENTICATION FAILED. TRY SELECTING A DIFFERENT SERVER OR UPDATE YOUR PLEX MEDIA SERVER.");
+            } else {
+                emit errorOccurred("LOAD LIBRARIES FAILED: " + secReply->errorString());
+            }
+            return;
+        }
+        QJsonArray sections = QJsonDocument::fromJson(secReply->readAll())
+                              .object()["MediaContainer"].toObject()["Directory"].toArray();
+
+        QJsonObject auth = loadAuth();
+        QString machineId = auth["active_server_machine_id"].toString();
+        QJsonObject libEnabled = loadConfig()["modules"].toObject()
+                                 ["com.240mp.plex"].toObject()["libraries"].toObject();
+
+        QVariantList items;
+        // Watchlist, pinned first — selecting it opens the resolved watchlist list.
+        items.append(QVariantMap{{"key","watchlist"},{"title","WATCHLIST"},
+                                 {"sectionId",QVariant()},{"sectionType",QVariant()}});
+
+        for (const auto &sv : sections) {
+            QJsonObject s = sv.toObject();
+            if (!kSupportedLibraryTypes.contains(s["type"].toString())) continue;
+            QString key = s["key"].toString();
+            QString libKey = machineId.isEmpty() ? key : machineId + "_" + key;
+            if (!libEnabled.isEmpty() && !libEnabled[libKey].toBool(true)) continue;
+            items.append(QVariantMap{
+                {"key",         key},
+                {"title",       s["title"].toString().toUpper()},
+                {"sectionId",   key},
+                {"sectionType", s["type"].toString()},
+            });
         }
 
-        auto *secReply = plexGet(QUrl(uri + "/library/sections"), token);
-        connect(secReply, &QNetworkReply::finished, this, [this, secReply, hasCw]() {
-            secReply->deleteLater();
-            int secStatus = secReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-            if (secReply->error() != QNetworkReply::NoError) {
-                if (secStatus == 498) {
-                    handle498([this]{ load_libraries_impl(); });
-                } else if (secStatus == 401) {
-                    // 401 from PMS means this server rejected our token — the plex.tv account
-                    // auth is NOT invalidated. Do not delete plex_auth.json. The server may be
-                    // running an older version that doesn't accept JWTs yet; the user should
-                    // try selecting a different server or update their Plex Media Server.
-                    emit errorOccurred("SERVER AUTHENTICATION FAILED. TRY SELECTING A DIFFERENT SERVER OR UPDATE YOUR PLEX MEDIA SERVER.");
-                } else {
-                    emit errorOccurred("LOAD LIBRARIES FAILED: " + secReply->errorString());
-                }
-                return;
+        // Apply the saved library order (Reorder Sources) — reorder only the
+        // library entries (those with a sectionId), keeping the Watchlist shortcut
+        // pinned first. Unknown/new libraries keep their server order at the end.
+        const QJsonArray libOrder = loadConfig()["modules"].toObject()
+                                    ["com.240mp.plex"].toObject()["library_order"].toArray();
+        if (!libOrder.isEmpty()) {
+            QVariantList libItems, otherItems;
+            for (const auto &iv : std::as_const(items)) {
+                const QVariantMap m = iv.toMap();
+                if (m["sectionId"].isValid() && !m["sectionId"].isNull()) libItems.append(m);
+                else otherItems.append(m);
             }
-            QJsonArray sections = QJsonDocument::fromJson(secReply->readAll())
-                                  .object()["MediaContainer"].toObject()["Directory"].toArray();
-
-            QJsonObject auth = loadAuth();
-            QString machineId = auth["active_server_machine_id"].toString();
-            QJsonObject libEnabled = loadConfig()["modules"].toObject()
-                                     ["com.240mp.plex"].toObject()["libraries"].toObject();
-
-            QVariantList items;
-            if (hasCw)
-                items.append(QVariantMap{{"key","continue_watching"},{"title","CONTINUE WATCHING"},
-                                         {"sectionId",QVariant()},{"sectionType",QVariant()}});
-
-            for (const auto &sv : sections) {
-                QJsonObject s = sv.toObject();
-                if (!kSupportedLibraryTypes.contains(s["type"].toString())) continue;
-                QString key = s["key"].toString();
-                QString libKey = machineId.isEmpty() ? key : machineId + "_" + key;
-                if (!libEnabled.isEmpty() && !libEnabled[libKey].toBool(true)) continue;
-                items.append(QVariantMap{
-                    {"key",         key},
-                    {"title",       s["title"].toString().toUpper()},
-                    {"sectionId",   key},
-                    {"sectionType", s["type"].toString()},
-                });
+            QVariantList ordered;
+            for (const auto &kv : libOrder) {
+                const QString k = kv.toString();
+                for (int i = 0; i < libItems.size(); ++i)
+                    if (libItems[i].toMap()["key"].toString() == k) { ordered.append(libItems.takeAt(i)); break; }
             }
+            ordered.append(libItems);
+            items = otherItems + ordered;
+        }
 
-            // Apply the saved library order (Reorder Sources) — reorder only the
-            // library entries (those with a sectionId), keeping Continue Watching
-            // pinned first. Unknown/new libraries keep their server order at the end.
-            const QJsonArray libOrder = loadConfig()["modules"].toObject()
-                                        ["com.240mp.plex"].toObject()["library_order"].toArray();
-            if (!libOrder.isEmpty()) {
-                QVariantList libItems, otherItems;
-                for (const auto &iv : std::as_const(items)) {
-                    const QVariantMap m = iv.toMap();
-                    if (m["sectionId"].isValid() && !m["sectionId"].isNull()) libItems.append(m);
-                    else otherItems.append(m);
-                }
-                QVariantList ordered;
-                for (const auto &kv : libOrder) {
-                    const QString k = kv.toString();
-                    for (int i = 0; i < libItems.size(); ++i)
-                        if (libItems[i].toMap()["key"].toString() == k) { ordered.append(libItems.takeAt(i)); break; }
-                }
-                ordered.append(libItems);
-                items = otherItems + ordered;
+        // Probe for a live-TV DVR. When present, inject a synthetic "LIVE TV" row
+        // right after the Watchlist shortcut. The emit is deferred into this
+        // callback so the row's position is stable.
+        QString uri = serverUrl(), token = serverToken();
+        auto *dvrReply = plexGet(QUrl(uri + "/livetv/dvrs"), token);
+        connect(dvrReply, &QNetworkReply::finished, this,
+                [this, dvrReply, items]() mutable {
+            dvrReply->deleteLater();
+            bool hasLive = false;
+            if (dvrReply->error() == QNetworkReply::NoError) {
+                QJsonArray dvrs = QJsonDocument::fromJson(dvrReply->readAll())
+                                  .object()["MediaContainer"].toObject()["Dvr"].toArray();
+                for (const auto &dv : dvrs)
+                    if (!dv.toObject()["lineup"].toString().isEmpty()) { hasLive = true; break; }
             }
-
-            // Probe for a live-TV DVR. When present, inject a synthetic "LIVE TV"
-            // row right after CONTINUE WATCHING (mirrors that synthetic row). The
-            // emit is deferred into this callback so the row's position is stable.
-            QString uri = serverUrl(), token = serverToken();
-            bool hadCw = hasCw;
-            auto *dvrReply = plexGet(QUrl(uri + "/livetv/dvrs"), token);
-            connect(dvrReply, &QNetworkReply::finished, this,
-                    [this, dvrReply, items, hadCw]() mutable {
-                dvrReply->deleteLater();
-                bool hasLive = false;
-                if (dvrReply->error() == QNetworkReply::NoError) {
-                    QJsonArray dvrs = QJsonDocument::fromJson(dvrReply->readAll())
-                                      .object()["MediaContainer"].toObject()["Dvr"].toArray();
-                    for (const auto &dv : dvrs)
-                        if (!dv.toObject()["lineup"].toString().isEmpty()) { hasLive = true; break; }
-                }
-                if (hasLive) {
-                    items.insert(hadCw ? 1 : 0, QVariantMap{
-                        {"key","live_tv"},{"title","LIVE TV"},
-                        {"sectionId",QVariant()},{"sectionType",QVariant()}});
-                }
-                emit librariesLoaded(items);
-            });
+            if (hasLive) {
+                items.insert(1, QVariantMap{
+                    {"key","live_tv"},{"title","LIVE TV"},
+                    {"sectionId",QVariant()},{"sectionType",QVariant()}});
+            }
+            emit librariesLoaded(items);
         });
     });
 }
@@ -1313,6 +1302,110 @@ void PlexBackend::load_continue_watching() {
             for (const auto &mv : hv.toObject()["Metadata"].toArray())
                 items.append(formatItem(mv.toObject()));
         flattenSeasons(items, [this](const QVariantList &flat) { emit continueWatchingLoaded(flat); });
+    });
+}
+
+void PlexBackend::fetchWatchlistLocal(int limit, std::function<void(QVariantList)> callback) {
+    const QString accToken = accountToken();
+    if (accToken.isEmpty()) { callback({}); return; }
+    // The Watchlist is account-level, served by Plex Discover (not the PMS).
+    QUrl wl("https://metadata.provider.plex.tv/library/sections/watchlist/all");
+    QUrlQuery wq;
+    wq.addQueryItem("X-Plex-Container-Start", "0");
+    wq.addQueryItem("X-Plex-Container-Size", QString::number(limit));
+    wl.setQuery(wq);
+    auto *r = plexGet(wl, accToken);
+    connect(r, &QNetworkReply::finished, this, [this, r, callback]() mutable {
+        r->deleteLater();
+        QStringList guids;
+        if (r->error() == QNetworkReply::NoError)
+            for (const auto &mv : QJsonDocument::fromJson(r->readAll())
+                     .object()["MediaContainer"].toObject()["Metadata"].toArray()) {
+                const QString g = mv.toObject()["guid"].toString();
+                if (!g.isEmpty()) guids.append(g);
+            }
+        const QString uri = serverUrl(), stoken = serverToken();
+        if (guids.isEmpty() || uri.isEmpty()) { callback({}); return; }
+
+        // Resolve each watchlist GUID to its local item, preserving order (a bucket
+        // per entry, filled as its /library/all?guid= lookup returns; unresolved
+        // entries — titles not on this server — stay empty and are dropped).
+        auto *bucket = new QVariantList();
+        bucket->resize(guids.size());
+        auto *pending = new int(guids.size());
+        auto finish = [bucket, pending, callback]() mutable {
+            if (--(*pending) != 0) return;
+            QVariantList out;
+            for (const auto &v : std::as_const(*bucket))
+                if (v.isValid()) out.append(v);
+            callback(out);
+            delete bucket; delete pending;
+        };
+        for (int i = 0; i < guids.size(); ++i) {
+            const QUrl lu(uri + "/library/all?guid="
+                          + QString::fromUtf8(QUrl::toPercentEncoding(guids[i])));
+            auto *lr = plexGet(lu, stoken);
+            connect(lr, &QNetworkReply::finished, this, [this, lr, bucket, i, finish]() mutable {
+                lr->deleteLater();
+                if (lr->error() == QNetworkReply::NoError) {
+                    const QJsonArray md = QJsonDocument::fromJson(lr->readAll())
+                        .object()["MediaContainer"].toObject()["Metadata"].toArray();
+                    if (!md.isEmpty())
+                        (*bucket)[i] = formatItem(md.first().toObject());
+                }
+                finish();
+            });
+        }
+    });
+}
+
+void PlexBackend::load_watchlist() {
+    fetchWatchlistLocal(60, [this](QVariantList items) { emit watchlistLoaded(items); });
+}
+
+void PlexBackend::set_watchlist(const QString &guid, bool add) {
+    const QString accToken = accountToken();
+    const QString rk = guid.section('/', -1);   // Discover ratingKey = last GUID segment
+    if (accToken.isEmpty() || rk.isEmpty()) {
+        emit errorOccurred("WATCHLIST UNAVAILABLE");
+        emit watchlistStateReady(guid, !add);   // undo the caller's optimistic flip
+        return;
+    }
+    const QString action = add ? "addToWatchlist" : "removeFromWatchlist";
+    QUrl u("https://metadata.provider.plex.tv/actions/" + action);
+    QUrlQuery q; q.addQueryItem("ratingKey", rk); u.setQuery(q);
+    auto *r = plexPut(u, accToken);
+    connect(r, &QNetworkReply::finished, this, [this, r, guid, add]() {
+        r->deleteLater();
+        if (r->error() != QNetworkReply::NoError) {
+            emit errorOccurred(QString("WATCHLIST %1 FAILED").arg(add ? "ADD" : "REMOVE"));
+            emit watchlistStateReady(guid, !add);   // revert
+            return;
+        }
+        emit watchlistStateReady(guid, add);
+    });
+}
+
+void PlexBackend::check_watchlist(const QString &guid) {
+    const QString accToken = accountToken();
+    if (accToken.isEmpty() || !guid.startsWith("plex://")) {
+        emit watchlistStateReady(guid, false); return;
+    }
+    QUrl wl("https://metadata.provider.plex.tv/library/sections/watchlist/all");
+    QUrlQuery q; q.addQueryItem("X-Plex-Container-Size", "400"); wl.setQuery(q);
+    auto *r = plexGet(wl, accToken);
+    connect(r, &QNetworkReply::finished, this, [this, r, guid]() {
+        r->deleteLater();
+        bool on = false;
+        if (r->error() == QNetworkReply::NoError) {
+            const QString id = guid.section('/', -1);
+            for (const auto &mv : QJsonDocument::fromJson(r->readAll())
+                     .object()["MediaContainer"].toObject()["Metadata"].toArray()) {
+                const QJsonObject o = mv.toObject();
+                if (o["guid"].toString() == guid || o["ratingKey"].toString() == id) { on = true; break; }
+            }
+        }
+        emit watchlistStateReady(guid, on);
     });
 }
 
@@ -1359,9 +1452,9 @@ void PlexBackend::load_home_hubs() {
             libs = ordered;
         }
 
-        // Slots: 0 = Continue Watching (pinned), 1.. = libraries.
+        // Slots: 0 = Watchlist (pinned), 1.. = libraries.
         auto *hubs = new QVariantList();
-        hubs->append(QVariantMap{{"title","CONTINUE WATCHING"},{"key","continue_watching"},
+        hubs->append(QVariantMap{{"title","WATCHLIST"},{"key","watchlist"},
                                  {"sectionType",QVariant()},{"items",QVariantList()}});
         for (const auto &l : libs)
             hubs->append(QVariantMap{{"title",l.title},{"key",l.key},
@@ -1370,9 +1463,9 @@ void PlexBackend::load_home_hubs() {
         auto *pending = new int(hubs->size());
         auto done = [this, hubs, pending]() {
             if (--(*pending) != 0) return;
-            // Drop only an empty Continue Watching row (slot 0); keep library rows
-            // even when nothing is recently added, so every library stays reachable
-            // from Home via its title.
+            // Drop only an empty Watchlist row (slot 0); keep library rows even when
+            // nothing is recently added, so every library stays reachable from Home
+            // via its title.
             QVariantList out;
             for (int i = 0; i < hubs->size(); ++i) {
                 const QVariantMap h = (*hubs)[i].toMap();
@@ -1387,16 +1480,8 @@ void PlexBackend::load_home_hubs() {
             QVariantMap h = (*hubs)[slot].toMap(); h["items"] = items; (*hubs)[slot] = h;
         };
 
-        // Continue Watching.
-        auto *cwReply = plexGet(QUrl(uri + "/hubs/continueWatching"), token);
-        connect(cwReply, &QNetworkReply::finished, this, [this, cwReply, fill, done]() {
-            cwReply->deleteLater();
-            QVariantList items;
-            if (cwReply->error() == QNetworkReply::NoError)
-                for (const auto &hv : QJsonDocument::fromJson(cwReply->readAll())
-                         .object()["MediaContainer"].toObject()["Hub"].toArray())
-                    for (const auto &mv : hv.toObject()["Metadata"].toArray())
-                        items.append(formatItem(mv.toObject()));
+        // Watchlist (slot 0): the account watchlist, resolved to local items.
+        fetchWatchlistLocal(20, [fill, done](QVariantList items) mutable {
             fill(0, items);
             done();
         });
@@ -1841,6 +1926,10 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
 
     return QVariantMap{
         {"ratingKey",        meta["ratingKey"].toString()},
+        // GUIDs for the Watchlist toggle: the item's own (movie/show) and, for an
+        // episode, its show's — you watchlist the show, not the episode.
+        {"guid",             meta["guid"].toString()},
+        {"grandparentGuid",  meta["grandparentGuid"].toString()},
         {"title",            meta["title"].toString().toUpper()},
         {"editionTitle",     meta["editionTitle"].toString()},
         {"year",             meta["year"].toVariant()},

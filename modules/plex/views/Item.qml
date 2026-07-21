@@ -55,6 +55,20 @@ FocusScope {
     property bool watched: false
     property bool tracked: false
 
+    // Row-2 sub-column: 0 = EPISODES (shows only), 1 = WATCHLIST bookmark. The
+    // watchlist target is this movie's GUID, or — on an episode — its show's (you
+    // watchlist the show, not the episode). Empty unless it's a plex:// GUID (new
+    // Plex agent), which hides the bookmark on legacy-agent libraries.
+    property int  epCol: 0
+    property string watchlistGuid: !detail ? ""
+        : (episodeItem ? (detail.grandparentGuid || "") : (detail.guid || ""))
+    property bool watchlistAvailable: watchlistGuid.indexOf("plex://") === 0
+    property bool onWatchlist: false
+    property bool watchlistBusy: false
+    property string _watchlistChecked: ""
+
+    onFocusRowChanged: if (focusRow === 2) epCol = episodeItem ? 0 : 1
+
     function toggleWatched() {
         if (!detail) return
         watched = !watched
@@ -77,6 +91,13 @@ FocusScope {
         } else {
             plexBackend.remove_from_continue_watching(detail.ratingKey)
         }
+    }
+
+    function toggleWatchlist() {
+        if (!watchlistAvailable || watchlistBusy) return
+        watchlistBusy = true
+        onWatchlist = !onWatchlist            // optimistic; reverted on failure
+        plexBackend.set_watchlist(watchlistGuid, onWatchlist)
     }
 
     function requestAdjacent(direction) {
@@ -111,6 +132,15 @@ FocusScope {
         detail = d
         watched = (d.viewCount || 0) > 0
         tracked = (d.viewOffset || 0) > 0
+        // Resolve the watchlist state for this title — the show, for an episode.
+        // Only re-check when the target GUID changes, so an episode PREV/NEXT swap
+        // (same show) doesn't refetch.
+        var wg = (d.type === "episode") ? (d.grandparentGuid || "") : (d.guid || "")
+        if (wg.indexOf("plex://") === 0 && wg !== _watchlistChecked) {
+            _watchlistChecked = wg
+            watchlistBusy = true
+            plexBackend.check_watchlist(wg)
+        }
         audioIdx = 0
         subtitleIdx = 0
         castIndex = 0
@@ -176,6 +206,15 @@ FocusScope {
 
         function onItemLoaded(d) {
             detailRoot.applyDetail(d)
+        }
+
+        // Watchlist membership resolved (initial check) or confirmed/reverted
+        // after a toggle. Only apply it if it's still about the current title.
+        function onWatchlistStateReady(guid, on) {
+            if (guid === detailRoot.watchlistGuid) {
+                detailRoot.onWatchlist = on
+                detailRoot.watchlistBusy = false
+            }
         }
 
         function onRelatedReady(items) {
@@ -401,7 +440,7 @@ FocusScope {
     // reachable when it has content, and Up/Down skip over any empty rows between.
     function rowAvailable(r) {
         if (r <= 1) return true
-        if (r === 2) return detailRoot.episodeItem   // Episodes browser (shows only)
+        if (r === 2) return detailRoot.episodeItem || detailRoot.watchlistAvailable   // Episodes and/or Watchlist
         if (r === 3) return detail && detail.audioStreams && detail.audioStreams.length > 0
         if (r === 4) return detail && detail.subtitleStreams && detail.subtitleStreams.length > 1
         if (r === 5) return !!detail   // Volume — playback setting, always shown
@@ -427,6 +466,8 @@ FocusScope {
             if (episodeItem && playCol > 0) playCol--
         } else if (focusRow === 1) {
             if (actionCol > 0) actionCol--
+        } else if (focusRow === 2) {
+            if (epCol > 0 && episodeItem) epCol--   // → EPISODES
         } else if (focusRow === 3 && detail.audioStreams && detail.audioStreams.length > 1)
             audioIdx = (audioIdx - 1 + detail.audioStreams.length) % detail.audioStreams.length
         else if (focusRow === 4 && detail.subtitleStreams && detail.subtitleStreams.length > 1)
@@ -447,6 +488,8 @@ FocusScope {
             if (episodeItem && playCol < 2) playCol++
         } else if (focusRow === 1) {
             if (actionCol < 1) actionCol++
+        } else if (focusRow === 2) {
+            if (epCol < 1 && watchlistAvailable) epCol++   // → WATCHLIST
         } else if (focusRow === 3 && detail.audioStreams && detail.audioStreams.length > 1)
             audioIdx = (audioIdx + 1) % detail.audioStreams.length
         else if (focusRow === 4 && detail.subtitleStreams && detail.subtitleStreams.length > 1)
@@ -467,8 +510,9 @@ FocusScope {
             else toggleTracked()
             return
         }
-        if (focusRow === 2) {   // Episodes browser (shows only)
-            detailRoot.openEpisodes()
+        if (focusRow === 2) {
+            if (epCol === 1 && detailRoot.watchlistAvailable) detailRoot.toggleWatchlist()
+            else if (detailRoot.episodeItem) detailRoot.openEpisodes()
             return
         }
         if (focusRow === 8 && detailRoot.relatedItems.length > 0) {
@@ -787,28 +831,91 @@ FocusScope {
                 }
             }
 
-            // Episodes browser (shows only) — a full-width button directly under
-            // the WATCHED/TRACKED actions, matching the play cluster width.
-            Rectangle {
-                id: episodesBtn
-                visible: detailRoot.episodeItem
-                property bool sel: focusRow === 2
+            // Episodes + Watchlist row, directly under the WATCHED/TRACKED actions
+            // and matching the play-cluster width. EPISODES (shows only) fills the
+            // left; the Watchlist bookmark toggle sits on the right.
+            Item {
+                id: row2
+                visible: detailRoot.episodeItem || detailRoot.watchlistAvailable
                 width: root.sw * 0.1875
                 height: root.sh * 0.05
-                color: sel ? root.accentColor : root.surfaceColor
-                border.color: sel ? root.accentColor : root.tertiaryColor
-                border.width: root.sh * 0.003125 //2
 
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: { if (episodesBtn.sel) detailRoot.openEpisodes(); else focusRow = 2 }
+                // Watchlist bookmark toggle (right).
+                Rectangle {
+                    id: watchlistBtn
+                    visible: detailRoot.watchlistAvailable
+                    property bool sel: focusRow === 2 && detailRoot.epCol === 1
+                    width: root.sh * 0.05
+                    height: root.sh * 0.05
+                    anchors.right: parent.right
+                    color: sel ? root.accentColor : root.surfaceColor
+                    border.color: sel ? root.accentColor : root.tertiaryColor
+                    border.width: root.sh * 0.003125 //2
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: { if (watchlistBtn.sel) detailRoot.toggleWatchlist()
+                                     else { focusRow = 2; detailRoot.epCol = 1 } }
+                    }
+                    // Bookmark glyph as a vector: outline when not on the watchlist,
+                    // filled when on it.
+                    Canvas {
+                        id: bookmark
+                        anchors.centerIn: parent
+                        width: parent.width * 0.4
+                        height: parent.height * 0.54
+                        property bool filled: detailRoot.onWatchlist
+                        property color col: watchlistBtn.sel ? root.surfaceColor : root.accentColor
+                        onFilledChanged: requestPaint()
+                        onColChanged: requestPaint()
+                        onWidthChanged: requestPaint()
+                        onHeightChanged: requestPaint()
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.reset()
+                            var w = width, h = height
+                            var lw = Math.max(1.5, w * 0.16)
+                            var notch = h * 0.26
+                            var x0 = lw / 2, y0 = lw / 2, x1 = w - lw / 2, y1 = h - lw / 2
+                            ctx.beginPath()
+                            ctx.moveTo(x0, y0)
+                            ctx.lineTo(x1, y0)
+                            ctx.lineTo(x1, y1)
+                            ctx.lineTo(w / 2, y1 - notch)
+                            ctx.lineTo(x0, y1)
+                            ctx.closePath()
+                            if (filled) { ctx.fillStyle = col; ctx.fill() }
+                            else { ctx.strokeStyle = col; ctx.lineWidth = lw
+                                   ctx.lineJoin = "round"; ctx.stroke() }
+                        }
+                    }
                 }
-                Text {
-                    anchors.centerIn: parent
-                    text: "EPISODES"
-                    color: episodesBtn.sel ? root.surfaceColor : root.primaryColor
-                    font.family: root.globalFont
-                    font.pixelSize: root.sh * 0.025 //12
+
+                // Episodes browser (shows/episodes only), left of the bookmark.
+                Rectangle {
+                    id: episodesBtn
+                    visible: detailRoot.episodeItem
+                    property bool sel: focusRow === 2 && detailRoot.epCol === 0
+                    anchors.left: parent.left
+                    anchors.right: watchlistBtn.visible ? watchlistBtn.left : parent.right
+                    anchors.rightMargin: watchlistBtn.visible ? root.sw * 0.0046875 : 0
+                    height: root.sh * 0.05
+                    color: sel ? root.accentColor : root.surfaceColor
+                    border.color: sel ? root.accentColor : root.tertiaryColor
+                    border.width: root.sh * 0.003125 //2
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: { if (episodesBtn.sel) detailRoot.openEpisodes()
+                                     else { focusRow = 2; detailRoot.epCol = 0 } }
+                    }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "EPISODES"
+                        color: episodesBtn.sel ? root.surfaceColor : root.primaryColor
+                        font.family: root.globalFont
+                        font.pixelSize: root.sh * 0.025 //12
+                    }
                 }
             }
             }

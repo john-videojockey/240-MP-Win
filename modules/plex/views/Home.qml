@@ -46,9 +46,9 @@ FocusScope {
         var st = navState()
         if (colIndex === 0) {
             // Title: open the full source.
-            if (h.key === "continue_watching")
+            if (h.key === "watchlist")
                 homeRoot.navigateTo("Items.qml", {
-                    listType: "continue_watching", title: "CONTINUE WATCHING", libraryName: h.title
+                    listType: "watchlist", title: "WATCHLIST", libraryName: h.title
                 }, st)
             else
                 homeRoot.navigateTo("Library.qml", {
@@ -61,7 +61,7 @@ FocusScope {
         // Route like browse does: shows open the season/episode view, everything
         // else (movies, episodes from Continue Watching) opens the item view.
         // Both load full detail/art from the item's ratingKey.
-        var libName = (h.key !== "continue_watching") ? h.title : ""
+        var libName = (h.key !== "watchlist") ? h.title : ""
         if (it.type === "show")
             homeRoot.navigateTo("ItemShow.qml", { item: it, libraryName: libName }, st)
         else
