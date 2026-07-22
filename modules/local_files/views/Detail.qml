@@ -42,6 +42,15 @@ FocusScope {
     // 0=PREV, 1=PLAY, 2=NEXT (PREV/NEXT only exist with siblings)
     property int playCol: 1
     property int actionCol: 0
+    // Row-0 sub-column: 0 = EPISODES (series only), 1 = WATCHLIST bookmark.
+    property int epCol: 0
+
+    onFocusRowChanged: if (focusRow === 0) epCol = isSeries ? 0 : 1
+
+    function openEpisodes() {
+        if (current && current.path)
+            navigateTo("Episodes.qml", { path: current.path, currentPath: current.path }, {})
+    }
 
     // Real-time upscaler — a global app setting ("mpv_upscaler") cycled here, the
     // same control as the Plex info screen. Applies to the next playback.
@@ -328,7 +337,8 @@ FocusScope {
         for (var r = focusRow + 1; r <= 7; r++) if (rowAvailable(r)) { focusRow = r; break }
     }
     Keys.onLeftPressed: {
-        if (focusRow === 1) { if (hasSiblings && playCol > 0) playCol-- }
+        if (focusRow === 0) { if (epCol > 0 && isSeries) epCol-- }   // → EPISODES
+        else if (focusRow === 1) { if (hasSiblings && playCol > 0) playCol-- }
         else if (focusRow === 2) { if (actionCol > 0) actionCol-- }
         else if (focusRow === 3) detailRoot.cycleAudio(-1)
         else if (focusRow === 4) detailRoot.cycleSub(-1)
@@ -338,7 +348,8 @@ FocusScope {
             detailRoot.castIndex = (detailRoot.castIndex - 1 + detailRoot.castExtras.length) % detailRoot.castExtras.length
     }
     Keys.onRightPressed: {
-        if (focusRow === 1) { if (hasSiblings && playCol < 2) playCol++ }
+        if (focusRow === 0) { if (epCol < 1) epCol++ }   // → WATCHLIST
+        else if (focusRow === 1) { if (hasSiblings && playCol < 2) playCol++ }
         else if (focusRow === 2) { if (actionCol < 1) actionCol++ }
         else if (focusRow === 3) detailRoot.cycleAudio(1)
         else if (focusRow === 4) detailRoot.cycleSub(1)
@@ -348,7 +359,11 @@ FocusScope {
             detailRoot.castIndex = (detailRoot.castIndex + 1) % detailRoot.castExtras.length
     }
     Keys.onReturnPressed: {
-        if (focusRow === 0) { detailRoot.toggleWatchlist(); return }
+        if (focusRow === 0) {
+            if (epCol === 1) detailRoot.toggleWatchlist()
+            else if (isSeries) detailRoot.openEpisodes()
+            return
+        }
         if (focusRow === 2) {
             if (actionCol === 0) toggleWatched()
             else toggleTracked()
@@ -450,31 +465,37 @@ FocusScope {
             Column {
                 spacing: root.sh * 0.0125 //6
 
-                // Watchlist toggle (row 0), above the play cluster — mirrors the
-                // Plex info screen. The bookmark fills when it's on the watchlist.
-                Rectangle {
-                    id: watchlistBtn
-                    property bool sel: focusRow === 0
+                // Episodes + Watchlist row (row 0), above the play cluster — mirrors
+                // the Plex info screen: EPISODES (series only) fills the left; the
+                // Watchlist bookmark toggle is a square on the right.
+                Item {
+                    id: row0
                     width: root.sw * 0.1875
                     height: root.sh * 0.05
-                    color: sel ? root.accentColor : root.surfaceColor
-                    border.color: sel ? root.accentColor : root.tertiaryColor
-                    border.width: root.sh * 0.003125 //2
 
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: { if (watchlistBtn.sel) detailRoot.toggleWatchlist(); else focusRow = 0 }
-                    }
-                    Row {
-                        anchors.centerIn: parent
-                        spacing: root.sw * 0.00625
+                    // Watchlist bookmark toggle (right). Filled when on the watchlist.
+                    Rectangle {
+                        id: watchlistBtn
+                        property bool sel: focusRow === 0 && detailRoot.epCol === 1
+                        width: root.sh * 0.05
+                        height: root.sh * 0.05
+                        anchors.right: parent.right
+                        color: sel ? root.accentColor : root.surfaceColor
+                        border.color: sel ? root.accentColor : root.tertiaryColor
+                        border.width: root.sh * 0.003125 //2
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: { if (watchlistBtn.sel) detailRoot.toggleWatchlist()
+                                         else { focusRow = 0; detailRoot.epCol = 1 } }
+                        }
                         Canvas {
                             id: bookmark
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: root.sh * 0.018
-                            height: root.sh * 0.024
+                            anchors.centerIn: parent
+                            width: parent.width * 0.4
+                            height: parent.height * 0.54
                             property bool filled: detailRoot.onWatchlist
-                            property color col: watchlistBtn.sel ? root.surfaceColor : root.primaryColor
+                            property color col: watchlistBtn.sel ? root.surfaceColor : root.accentColor
                             onFilledChanged: requestPaint()
                             onColChanged: requestPaint()
                             onWidthChanged: requestPaint()
@@ -493,10 +514,30 @@ FocusScope {
                                        ctx.lineJoin = "round"; ctx.stroke() }
                             }
                         }
+                    }
+
+                    // Episodes browser (series only), left of the bookmark.
+                    Rectangle {
+                        id: episodesBtn
+                        visible: detailRoot.isSeries
+                        property bool sel: focusRow === 0 && detailRoot.epCol === 0
+                        anchors.left: parent.left
+                        anchors.right: watchlistBtn.left
+                        anchors.rightMargin: root.sw * 0.0046875 //3
+                        height: root.sh * 0.05
+                        color: sel ? root.accentColor : root.surfaceColor
+                        border.color: sel ? root.accentColor : root.tertiaryColor
+                        border.width: root.sh * 0.003125 //2
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: { if (episodesBtn.sel) detailRoot.openEpisodes()
+                                         else { focusRow = 0; detailRoot.epCol = 0 } }
+                        }
                         Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "WATCHLIST"
-                            color: watchlistBtn.sel ? root.surfaceColor : root.primaryColor
+                            anchors.centerIn: parent
+                            text: "EPISODES"
+                            color: episodesBtn.sel ? root.surfaceColor : root.primaryColor
                             font.family: root.globalFont
                             font.pixelSize: root.sh * 0.025 //12
                         }
