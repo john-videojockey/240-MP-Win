@@ -34,9 +34,10 @@ FocusScope {
     // them into portrait would discard most of the frame. Structural lists
     // (hubs, categories, playlists-of-lists, …) keep the title list.
     property string browseView: (appCore.get_setting(moduleRoot.moduleId, "browse_view") || "Title")
-    // Watchlist always uses the poster grid (8 across, Home's horizontal spacing).
+    // Watchlist respects the Browse View setting like every other list: Cover =
+    // the 8-across poster grid (watchlistMode sizes it), Title = the name list.
     property bool watchlistMode: listType === "watchlist"
-    property bool coverMode: watchlistMode || (browseView === "Cover" && items.length > 0 && itemsAreCovers(items))
+    property bool coverMode: browseView === "Cover" && items.length > 0 && itemsAreCovers(items)
     // Watchlist paging (load-more): where the next page starts, and whether more exist.
     property int  wlNextOffset: 0
     property bool wlHasMore: false
@@ -676,6 +677,8 @@ FocusScope {
                 Text {
                     id: rowText
                     text: {
+                        if (modelData.loadMore)
+                            return itemListRoot.wlLoadingMore ? "LOADING…" : "LOAD MORE ►"
                         var base = (modelData.type === "episode" && modelData.grandparentTitle)
                                    ? (modelData.grandparentTitle + ": " + (modelData.title || ""))
                                    : (modelData.title || "")
