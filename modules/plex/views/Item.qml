@@ -16,7 +16,7 @@ FocusScope {
     property var detail: null
 
     // Focus rows: 0=play button, 1=audio, 2=subtitles
-    property int focusRow: 0
+    property int focusRow: 1
 
     // True from when PLAY is pressed until we navigate to the Player (or error
     // out). Plex can take a few seconds to hand back a stream/transcode URL, so
@@ -36,10 +36,11 @@ FocusScope {
     property bool infoBg: true
     property real infoBgOpacity: 0.3
 
-    // Focus rows: 0 = play cluster, 1 = actions (WATCHED/TRACKED), 2 = episodes
-    // (shows only), 3 = audio, 4 = subtitles, 5 = volume, 6 = upscaler, 7 = cast &
-    // extras, 8 = related. Column focus inside the play row: 0=PREV, 1=PLAY, 2=NEXT
-    // (PREV/NEXT are episode-only). actionCol: 0=WATCHED, 1=TRACKED.
+    // Focus rows: 0 = episodes/watchlist (shows/movies as available), 1 = play
+    // cluster, 2 = actions (WATCHED/TRACKED), 3 = audio, 4 = subtitles, 5 = volume,
+    // 6 = upscaler, 7 = cast & extras, 8 = related. Column focus inside the play row:
+    // 0=PREV, 1=PLAY, 2=NEXT (PREV/NEXT are episode-only). actionCol: 0=WATCHED,
+    // 1=TRACKED. epCol inside row 0: 0=EPISODES, 1=WATCHLIST.
     property int  playCol: 1
     property int  actionCol: 0
     property bool episodeItem: (detail && detail.type === "episode") || item.type === "episode"
@@ -67,7 +68,7 @@ FocusScope {
     property bool watchlistBusy: false
     property string _watchlistChecked: ""
 
-    onFocusRowChanged: if (focusRow === 2) epCol = episodeItem ? 0 : 1
+    onFocusRowChanged: if (focusRow === 0) epCol = episodeItem ? 0 : 1
 
     function toggleWatched() {
         if (!detail) return
@@ -380,7 +381,7 @@ FocusScope {
                                : relatedSection.y
 
     Component.onCompleted: {
-        focusRow = 0
+        focusRow = 1
 
         // Read the theme settings and start the theme FIRST, before any slower work
         // below (detail load, config writes). A theme playing on hover in browse /
@@ -435,12 +436,12 @@ FocusScope {
 
     focus: true
 
-    // Rows: 0 play, 1 actions (always), 2 audio, 3 subtitles, 4 volume (always),
-    // 5 upscaler (always), 6 cast & extras, 7 More Like This. A row is only
-    // reachable when it has content, and Up/Down skip over any empty rows between.
+    // Rows (top-to-bottom): 0 episodes/watchlist, 1 play cluster, 2 actions, 3 audio,
+    // 4 subtitles, 5 volume, 6 upscaler, 7 cast & extras, 8 More Like This. A row is
+    // only reachable when it has content, and Up/Down skip over any empty rows.
     function rowAvailable(r) {
-        if (r <= 1) return true
-        if (r === 2) return detailRoot.episodeItem || detailRoot.watchlistAvailable   // Episodes and/or Watchlist
+        if (r === 0) return detailRoot.episodeItem || detailRoot.watchlistAvailable   // Episodes and/or Watchlist
+        if (r === 1 || r === 2) return true   // play cluster, actions (always shown)
         if (r === 3) return detail && detail.audioStreams && detail.audioStreams.length > 0
         if (r === 4) return detail && detail.subtitleStreams && detail.subtitleStreams.length > 1
         if (r === 5) return !!detail   // Volume — playback setting, always shown
@@ -462,11 +463,11 @@ FocusScope {
     Keys.onLeftPressed: {
         if (isLaunching) return
         if (!detail) return
-        if (focusRow === 0) {
+        if (focusRow === 1) {
             if (episodeItem && playCol > 0) playCol--
-        } else if (focusRow === 1) {
-            if (actionCol > 0) actionCol--
         } else if (focusRow === 2) {
+            if (actionCol > 0) actionCol--
+        } else if (focusRow === 0) {
             if (epCol > 0 && episodeItem) epCol--   // → EPISODES
         } else if (focusRow === 3 && detail.audioStreams && detail.audioStreams.length > 1)
             audioIdx = (audioIdx - 1 + detail.audioStreams.length) % detail.audioStreams.length
@@ -484,11 +485,11 @@ FocusScope {
     Keys.onRightPressed: {
         if (isLaunching) return
         if (!detail) return
-        if (focusRow === 0) {
+        if (focusRow === 1) {
             if (episodeItem && playCol < 2) playCol++
-        } else if (focusRow === 1) {
-            if (actionCol < 1) actionCol++
         } else if (focusRow === 2) {
+            if (actionCol < 1) actionCol++
+        } else if (focusRow === 0) {
             if (epCol < 1 && watchlistAvailable) epCol++   // → WATCHLIST
         } else if (focusRow === 3 && detail.audioStreams && detail.audioStreams.length > 1)
             audioIdx = (audioIdx + 1) % detail.audioStreams.length
@@ -505,12 +506,12 @@ FocusScope {
     }
     Keys.onReturnPressed: {
         if (isLaunching) return
-        if (focusRow === 1) {
+        if (focusRow === 2) {
             if (actionCol === 0) toggleWatched()
             else toggleTracked()
             return
         }
-        if (focusRow === 2) {
+        if (focusRow === 0) {
             if (epCol === 1 && detailRoot.watchlistAvailable) detailRoot.toggleWatchlist()
             else if (detailRoot.episodeItem) detailRoot.openEpisodes()
             return
@@ -541,12 +542,12 @@ FocusScope {
             }
             return
         }
-        if (focusRow === 0 && detail && episodeItem && playCol !== 1) {
+        if (focusRow === 1 && detail && episodeItem && playCol !== 1) {
             // PREV/NEXT: swap this screen to the sibling episode in place.
             requestAdjacent(playCol === 0 ? -1 : 1)
             return
         }
-        if (focusRow === 0 && detail) {
+        if (focusRow === 1 && detail) {
             // Stop the theme before handing off to the fullscreen player.
             plexBackend.stop_theme()
             // Show the loading overlay immediately; clears on navigate or error.
@@ -666,174 +667,14 @@ FocusScope {
             height: root.sh * 0.30
             spacing: root.sw * 0.0375 //24
 
-            // Play cluster (PREV/PLAY/NEXT) stacked over the WATCHED/TRACKED
-            // action buttons. PREV/NEXT appear for episodes only and swap this
-            // screen to the sibling episode; PLAY behaves exactly as before.
+            // Left action stack, top to bottom: the Episodes/Watchlist row, then the
+            // play cluster (PREV/PLAY/NEXT — PREV/NEXT episode-only, swapping to the
+            // sibling episode), then the WATCHED/TRACKED actions. Focus opens on PLAY.
             Column {
                 spacing: root.sh * 0.0125 //6
 
-            Item {
-                id: playCluster
-                width: root.sw * 0.1875 //120
-                height: root.sh * 0.1166667 //56
-
-                Row {
-                    anchors.fill: parent
-                    spacing: root.sw * 0.0046875 //3
-
-                    Rectangle {
-                        id: prevButton
-                        visible: detailRoot.episodeItem
-                        property bool sel: focusRow === 0 && playCol === 0
-                        color: sel ? root.accentColor : root.surfaceColor
-                        border.color: sel ? root.accentColor : root.tertiaryColor
-                        width: root.sw * 0.0375 //24
-                        height: parent.height
-                        border.width: root.sh * 0.003125 //2
-
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-                                if (prevButton.sel) inputManager.touchKey("select")
-                                else { focusRow = 0; playCol = 0 }
-                            }
-                        }
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "\u25C4"
-                            color: prevButton.sel ? root.surfaceColor : root.primaryColor
-                            font.family: root.globalFont
-                            font.pixelSize: root.sh * 0.0416667 //20
-                        }
-                    }
-
-                    Rectangle {
-                        id: playButton
-                        property bool sel: focusRow === 0 && (!detailRoot.episodeItem || playCol === 1)
-                        color: sel ? root.accentColor : root.surfaceColor
-                        border.color: sel ? root.accentColor : root.tertiaryColor
-                        // Fill the rest of the 0.1875 cluster so PREV+PLAY+NEXT total
-                        // exactly matches the WATCHED/TRACKED row below it.
-                        width: detailRoot.episodeItem
-                               ? root.sw * 0.1875 - 2 * (root.sw * 0.0375 + root.sw * 0.0046875)
-                               : root.sw * 0.1875
-                        height: parent.height
-                        border.width: root.sh * 0.003125 //2
-
-                        // Touch: first tap focuses the PLAY button, tapping it while
-                        // focused activates it via a synthesized Enter.
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-                                if (playButton.sel) inputManager.touchKey("select")
-                                else { focusRow = 0; playCol = 1 }
-                            }
-                        }
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: (detail && detail.viewOffset > 0) ? "RSUM \u25BA" : "PLAY \u25BA"
-                            color: playButton.sel ? root.surfaceColor : root.primaryColor
-                            font.family: root.globalFont
-                            font.pixelSize: detailRoot.episodeItem ? root.sh * 0.0375 : root.sh * 0.05
-                        }
-                    }
-
-                    Rectangle {
-                        id: nextButton
-                        visible: detailRoot.episodeItem
-                        property bool sel: focusRow === 0 && playCol === 2
-                        color: sel ? root.accentColor : root.surfaceColor
-                        border.color: sel ? root.accentColor : root.tertiaryColor
-                        width: root.sw * 0.0375 //24
-                        height: parent.height
-                        border.width: root.sh * 0.003125 //2
-
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-                                if (nextButton.sel) inputManager.touchKey("select")
-                                else { focusRow = 0; playCol = 2 }
-                            }
-                        }
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "\u25BA"
-                            color: nextButton.sel ? root.surfaceColor : root.primaryColor
-                            font.family: root.globalFont
-                            font.pixelSize: root.sh * 0.0416667 //20
-                        }
-                    }
-                }
-            }
-
-            // Actions: WATCHED / UNWATCHED and TRACKED / UNTRACKED.
-            Row {
-                spacing: root.sw * 0.0046875 //3
-
-                Rectangle {
-                    id: watchedBtn
-                    property bool sel: focusRow === 1 && actionCol === 0
-                    color: sel ? root.accentColor : root.surfaceColor
-                    border.color: sel ? root.accentColor : root.tertiaryColor
-                    // Match the play cluster's total width (0.1875): two buttons split
-                    // it with the same 3px gap; WATCHED takes it all when TRACKED hides.
-                    width: trackedBtn.visible ? (root.sw * 0.1875 - root.sw * 0.0046875) / 2
-                                              : root.sw * 0.1875
-                    height: root.sh * 0.05
-                    border.width: root.sh * 0.003125 //2
-
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: {
-                            if (watchedBtn.sel) inputManager.touchKey("select")
-                            else { focusRow = 1; actionCol = 0 }
-                        }
-                    }
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: detailRoot.watched ? "WATCHED" : "UNWATCHED"
-                        color: watchedBtn.sel ? root.surfaceColor : root.primaryColor
-                        font.family: root.globalFont
-                        font.pixelSize: root.sh * 0.025 //12
-                    }
-                }
-
-                Rectangle {
-                    id: trackedBtn
-                    // "Remove from Continue Watching" only applies to in-progress items.
-                    visible: detail && detail.viewOffset > 0
-                    property bool sel: focusRow === 1 && actionCol === 1
-                    color: sel ? root.accentColor : root.surfaceColor
-                    border.color: sel ? root.accentColor : root.tertiaryColor
-                    width: (root.sw * 0.1875 - root.sw * 0.0046875) / 2
-                    height: root.sh * 0.05
-                    border.width: root.sh * 0.003125 //2
-
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: {
-                            if (trackedBtn.sel) inputManager.touchKey("select")
-                            else { focusRow = 1; actionCol = 1 }
-                        }
-                    }
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: detailRoot.tracked ? "TRACKED" : "UNTRACKED"
-                        color: trackedBtn.sel ? root.surfaceColor : root.primaryColor
-                        font.family: root.globalFont
-                        font.pixelSize: root.sh * 0.025 //12
-                    }
-                }
-            }
-
-            // Episodes + Watchlist row, directly under the WATCHED/TRACKED actions
-            // and matching the play-cluster width. EPISODES (shows only) fills the
-            // left; the Watchlist bookmark toggle sits on the right.
+            // Episodes + Watchlist row, above the play cluster. EPISODES (shows
+            // only) fills the left; the Watchlist bookmark toggle sits on the right.
             Item {
                 id: row2
                 visible: detailRoot.episodeItem || detailRoot.watchlistAvailable
@@ -844,7 +685,7 @@ FocusScope {
                 Rectangle {
                     id: watchlistBtn
                     visible: detailRoot.watchlistAvailable
-                    property bool sel: focusRow === 2 && detailRoot.epCol === 1
+                    property bool sel: focusRow === 0 && detailRoot.epCol === 1
                     width: root.sh * 0.05
                     height: root.sh * 0.05
                     anchors.right: parent.right
@@ -855,7 +696,7 @@ FocusScope {
                     MouseArea {
                         anchors.fill: parent
                         onClicked: { if (watchlistBtn.sel) detailRoot.toggleWatchlist()
-                                     else { focusRow = 2; detailRoot.epCol = 1 } }
+                                     else { focusRow = 0; detailRoot.epCol = 1 } }
                     }
                     // Bookmark glyph as a vector: outline when not on the watchlist,
                     // filled when on it.
@@ -895,7 +736,7 @@ FocusScope {
                 Rectangle {
                     id: episodesBtn
                     visible: detailRoot.episodeItem
-                    property bool sel: focusRow === 2 && detailRoot.epCol === 0
+                    property bool sel: focusRow === 0 && detailRoot.epCol === 0
                     anchors.left: parent.left
                     anchors.right: watchlistBtn.visible ? watchlistBtn.left : parent.right
                     anchors.rightMargin: watchlistBtn.visible ? root.sw * 0.0046875 : 0
@@ -907,12 +748,171 @@ FocusScope {
                     MouseArea {
                         anchors.fill: parent
                         onClicked: { if (episodesBtn.sel) detailRoot.openEpisodes()
-                                     else { focusRow = 2; detailRoot.epCol = 0 } }
+                                     else { focusRow = 0; detailRoot.epCol = 0 } }
                     }
                     Text {
                         anchors.centerIn: parent
                         text: "EPISODES"
                         color: episodesBtn.sel ? root.surfaceColor : root.primaryColor
+                        font.family: root.globalFont
+                        font.pixelSize: root.sh * 0.025 //12
+                    }
+                }
+            }
+
+            Item {
+                id: playCluster
+                width: root.sw * 0.1875 //120
+                height: root.sh * 0.1166667 //56
+
+                Row {
+                    anchors.fill: parent
+                    spacing: root.sw * 0.0046875 //3
+
+                    Rectangle {
+                        id: prevButton
+                        visible: detailRoot.episodeItem
+                        property bool sel: focusRow === 1 && playCol === 0
+                        color: sel ? root.accentColor : root.surfaceColor
+                        border.color: sel ? root.accentColor : root.tertiaryColor
+                        width: root.sw * 0.0375 //24
+                        height: parent.height
+                        border.width: root.sh * 0.003125 //2
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (prevButton.sel) inputManager.touchKey("select")
+                                else { focusRow = 1; playCol = 0 }
+                            }
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "\u25C4"
+                            color: prevButton.sel ? root.surfaceColor : root.primaryColor
+                            font.family: root.globalFont
+                            font.pixelSize: root.sh * 0.0416667 //20
+                        }
+                    }
+
+                    Rectangle {
+                        id: playButton
+                        property bool sel: focusRow === 1 && (!detailRoot.episodeItem || playCol === 1)
+                        color: sel ? root.accentColor : root.surfaceColor
+                        border.color: sel ? root.accentColor : root.tertiaryColor
+                        // Fill the rest of the 0.1875 cluster so PREV+PLAY+NEXT total
+                        // exactly matches the WATCHED/TRACKED row below it.
+                        width: detailRoot.episodeItem
+                               ? root.sw * 0.1875 - 2 * (root.sw * 0.0375 + root.sw * 0.0046875)
+                               : root.sw * 0.1875
+                        height: parent.height
+                        border.width: root.sh * 0.003125 //2
+
+                        // Touch: first tap focuses the PLAY button, tapping it while
+                        // focused activates it via a synthesized Enter.
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (playButton.sel) inputManager.touchKey("select")
+                                else { focusRow = 1; playCol = 1 }
+                            }
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: (detail && detail.viewOffset > 0) ? "RSUM \u25BA" : "PLAY \u25BA"
+                            color: playButton.sel ? root.surfaceColor : root.primaryColor
+                            font.family: root.globalFont
+                            font.pixelSize: detailRoot.episodeItem ? root.sh * 0.0375 : root.sh * 0.05
+                        }
+                    }
+
+                    Rectangle {
+                        id: nextButton
+                        visible: detailRoot.episodeItem
+                        property bool sel: focusRow === 1 && playCol === 2
+                        color: sel ? root.accentColor : root.surfaceColor
+                        border.color: sel ? root.accentColor : root.tertiaryColor
+                        width: root.sw * 0.0375 //24
+                        height: parent.height
+                        border.width: root.sh * 0.003125 //2
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                if (nextButton.sel) inputManager.touchKey("select")
+                                else { focusRow = 1; playCol = 2 }
+                            }
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "\u25BA"
+                            color: nextButton.sel ? root.surfaceColor : root.primaryColor
+                            font.family: root.globalFont
+                            font.pixelSize: root.sh * 0.0416667 //20
+                        }
+                    }
+                }
+            }
+
+            // Actions: WATCHED / UNWATCHED and TRACKED / UNTRACKED.
+            Row {
+                spacing: root.sw * 0.0046875 //3
+
+                Rectangle {
+                    id: watchedBtn
+                    property bool sel: focusRow === 2 && actionCol === 0
+                    color: sel ? root.accentColor : root.surfaceColor
+                    border.color: sel ? root.accentColor : root.tertiaryColor
+                    // Match the play cluster's total width (0.1875): two buttons split
+                    // it with the same 3px gap; WATCHED takes it all when TRACKED hides.
+                    width: trackedBtn.visible ? (root.sw * 0.1875 - root.sw * 0.0046875) / 2
+                                              : root.sw * 0.1875
+                    height: root.sh * 0.05
+                    border.width: root.sh * 0.003125 //2
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            if (watchedBtn.sel) inputManager.touchKey("select")
+                            else { focusRow = 2; actionCol = 0 }
+                        }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: detailRoot.watched ? "WATCHED" : "UNWATCHED"
+                        color: watchedBtn.sel ? root.surfaceColor : root.primaryColor
+                        font.family: root.globalFont
+                        font.pixelSize: root.sh * 0.025 //12
+                    }
+                }
+
+                Rectangle {
+                    id: trackedBtn
+                    // "Remove from Continue Watching" only applies to in-progress items.
+                    visible: detail && detail.viewOffset > 0
+                    property bool sel: focusRow === 2 && actionCol === 1
+                    color: sel ? root.accentColor : root.surfaceColor
+                    border.color: sel ? root.accentColor : root.tertiaryColor
+                    width: (root.sw * 0.1875 - root.sw * 0.0046875) / 2
+                    height: root.sh * 0.05
+                    border.width: root.sh * 0.003125 //2
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: {
+                            if (trackedBtn.sel) inputManager.touchKey("select")
+                            else { focusRow = 2; actionCol = 1 }
+                        }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: detailRoot.tracked ? "TRACKED" : "UNTRACKED"
+                        color: trackedBtn.sel ? root.surfaceColor : root.primaryColor
                         font.family: root.globalFont
                         font.pixelSize: root.sh * 0.025 //12
                     }
