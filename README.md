@@ -1,6 +1,6 @@
 # 240-MP for Windows
 
-240-MP is a retro VCR style frontend to play content on a TV-connected PC. **This repository is the Windows port** of [anthonycaccese/240-MP](https://github.com/anthonycaccese/240-MP), which targets Raspberry Pi (preferably hooked up to a CRT TV) and macOS. Everything about the experience is the same — the VCR-style UI, the modules, the mpv hand-off — rebuilt on Windows-native plumbing.
+240-MP is a retro VCR style frontend to play content on a TV-connected PC. **This repository is the Windows port** of [anthonycaccese/240-MP](https://github.com/anthonycaccese/240-MP), which targets Raspberry Pi (preferably hooked up to a CRT TV) and macOS. The core experience carries over — the VCR-style UI, the modules, the mpv hand-off — rebuilt on Windows-native plumbing and extended with the features below.
 
 Playback experiences are handled via modules to enable new integrations without requiring major changes to the overall frontend. There are 5 included playback modules; [Local Files](https://github.com/anthonycaccese/240-MP/wiki/Module:-Local-Files), [Plex](https://github.com/anthonycaccese/240-MP/wiki/Module:-Plex), [Jellyfin](https://github.com/anthonycaccese/240-MP/wiki/Module:-Jellyfin), [YouTube](https://github.com/anthonycaccese/240-MP/wiki/Module:-YouTube) and a module similar to art/wallpaper modes on modern tvs called [Ambient:Mode](https://github.com/anthonycaccese/240-MP/wiki/Module:-Ambient-Mode).
 
@@ -130,7 +130,7 @@ Full options (autostart, custom folder, uninstall) and the manual zip install ar
 
 ## Credits & Acknowledgments
 
-- This is a Windows port of [240-MP](https://github.com/anthonycaccese/240-MP) by Anthony Caccese — all of the app's design, modules, and views are his work.
+- This is a Windows port of [240-MP](https://github.com/anthonycaccese/240-MP) by Anthony Caccese — many of the app's design, modules, and views are his work.
 - The `VCR OSD Mono` font was created by Riciery Santos Leal (a.k.a. mrmanet) https://www.dafont.com/vcr-osd-mono.font
 - Like upstream, this port was built with substantial help from [Claude Code](https://www.anthropic.com/product/claude-code).
 - Thank you to Plex for providing an open and free [API](https://developer.plex.tv/), and to [the mpv team](https://mpv.io/) for a simple, extensible and cross platform media player.
