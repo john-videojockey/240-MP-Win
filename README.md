@@ -14,40 +14,45 @@ It works in conjunction with [mpv](https://mpv.io/), which the [install script](
 | ![Local Files cover view](screenshots/local_files_cover_view.png)<br>**Local Files** — a Cover browse view rendered from Kodi / TinyMediaManager poster artwork. | ![Plex settings](screenshots/plex_options.png)<br>**Settings** — reorder sources, Cover view, fanart backgrounds, theme music, autoplay and more. |
 | ![VCR‑style player controls](screenshots/player_controls.png)<br>**Playback** — mpv fullscreen with a VCR‑style on‑screen control bar (seek, audio, subtitle, crop). |  |
 
-## Highlights added in this port
+## Added in this port
 
-Beyond rebuilding the platform layer, this port layers on a number of features — all optional, all under **Settings**:
+On top of the platform rewrite, this port adds a number of features — all optional, all under **Settings**. (The module system and design are unchanged; see [ARCHITECTURE.md](ARCHITECTURE.md).)
 
-- **Per‑title playback settings** — pick the audio language, subtitle language, volume gain (± dB) and video upscaler right on a title's info screen; the choices carry across every episode of a show. (Plex and Local Files.)
-- **Video upscalers** — optional mpv GLSL shaders (**ArtCNN, FSRCNNX, Anime4K**, plus a High‑Quality preset), GPU‑accelerated so even the heavy ones stay smooth — handy for bringing SD anime up to a 4K panel.
-- **Plex Home dashboard** — a landing screen with Continue Watching, Recently Added and your own hub rows, over hover fanart with theme music.
-- **Watch‑progress bars** on Continue Watching posters (both the Home rows and the dedicated list).
-- **“Up next”** — finishing an episode (or backing out during the credits) drops you on the *next* episode's info, not the one you just watched.
-- **Cast & Extras** on the Plex info screen — play trailers and featurettes inline, or open an actor's filmography.
+**Plex**
+- **Watchlist** — a bookmark on the info screen adds or removes a movie/show from your Plex‑account watchlist; a **Watchlist** menu (in place of the Continue Watching shortcut) browses the titles you've saved that are on your server, as a poster grid or a name list.
+- **Episodes browser** — an EPISODES button on a show opens a season‑by‑season screenshot view, and the info screen's PREV/NEXT step across whole seasons.
+- **Skip Intro** — from the server's intro markers, auto‑skip the intro or show a Skip button (Off / Auto / Button).
+- **Home dashboard** — Continue Watching and per‑library Recently Added rows over hover fanart with theme music; **Watch‑progress bars** on in‑progress posters. Browse View picks a poster dashboard or a two‑pane text layout.
+- **Cast & Extras** — play trailers/featurettes inline, or open an actor's filmography.
+- **Cover or Title browse** — poster grids or name lists, episode thumbnails, and optional scanlined fanart backgrounds across the browse/show/season/info screens.
+
+**Local Files**
+- **Artwork & metadata** — reads Kodi/TinyMediaManager posters/fanart (`poster.jpg`, `fanart.jpg`, `<name>-poster.jpg`…) and `.nfo` cast; optional Cover view and fanart backgrounds like Plex, plus a Continue Watching row that tracks partially‑watched videos.
+- **Watched tracking** — a ✓ on played files and on folders whose every video is watched; a folder holding a single video opens its info directly.
+- **Series handling** — a show/movie folder shows its videos flattened unless it has `Season N` subfolders (then those are seasons); bonus videos appear under Cast & Extras.
+
+**Plex & Local Files**
+- **Per‑title playback settings** — audio language, subtitle language, volume gain (± dB) and video upscaler, chosen on the info screen and carried across a show's episodes.
+- **Video upscalers** — GPU‑accelerated mpv GLSL shaders (**ArtCNN, FSRCNNX, Anime4K**, plus a High‑Quality preset) — handy for bringing SD anime up to a 4K panel.
+- **“Up next”** — finishing an episode (or backing out during the credits) lands on the *next* episode's info.
 - **Seamless theme music** — a show's theme starts on hover while browsing and carries, uninterrupted, into its info screen.
-- **Local Files watched tracking** — a ✓ on played files and on folders whose every video is watched; a folder holding a single video jumps straight to its info.
-- **Single composed window** — the mpv video window is married to the app, so it's one taskbar button and one Alt‑Tab entry, and the menu returns cleanly on top when playback ends.
-- **Full controller & touchscreen parity** — anything the keyboard does, a gamepad does (bumpers page the lists); footer hints adapt to the last device you touched.
+- **Info‑screen actions** — Watched/Unwatched and Remove‑from‑Continue‑Watching buttons under Play.
 
-## What's different in the Windows port
+**Everywhere**
+- **Single composed window** — the mpv video window is married to the app: one taskbar button, one Alt‑Tab entry, and the menu returns cleanly on top when playback ends.
+- **Controller & touchscreen parity** — anything the keyboard does, a gamepad does (bumpers page the lists); touch taps to highlight then select, drags/flicks to scroll, with floating BACK/minimize chips, and tap‑to‑reveal player controls during playback. Footer hints adapt to the last device used.
+- During playback, Enter shows the on‑screen controls (Space still pauses), and holding Enter or long‑pressing Subtitle turns subtitles off.
 
-The philosophy and module system are untouched (see [ARCHITECTURE.md](ARCHITECTURE.md)); the platform layer was rebuilt for Windows rather than translated line-by-line:
+## Under the hood (Windows)
 
-- **mpv control channel** uses a Windows named pipe (`\\.\pipe\240mp-mpv`) instead of a Unix socket — both mpv and Qt speak it natively.
-- **Hardware video decode** via D3D11VA (`--hwdec=auto-safe`); override per-device with the `mpv_video_args` setting.
-- **Gamepads** still go through SDL2 — on Windows that covers XInput and DirectInput pads (Xbox, PlayStation, 8BitDo, NES-style clones) with hotplug, exactly like upstream.
-- **Self-update** downloads the release zip and swaps the install folder with a detached helper — no admin prompt, because the app installs per-user under `%LOCALAPPDATA%\Programs\240-MP`.
-- **Install** is one PowerShell script that also brings in mpv/yt-dlp via winget (or scoop/choco). Optional autostart-at-logon via a Startup shortcut. No admin rights required for any of it.
-- **mpv can be bundled**: drop `mpv.exe` into `<app folder>\mpv\` and 240-MP prefers it over any system install — handy for a fully portable setup.
-- **Directory browser understands drives** — navigate above `C:\` to switch to the drive where your media lives.
-- **Touchscreen support** — tap to highlight, tap again to select, everywhere; floating ◄ BACK and minimize buttons; during playback, tap to show the controls, tap them to seek/pause/switch tracks, tap elsewhere to hide.
-- **Plex extras** — optional Cover browse view (poster grid for movies/shows, poster covers for Continue Watching), episode thumbnails, PREV/NEXT episode buttons on the info screen, and optional scanlined fanart backgrounds (opacity configurable) across the browse, show, season, and info screens — all under Settings → Plex.
-- **Local Files extras** — reads Kodi/TinyMediaManager artwork (`poster.jpg`, `fanart.jpg`, `<name>-poster.jpg`…) and `.nfo` metadata; a show/movie folder shows just its videos, flattened, unless it has `Season N` subfolders (then those are seasons); optional Cover browse view and fanart backgrounds like Plex; and a Continue Watching row on the Local Files landing screen that tracks partially-watched videos. All under Settings → Local Files.
-- **Info-screen actions & playback tweaks** — the Play/Resume screen (Plex and Local Files) has Watched/Unwatched and Remove-from-Continue-Watching buttons under Play. During playback, Enter shows the on-screen controls (Space still pauses), and holding Enter or long-pressing the Subtitle button turns subtitles off.
-- **Logs** land in `%APPDATA%\240-MP\logs\240mp.log` (Windows GUI apps have no stdout); set `MP240_CONSOLE=1` to also mirror them to the terminal you launch from.
-- The display is kept awake while the app runs (it's a TV frontend with its own screen saver); Windows power settings resume control when it exits.
+Only the platform layer was rebuilt — not translated line‑by‑line:
 
-Everything Raspberry-Pi-specific (KMS/DRM hand-off, per-Pi decode profiles, systemd autostart) does not apply here and was removed rather than ported.
+- **mpv control** over a Windows named pipe (`\\.\pipe\240mp-mpv`); **hardware decode** via D3D11VA (`--hwdec=auto-safe`, override with the `mpv_video_args` setting). mpv can be bundled by dropping `mpv.exe` into `<app folder>\mpv\`, which 240-MP prefers over any system install.
+- **Gamepads** via SDL2 — XInput and DirectInput pads (Xbox, PlayStation, 8BitDo, NES‑style clones) with hotplug.
+- **Install** is one PowerShell script (no admin) that also brings in mpv/yt‑dlp via winget/scoop/choco, with optional autostart‑at‑logon. **Self‑update** from Settings → Update swaps the per‑user install (`%LOCALAPPDATA%\Programs\240-MP`) with a detached helper.
+- **Directory browser** navigates above `C:\` to switch drives. **Logs** land in `%APPDATA%\240-MP\logs\240mp.log` (`MP240_CONSOLE=1` also mirrors them to a launching terminal). The display is kept awake while the app runs.
+
+Everything Raspberry‑Pi‑specific (KMS/DRM hand‑off, per‑Pi decode profiles, systemd autostart) doesn't apply here and was removed rather than ported.
 
 ## Current Features
 
