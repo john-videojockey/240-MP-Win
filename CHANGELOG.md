@@ -5,6 +5,40 @@ All notable changes to 240-MP for Windows are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-22
+
+### Added
+- **Plex Watchlist.**
+  - A bookmark toggle on the info screen — beside the Episodes button on a
+    show/episode, on its own for a movie — adds or removes the title from your
+    Plex-account watchlist (an episode watchlists its show). It shows the current
+    state on open and toggles in one press.
+  - The top library menu's Continue Watching shortcut is replaced by a
+    **Watchlist** entry listing the watchlisted titles that are on this server,
+    as an 8-across poster grid or a name list (per Browse View), paged 64 at a
+    time with a **Load More** tile. (Continue Watching still leads the Home
+    dashboard.)
+- **Home text view.** With Browse View = Title, the Home dashboard becomes a
+  two-pane text menu — Continue Watching and the libraries on the left (40%), the
+  selected one's titles on the right (60%). Browse View = Cover keeps the poster
+  dashboard.
+- **Touch scrolling on the Plex info screen.** Its sections now scroll with a
+  touch drag/flick (momentum like the other menus), so Cast & Extras and More
+  Like This are reachable by touch. Taps on the buttons inside still work.
+
+### Changed
+- **Info-screen layout.** The Episodes/Watchlist row now sits above the
+  Prev/Play/Next cluster; the default highlight stays on Play.
+
+### Fixed
+- **No stray mpv titlebar when minimized.** Minimizing 240-MP during playback no
+  longer leaves mpv's minimized-window caption stub parked at the screen edge
+  (visible with a custom taskbar/dock that doesn't cover that spot).
+- **Recover from an overnight display sleep.** After the monitor is off for hours
+  over a paused video, 240-MP nudges mpv to re-present when the screen wakes — and
+  uses a BitBlt D3D11 swapchain, less prone to that freeze — instead of needing
+  the video exited to restore it.
+
 ## [0.4.1] - 2026-07-21
 
 ### Fixed
@@ -100,6 +134,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Keyboard, gamepad (SDL2) and touchscreen input; per-user install with an
     in-app self-updater; one-line PowerShell installer.
 
+[0.5.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/john-videojockey/240-MP-Win/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.2.0...v0.3.0
