@@ -61,6 +61,14 @@ public:
     // { episodes: [...], index: <current pos>, isSeries: bool }; isSeries is false
     // for a plain movie (episodes = just itself), so callers don't auto-advance it.
     Q_INVOKABLE QVariantMap  series_episodes(const QString &videoPath);
+    // True when a folder is a "show" — has a tvshow.nfo, season subfolders, or two
+    // or more episode-numbered videos — so Browse opens the Episodes view for it.
+    Q_INVOKABLE bool         is_show_folder(const QString &folderPath);
+    // Episodes of a show grouped by season, for the Episodes view. `path` may be the
+    // show folder (Browse) or one of its episodes (info screen) — the show root is
+    // resolved either way. Returns { title, summary, art, seasons: [{ season, title,
+    // year, episodes:[...] }] }, seasons ordered, episodes by episode number.
+    Q_INVOKABLE QVariantMap  folder_episodes(const QString &path);
     // Cast & Extras cards for the info screen: the show/movie's nfo actors, plus
     // its bonus videos (Extras/Featurettes/Specials/... folders and -trailer/…
     // named files) as playable "extra" cards. Extras come first, each carrying its

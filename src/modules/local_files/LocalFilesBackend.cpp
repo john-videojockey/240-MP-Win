@@ -492,7 +492,7 @@ QVariantMap LocalFilesBackend::parseNfo(const QString &nfoPath) {
     if (!f.open(QIODevice::ReadOnly))
         return {};
 
-    static const QStringList kRoots = {"movie", "tvshow", "episodedetails"};
+    static const QStringList kRoots = {"movie", "tvshow", "episodedetails", "season"};
     QVariantMap meta;
     QXmlStreamReader xml(&f);
     QString rootName;
@@ -841,6 +841,106 @@ QVariantMap LocalFilesBackend::series_episodes(const QString &videoPath) {
                 .compare(target, Qt::CaseInsensitive) == 0) { index = i; break; }
     }
     return QVariantMap{{"episodes", episodes}, {"index", index}, {"isSeries", true}};
+}
+
+bool LocalFilesBackend::is_show_folder(const QString &folderPath) {
+    QDir dir(folderPath);
+    if (!dir.exists()) return false;
+    if (QFileInfo::exists(dir.filePath(QStringLiteral("tvshow.nfo")))) return true;
+    for (const QString &s : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name))
+        if (isSeasonFolder(s)) return true;
+    // Flat show: two or more videos whose names carry SxxExx / 1x02.
+    int sn = 0, ep = 0, epCount = 0;
+    for (const QString &f : dir.entryList(QDir::Files, QDir::Name)) {
+        const QString suffix = QFileInfo(f).suffix().toLower();
+        if (!kMediaExts.contains(suffix) || kImageExts.contains(suffix) || kPlaylistExts.contains(suffix))
+            continue;
+        if (parseSeasonEpisode(QFileInfo(f).completeBaseName(), sn, ep) && ++epCount >= 2)
+            return true;
+    }
+    return false;
+}
+
+QVariantMap LocalFilesBackend::folder_episodes(const QString &path) {
+    const QFileInfo fi(path);
+    // Resolve the show root: a folder is the root; an episode resolves up through
+    // its season/show folder (same as series_episodes).
+    QString showRoot;
+    if (fi.isDir()) {
+        showRoot = fi.absoluteFilePath();
+    } else {
+        QDir parent = fi.absoluteDir();
+        QDir grand(parent);
+        const bool haveGrand = grand.cdUp();
+        const bool inSeason = isSeasonFolder(parent.dirName());
+        const bool grandIsShow = haveGrand && QFileInfo::exists(grand.filePath(QStringLiteral("tvshow.nfo")));
+        showRoot = parent.absolutePath();
+        if ((inSeason || grandIsShow) && haveGrand)
+            showRoot = grand.absolutePath();
+    }
+
+    QVariantList all;
+    collectVideos(showRoot, all, 0);
+
+    // Group by season (QMap keeps seasons ordered), skipping bonus content and
+    // tagging each episode watched (one history read, not one per card).
+    const QVariantMap history = loadHistory();
+    QMap<int, QVariantList> bySeason;
+    for (const QVariant &v : std::as_const(all)) {
+        QVariantMap m = v.toMap();
+        if (isExtraVideo(m.value("path").toString(), showRoot)) continue;
+        m["watched"] = isWatchedIn(history, m.value("path").toString());
+        bySeason[m.value("season").toInt()].append(m);
+    }
+
+    QVariantList seasons;
+    for (auto it = bySeason.constBegin(); it != bySeason.constEnd(); ++it) {
+        QVariantList eps = it.value();
+        std::sort(eps.begin(), eps.end(), [](const QVariant &a, const QVariant &b) {
+            return a.toMap().value("episode").toInt() < b.toMap().value("episode").toInt();
+        });
+        // Season title/year: a season.nfo in the episodes' folder (a Season N
+        // subdir), else the year of the first episode that carries one.
+        QString sTitle; int sYear = 0;
+        const QString epDir = QFileInfo(eps.first().toMap().value("path").toString()).absolutePath();
+        const QString sNfo = QDir(epDir).filePath(QStringLiteral("season.nfo"));
+        if (QFileInfo::exists(sNfo)) {
+            const QVariantMap sm = parseNfo(sNfo);
+            sTitle = sm.value("title").toString();
+            sYear  = sm.value("year").toInt();
+        }
+        if (sYear == 0)
+            for (const QVariant &v : std::as_const(eps)) {
+                const int y = v.toMap().value("year").toInt();
+                if (y) { sYear = y; break; }
+            }
+        const int sn = it.key();
+        seasons.append(QVariantMap{
+            {"season",   sn},
+            {"title",    !sTitle.isEmpty() ? sTitle
+                       : sn == 0 ? QStringLiteral("Specials")
+                                 : QStringLiteral("Season %1").arg(sn)},
+            {"year",     sYear},
+            {"episodes", eps},
+        });
+    }
+
+    // Show title / summary / fanart from the show root's own tvshow.nfo.
+    QVariantMap showNfo;
+    const QString tvNfo = QDir(showRoot).filePath(QStringLiteral("tvshow.nfo"));
+    if (QFileInfo::exists(tvNfo)) showNfo = parseNfo(tvNfo);
+    QString title = !showNfo.value("showTitle").toString().isEmpty()
+                    ? showNfo.value("showTitle").toString()
+                    : showNfo.value("title").toString();
+    if (title.isEmpty()) title = QDir(showRoot).dirName();
+
+    return QVariantMap{
+        {"title",   title},
+        {"summary", showNfo.value("plot")},
+        {"art",     findArtFile(QDir(showRoot),
+                                {QStringLiteral("fanart"), QStringLiteral("backdrop"), QStringLiteral("background")})},
+        {"seasons", seasons},
+    };
 }
 
 QVariantList LocalFilesBackend::get_cast_extras(const QString &videoPath) {

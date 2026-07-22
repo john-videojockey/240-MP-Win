@@ -84,9 +84,14 @@ FocusScope {
         var item = items[idx]
         if (!item) return
         if (item.isFolder) {
-            navigateTo("Items.qml",
-                { folderPath: item.path, folderName: item.name },
-                { currentIndex: idx })
+            // A show folder (season subfolders / episode videos / tvshow.nfo) opens
+            // the Episodes view; a plain folder drills in. SPACE browses raw either way.
+            if (localFilesBackend.is_show_folder(item.path))
+                navigateTo("Episodes.qml", { path: item.path }, { currentIndex: idx })
+            else
+                navigateTo("Items.qml",
+                    { folderPath: item.path, folderName: item.name },
+                    { currentIndex: idx })
         } else if (isVideoFile(item)) {
             navigateTo("Detail.qml",
                 { items: items, index: idx, folderName: folderName },
@@ -98,10 +103,23 @@ FocusScope {
         }
     }
 
+    // SPACE / Start on a folder browses its raw contents (season folders, an Extras
+    // folder), even when it's a show — Enter opens the Episodes view for shows.
+    function browseIntoCurrent() {
+        var item = currentItem()
+        if (item && item.isFolder)
+            navigateTo("Items.qml",
+                { folderPath: item.path, folderName: item.name },
+                { currentIndex: coverMode ? coverGrid.currentIndex : fileList.currentIndex })
+    }
+
     focus: true
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
             goBack()
+            event.accepted = true
+        } else if (event.key === Qt.Key_Space) {
+            itemsRoot.browseIntoCurrent()
             event.accepted = true
         }
     }
@@ -474,6 +492,8 @@ FocusScope {
     Text {
         id: footer
         text: root.hints.back + ":BACK " + root.hints.navigate + ":NAVIGATE " + root.hints.select + ":SELECT"
+              + ((itemsRoot.currentItem() && itemsRoot.currentItem().isFolder)
+                 ? "  " + root.hints.play_pause + ":BROWSE" : "")
         color: root.tertiaryColor
         font.family: root.globalFont
         anchors.bottom: parent.bottom
