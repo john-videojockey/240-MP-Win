@@ -379,6 +379,21 @@ FocusScope {
     property real sectionScroll: focusRow <= 6 ? 0
                                : focusRow === 7 ? castSection.y
                                : relatedSection.y
+    // Keyboard focus scroll: a focusRow change moves sectionScroll; animate the
+    // Flickable's contentY to it. Touch sets contentY directly and never touches
+    // sectionScroll, so free dragging and focus scrolling coexist.
+    onSectionScrollChanged: {
+        scrollAnim.stop()
+        scrollAnim.to = detailRoot.sectionScroll
+        scrollAnim.start()
+    }
+    NumberAnimation {
+        id: scrollAnim
+        target: bodyFlick
+        property: "contentY"
+        duration: 220
+        easing.type: Easing.OutCubic
+    }
 
     Component.onCompleted: {
         focusRow = 1
@@ -641,8 +656,13 @@ FocusScope {
         anchors.centerIn: parent
     }
 
-    // Body
-    Item {
+    // Body — a Flickable so a touch drag/flick scrolls the section stack with the
+    // same momentum as the other menus, while taps on the buttons inside still work
+    // (a Flickable disambiguates a tap from a drag natively). Keyboard focus scrolls
+    // it too: a focusRow change moves sectionScroll and onSectionScrollChanged
+    // animates contentY to bring the focused section to the top.
+    Flickable {
+        id: bodyFlick
         visible: detail !== null
         anchors.top: parent.top
         anchors.left: parent.left
@@ -651,16 +671,16 @@ FocusScope {
         width: root.sw * 0.76875 //492
         height: root.sh * 0.525 //252
         clip: true
+        contentWidth: width
+        contentHeight: sectionStack.height
+        flickableDirection: Flickable.VerticalFlick
 
-        // Section stack: the play/options block, the audio/subtitle settings,
-        // and the More Like This row, stacked vertically and translated so the
-        // section holding the current focusRow snaps to the top (see
-        // sectionScroll). The parent Item clips the rest.
+        // Section stack: the play/options block, the audio/subtitle settings, and
+        // the Cast / More Like This rows, stacked vertically.
         Item {
             id: sectionStack
-            width: parent.width
-            y: -detailRoot.sectionScroll
-            Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            width: bodyFlick.width
+            height: childrenRect.height
 
         Row {
             id: itemDetails
@@ -1481,7 +1501,7 @@ FocusScope {
             anchors.topMargin: root.sh * 0.03
             anchors.left: parent.left
             anchors.right: parent.right
-            height: relatedLabel.height + root.sh * 0.0083333 + relatedList.height
+            height: visible ? (relatedLabel.height + root.sh * 0.0083333 + relatedList.height) : 0
 
             Text {
                 id: relatedLabel
