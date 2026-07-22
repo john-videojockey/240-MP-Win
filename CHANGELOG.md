@@ -5,6 +5,32 @@ All notable changes to 240-MP for Windows are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-07-22
+
+### Added
+- **Local Files Watchlist (on-device).**
+  - A square bookmark toggle on the info screen adds or removes a title from an
+    on-device watchlist — beside the new Episodes button on a show/episode, on
+    its own for a movie — styled to match the Plex bookmark.
+  - A **Watchlist** entry on the Local Files menu lists the saved titles as an
+    8-across poster grid.
+- **Local Files Episodes view.** A show folder now opens a season-by-season view
+  — the synopsis on top, then one still row per `SEASON X (YEAR)` — mirroring the
+  Plex Episodes browser. Reachable two ways: ENTER on a show folder in Browse
+  opens Episodes (a separate key still opens the raw folder contents), and an
+  **EPISODES** button on the info screen. `season.nfo` is parsed for per-season
+  titles, years, and summaries.
+
+### Changed
+- **Renamed to 240-MP-Win.** The window and taskbar button now read
+  *240-MP-Win*, and the roaming data directory moves from `%APPDATA%\240-MP` to
+  `%APPDATA%\240-MP-Win`. **Existing installs start fresh there** — copy the old
+  folder to the new name to keep your settings, auth, and history. The install
+  location and your Plex/Jellyfin device registrations are unchanged.
+- **Local Files browse grid.** Folder and movie browsing now uses the same fixed
+  8-across poster grid as the Plex Home/Watchlist views — including a
+  shows-parent folder, which previously rendered as a 3-column landscape grid.
+
 ## [0.5.0] - 2026-07-22
 
 ### Added
@@ -134,6 +160,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Keyboard, gamepad (SDL2) and touchscreen input; per-user install with an
     in-app self-updater; one-line PowerShell installer.
 
+[0.6.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/john-videojockey/240-MP-Win/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.3.0...v0.4.0
