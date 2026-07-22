@@ -47,6 +47,14 @@ public:
     // Cheap boolean (no artwork enrichment) for deciding whether to show the
     // Continue Watching row / landing — safe to call on the UI thread.
     Q_INVOKABLE bool         has_continue_watching();
+
+    // Watchlist: an on-device bookmark list (a "watchlisted" flag in the history,
+    // keyed by video path). set/is toggle & report it; has_watchlist gates the
+    // landing entry; get_watchlist returns the bookmarked items enriched for a grid.
+    Q_INVOKABLE void         set_watchlisted(const QString &filePath, bool on);
+    Q_INVOKABLE bool         is_watchlisted(const QString &filePath);
+    Q_INVOKABLE bool         has_watchlist();
+    Q_INVOKABLE QVariantList  get_watchlist();
     // Ordered list of every episode in the show `videoPath` belongs to, across all
     // its season folders — powers PREV/NEXT and finish->next-episode, including
     // crossing from the end of one season into the next. Returns

@@ -19,6 +19,8 @@ FocusScope {
         var r = []
         if (localFilesBackend.has_continue_watching())
             r.push({ key: "continue_watching", label: "Continue Watching" })
+        if (localFilesBackend.has_watchlist())
+            r.push({ key: "watchlist", label: "Watchlist" })
         r.push({ key: "browse", label: "Browse" })
         rows = r
     }
@@ -28,6 +30,8 @@ FocusScope {
         if (!row) return
         if (row.key === "continue_watching")
             navigateTo("ContinueWatching.qml", {}, { currentIndex: menuList.currentIndex })
+        else if (row.key === "watchlist")
+            navigateTo("Watchlist.qml", {}, { currentIndex: menuList.currentIndex })
         else
             navigateTo("Items.qml", {}, { currentIndex: menuList.currentIndex })
     }

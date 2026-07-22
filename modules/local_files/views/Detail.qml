@@ -32,11 +32,13 @@ FocusScope {
     property int castIndex: 0
     // Reveal-on-scroll: the body holds still until focus reaches Cast & Extras
     // (row 6), then shifts up to bring that row into view (like the Plex screen).
-    property real sectionScroll: focusRow < 6 ? 0 : castSection.y
+    property real sectionScroll: focusRow < 7 ? 0 : castSection.y
 
-    // Focus rows: 0 = play cluster (PREV/PLAY/NEXT via playCol), 1 = actions
-    // (WATCHED / TRACKED via actionCol), 2 = volume, 3 = upscaler.
-    property int focusRow: 0
+    // Focus rows: 0 = watchlist toggle, 1 = play cluster (PREV/PLAY/NEXT via
+    // playCol), 2 = actions (WATCHED / TRACKED via actionCol), 3 = audio,
+    // 4 = subtitles, 5 = volume, 6 = upscaler, 7 = cast & extras. Focus opens on
+    // PLAY (row 1).
+    property int focusRow: 1
     // 0=PREV, 1=PLAY, 2=NEXT (PREV/NEXT only exist with siblings)
     property int playCol: 1
     property int actionCol: 0
@@ -146,6 +148,7 @@ FocusScope {
     // Watched flag, and Continue Watching membership (in progress + not removed)
     property bool watched: false
     property bool tracked: false
+    property bool onWatchlist: false
 
     // Fanart background (module settings shared with the browse view)
     property bool infoBg: true
@@ -195,12 +198,19 @@ FocusScope {
         watched = saved.watched === true
         // In Continue Watching = has resume progress and not manually removed.
         tracked = savedPos > 0 && saved.tracked !== false
+        onWatchlist = saved.watchlisted === true
     }
 
     function toggleWatched() {
         watched = !watched
         localFilesBackend.set_watched(current.path, watched)
         if (watched) { savedPos = 0; tracked = false }  // marking watched leaves CW
+    }
+
+    function toggleWatchlist() {
+        if (!current || !current.path) return
+        onWatchlist = !onWatchlist
+        localFilesBackend.set_watchlisted(String(current.path), onWatchlist)
     }
 
     function toggleTracked() {
@@ -303,51 +313,52 @@ FocusScope {
     // 5 upscaler, 6 cast & extras. Audio/subtitle appear only when the probe found
     // tracks; cast & extras only when present. Up/Down skip empty rows.
     function rowAvailable(r) {
-        if (r <= 1) return true
-        if (r === 2) return audioLangs.length > 1
-        if (r === 3) return subLangs.length > 0
-        if (r === 4) return true
-        if (r === 5) return true
-        if (r === 6) return detailRoot.castExtras.length > 0
+        if (r <= 2) return true   // watchlist, play cluster, actions (always)
+        if (r === 3) return audioLangs.length > 1
+        if (r === 4) return subLangs.length > 0
+        if (r === 5) return true   // volume
+        if (r === 6) return true   // upscaler
+        if (r === 7) return detailRoot.castExtras.length > 0   // cast & extras
         return false
     }
     Keys.onUpPressed: {
         for (var r = focusRow - 1; r >= 0; r--) if (rowAvailable(r)) { focusRow = r; break }
     }
     Keys.onDownPressed: {
-        for (var r = focusRow + 1; r <= 6; r++) if (rowAvailable(r)) { focusRow = r; break }
+        for (var r = focusRow + 1; r <= 7; r++) if (rowAvailable(r)) { focusRow = r; break }
     }
     Keys.onLeftPressed: {
-        if (focusRow === 0) { if (hasSiblings && playCol > 0) playCol-- }
-        else if (focusRow === 1) { if (actionCol > 0) actionCol-- }
-        else if (focusRow === 2) detailRoot.cycleAudio(-1)
-        else if (focusRow === 3) detailRoot.cycleSub(-1)
-        else if (focusRow === 4) detailRoot.cycleVolume(-1)
-        else if (focusRow === 5) detailRoot.cycleUpscaler(-1)
-        else if (focusRow === 6 && detailRoot.castExtras.length > 0)
+        if (focusRow === 1) { if (hasSiblings && playCol > 0) playCol-- }
+        else if (focusRow === 2) { if (actionCol > 0) actionCol-- }
+        else if (focusRow === 3) detailRoot.cycleAudio(-1)
+        else if (focusRow === 4) detailRoot.cycleSub(-1)
+        else if (focusRow === 5) detailRoot.cycleVolume(-1)
+        else if (focusRow === 6) detailRoot.cycleUpscaler(-1)
+        else if (focusRow === 7 && detailRoot.castExtras.length > 0)
             detailRoot.castIndex = (detailRoot.castIndex - 1 + detailRoot.castExtras.length) % detailRoot.castExtras.length
     }
     Keys.onRightPressed: {
-        if (focusRow === 0) { if (hasSiblings && playCol < 2) playCol++ }
-        else if (focusRow === 1) { if (actionCol < 1) actionCol++ }
-        else if (focusRow === 2) detailRoot.cycleAudio(1)
-        else if (focusRow === 3) detailRoot.cycleSub(1)
-        else if (focusRow === 4) detailRoot.cycleVolume(1)
-        else if (focusRow === 5) detailRoot.cycleUpscaler(1)
-        else if (focusRow === 6 && detailRoot.castExtras.length > 0)
+        if (focusRow === 1) { if (hasSiblings && playCol < 2) playCol++ }
+        else if (focusRow === 2) { if (actionCol < 1) actionCol++ }
+        else if (focusRow === 3) detailRoot.cycleAudio(1)
+        else if (focusRow === 4) detailRoot.cycleSub(1)
+        else if (focusRow === 5) detailRoot.cycleVolume(1)
+        else if (focusRow === 6) detailRoot.cycleUpscaler(1)
+        else if (focusRow === 7 && detailRoot.castExtras.length > 0)
             detailRoot.castIndex = (detailRoot.castIndex + 1) % detailRoot.castExtras.length
     }
     Keys.onReturnPressed: {
-        if (focusRow === 1) {
+        if (focusRow === 0) { detailRoot.toggleWatchlist(); return }
+        if (focusRow === 2) {
             if (actionCol === 0) toggleWatched()
             else toggleTracked()
             return
         }
-        if (focusRow === 2) { detailRoot.cycleAudio(1); return }
-        if (focusRow === 3) { detailRoot.cycleSub(1); return }
-        if (focusRow === 4) { detailRoot.cycleVolume(1); return }
-        if (focusRow === 5) { detailRoot.cycleUpscaler(1); return }
-        if (focusRow === 6 && detailRoot.castExtras.length > 0) {
+        if (focusRow === 3) { detailRoot.cycleAudio(1); return }
+        if (focusRow === 4) { detailRoot.cycleSub(1); return }
+        if (focusRow === 5) { detailRoot.cycleVolume(1); return }
+        if (focusRow === 6) { detailRoot.cycleUpscaler(1); return }
+        if (focusRow === 7 && detailRoot.castExtras.length > 0) {
             // Extras play; cast cards are informational.
             var card = detailRoot.castExtras[detailRoot.castIndex]
             if (card && card.kind === "extra" && card.path)
@@ -439,6 +450,59 @@ FocusScope {
             Column {
                 spacing: root.sh * 0.0125 //6
 
+                // Watchlist toggle (row 0), above the play cluster — mirrors the
+                // Plex info screen. The bookmark fills when it's on the watchlist.
+                Rectangle {
+                    id: watchlistBtn
+                    property bool sel: focusRow === 0
+                    width: root.sw * 0.1875
+                    height: root.sh * 0.05
+                    color: sel ? root.accentColor : root.surfaceColor
+                    border.color: sel ? root.accentColor : root.tertiaryColor
+                    border.width: root.sh * 0.003125 //2
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: { if (watchlistBtn.sel) detailRoot.toggleWatchlist(); else focusRow = 0 }
+                    }
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: root.sw * 0.00625
+                        Canvas {
+                            id: bookmark
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: root.sh * 0.018
+                            height: root.sh * 0.024
+                            property bool filled: detailRoot.onWatchlist
+                            property color col: watchlistBtn.sel ? root.surfaceColor : root.primaryColor
+                            onFilledChanged: requestPaint()
+                            onColChanged: requestPaint()
+                            onWidthChanged: requestPaint()
+                            onHeightChanged: requestPaint()
+                            onPaint: {
+                                var ctx = getContext("2d"); ctx.reset()
+                                var w = width, h = height
+                                var lw = Math.max(1.5, w * 0.16)
+                                var notch = h * 0.26
+                                var x0 = lw / 2, y0 = lw / 2, x1 = w - lw / 2, y1 = h - lw / 2
+                                ctx.beginPath()
+                                ctx.moveTo(x0, y0); ctx.lineTo(x1, y0); ctx.lineTo(x1, y1)
+                                ctx.lineTo(w / 2, y1 - notch); ctx.lineTo(x0, y1); ctx.closePath()
+                                if (filled) { ctx.fillStyle = col; ctx.fill() }
+                                else { ctx.strokeStyle = col; ctx.lineWidth = lw
+                                       ctx.lineJoin = "round"; ctx.stroke() }
+                            }
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "WATCHLIST"
+                            color: watchlistBtn.sel ? root.surfaceColor : root.primaryColor
+                            font.family: root.globalFont
+                            font.pixelSize: root.sh * 0.025 //12
+                        }
+                    }
+                }
+
                 Item {
                     width: root.sw * 0.1875 //120
                     height: root.sh * 0.1166667 //56
@@ -450,7 +514,7 @@ FocusScope {
                         Rectangle {
                             id: prevButton
                             visible: detailRoot.hasSiblings
-                            property bool sel: focusRow === 0 && playCol === 0
+                            property bool sel: focusRow === 1 && playCol === 0
                             color: sel ? root.accentColor : root.surfaceColor
                             border.color: sel ? root.accentColor : root.tertiaryColor
                             width: root.sw * 0.0375 //24
@@ -461,7 +525,7 @@ FocusScope {
                                 anchors.fill: parent
                                 onClicked: {
                                     if (prevButton.sel) inputManager.touchKey("select")
-                                    else { focusRow = 0; playCol = 0 }
+                                    else { focusRow = 1; playCol = 0 }
                                 }
                             }
 
@@ -476,7 +540,7 @@ FocusScope {
 
                         Rectangle {
                             id: playButton
-                            property bool sel: focusRow === 0 && (!detailRoot.hasSiblings || playCol === 1)
+                            property bool sel: focusRow === 1 && (!detailRoot.hasSiblings || playCol === 1)
                             color: sel ? root.accentColor : root.surfaceColor
                             border.color: sel ? root.accentColor : root.tertiaryColor
                             // Fill the rest of the 0.1875 cluster so PREV+PLAY+NEXT
@@ -491,7 +555,7 @@ FocusScope {
                                 anchors.fill: parent
                                 onClicked: {
                                     if (playButton.sel) inputManager.touchKey("select")
-                                    else { focusRow = 0; playCol = 1 }
+                                    else { focusRow = 1; playCol = 1 }
                                 }
                             }
 
@@ -507,7 +571,7 @@ FocusScope {
                         Rectangle {
                             id: nextButton
                             visible: detailRoot.hasSiblings
-                            property bool sel: focusRow === 0 && playCol === 2
+                            property bool sel: focusRow === 1 && playCol === 2
                             color: sel ? root.accentColor : root.surfaceColor
                             border.color: sel ? root.accentColor : root.tertiaryColor
                             width: root.sw * 0.0375 //24
@@ -518,7 +582,7 @@ FocusScope {
                                 anchors.fill: parent
                                 onClicked: {
                                     if (nextButton.sel) inputManager.touchKey("select")
-                                    else { focusRow = 0; playCol = 2 }
+                                    else { focusRow = 1; playCol = 2 }
                                 }
                             }
 
@@ -539,7 +603,7 @@ FocusScope {
 
                     Rectangle {
                         id: watchedBtn
-                        property bool sel: focusRow === 1 && actionCol === 0
+                        property bool sel: focusRow === 2 && actionCol === 0
                         color: sel ? root.accentColor : root.surfaceColor
                         border.color: sel ? root.accentColor : root.tertiaryColor
                         // Match the play cluster's total width (0.1875): two buttons
@@ -554,7 +618,7 @@ FocusScope {
                             anchors.fill: parent
                             onClicked: {
                                 if (watchedBtn.sel) inputManager.touchKey("select")
-                                else { focusRow = 1; actionCol = 0 }
+                                else { focusRow = 2; actionCol = 0 }
                             }
                         }
 
@@ -571,7 +635,7 @@ FocusScope {
                         id: trackedBtn
                         // Only relevant when there is progress to keep in/out of CW.
                         visible: detailRoot.savedPos > 0
-                        property bool sel: focusRow === 1 && actionCol === 1
+                        property bool sel: focusRow === 2 && actionCol === 1
                         color: sel ? root.accentColor : root.surfaceColor
                         border.color: sel ? root.accentColor : root.tertiaryColor
                         width: (root.sw * 0.1875 - root.sw * 0.0046875) / 2
@@ -582,7 +646,7 @@ FocusScope {
                             anchors.fill: parent
                             onClicked: {
                                 if (trackedBtn.sel) inputManager.touchKey("select")
-                                else { focusRow = 1; actionCol = 1 }
+                                else { focusRow = 2; actionCol = 1 }
                             }
                         }
 
@@ -697,37 +761,11 @@ FocusScope {
                 width: parent.width
                 visible: detailRoot.audioLangs.length > 1
                 height: visible ? root.sh * 0.048 : 0
-                Rectangle { anchors.fill: parent; color: focusRow === 2 ? root.accentColor : "transparent" }
-                MouseArea { anchors.fill: parent
-                    onClicked: { if (focusRow === 2) detailRoot.cycleAudio(1); else focusRow = 2 } }
-                Text {
-                    text: "Audio"; color: focusRow === 2 ? root.surfaceColor : root.primaryColor
-                    font.family: root.globalFont; font.capitalization: Font.AllUppercase
-                    anchors.left: parent.left; anchors.leftMargin: root.sw * 0.009375
-                    anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375
-                }
-                Row {
-                    anchors.right: parent.right; anchors.rightMargin: root.sw * 0.009375
-                    anchors.verticalCenter: parent.verticalCenter; spacing: root.sw * 0.00625
-                    Text { text: "◄"; color: focusRow === 2 ? root.surfaceColor : root.tertiaryColor
-                        font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
-                    Text { text: detailRoot.audioLabel(); color: focusRow === 2 ? root.surfaceColor : root.primaryColor
-                        font.family: root.globalFont; font.capitalization: Font.AllUppercase; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375 }
-                    Text { text: "►"; color: focusRow === 2 ? root.surfaceColor : root.tertiaryColor
-                        font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
-                }
-            }
-
-            // SUBTITLES (row 3)
-            Item {
-                width: parent.width
-                visible: detailRoot.subLangs.length > 0
-                height: visible ? root.sh * 0.048 : 0
                 Rectangle { anchors.fill: parent; color: focusRow === 3 ? root.accentColor : "transparent" }
                 MouseArea { anchors.fill: parent
-                    onClicked: { if (focusRow === 3) detailRoot.cycleSub(1); else focusRow = 3 } }
+                    onClicked: { if (focusRow === 3) detailRoot.cycleAudio(1); else focusRow = 3 } }
                 Text {
-                    text: "Subtitles"; color: focusRow === 3 ? root.surfaceColor : root.primaryColor
+                    text: "Audio"; color: focusRow === 3 ? root.surfaceColor : root.primaryColor
                     font.family: root.globalFont; font.capitalization: Font.AllUppercase
                     anchors.left: parent.left; anchors.leftMargin: root.sw * 0.009375
                     anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375
@@ -737,22 +775,23 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter; spacing: root.sw * 0.00625
                     Text { text: "◄"; color: focusRow === 3 ? root.surfaceColor : root.tertiaryColor
                         font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
-                    Text { text: detailRoot.subLabel(); color: focusRow === 3 ? root.surfaceColor : root.primaryColor
+                    Text { text: detailRoot.audioLabel(); color: focusRow === 3 ? root.surfaceColor : root.primaryColor
                         font.family: root.globalFont; font.capitalization: Font.AllUppercase; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375 }
                     Text { text: "►"; color: focusRow === 3 ? root.surfaceColor : root.tertiaryColor
                         font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
                 }
             }
 
-            // VOLUME (row 4)
+            // SUBTITLES (row 3)
             Item {
                 width: parent.width
-                height: root.sh * 0.048
+                visible: detailRoot.subLangs.length > 0
+                height: visible ? root.sh * 0.048 : 0
                 Rectangle { anchors.fill: parent; color: focusRow === 4 ? root.accentColor : "transparent" }
                 MouseArea { anchors.fill: parent
-                    onClicked: { if (focusRow === 4) detailRoot.cycleVolume(1); else focusRow = 4 } }
+                    onClicked: { if (focusRow === 4) detailRoot.cycleSub(1); else focusRow = 4 } }
                 Text {
-                    text: "Volume"; color: focusRow === 4 ? root.surfaceColor : root.primaryColor
+                    text: "Subtitles"; color: focusRow === 4 ? root.surfaceColor : root.primaryColor
                     font.family: root.globalFont; font.capitalization: Font.AllUppercase
                     anchors.left: parent.left; anchors.leftMargin: root.sw * 0.009375
                     anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375
@@ -762,22 +801,22 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter; spacing: root.sw * 0.00625
                     Text { text: "◄"; color: focusRow === 4 ? root.surfaceColor : root.tertiaryColor
                         font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
-                    Text { text: detailRoot.volumeLabel(); color: focusRow === 4 ? root.surfaceColor : root.primaryColor
+                    Text { text: detailRoot.subLabel(); color: focusRow === 4 ? root.surfaceColor : root.primaryColor
                         font.family: root.globalFont; font.capitalization: Font.AllUppercase; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375 }
                     Text { text: "►"; color: focusRow === 4 ? root.surfaceColor : root.tertiaryColor
                         font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
                 }
             }
 
-            // UPSCALER (row 5)
+            // VOLUME (row 4)
             Item {
                 width: parent.width
                 height: root.sh * 0.048
                 Rectangle { anchors.fill: parent; color: focusRow === 5 ? root.accentColor : "transparent" }
                 MouseArea { anchors.fill: parent
-                    onClicked: { if (focusRow === 5) detailRoot.cycleUpscaler(1); else focusRow = 5 } }
+                    onClicked: { if (focusRow === 5) detailRoot.cycleVolume(1); else focusRow = 5 } }
                 Text {
-                    text: "Upscaler"; color: focusRow === 5 ? root.surfaceColor : root.primaryColor
+                    text: "Volume"; color: focusRow === 5 ? root.surfaceColor : root.primaryColor
                     font.family: root.globalFont; font.capitalization: Font.AllUppercase
                     anchors.left: parent.left; anchors.leftMargin: root.sw * 0.009375
                     anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375
@@ -787,9 +826,34 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter; spacing: root.sw * 0.00625
                     Text { text: "◄"; color: focusRow === 5 ? root.surfaceColor : root.tertiaryColor
                         font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
-                    Text { text: detailRoot.upscalers[detailRoot.upscalerIdx].label; color: focusRow === 5 ? root.surfaceColor : root.primaryColor
+                    Text { text: detailRoot.volumeLabel(); color: focusRow === 5 ? root.surfaceColor : root.primaryColor
                         font.family: root.globalFont; font.capitalization: Font.AllUppercase; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375 }
                     Text { text: "►"; color: focusRow === 5 ? root.surfaceColor : root.tertiaryColor
+                        font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
+                }
+            }
+
+            // UPSCALER (row 5)
+            Item {
+                width: parent.width
+                height: root.sh * 0.048
+                Rectangle { anchors.fill: parent; color: focusRow === 6 ? root.accentColor : "transparent" }
+                MouseArea { anchors.fill: parent
+                    onClicked: { if (focusRow === 6) detailRoot.cycleUpscaler(1); else focusRow = 6 } }
+                Text {
+                    text: "Upscaler"; color: focusRow === 6 ? root.surfaceColor : root.primaryColor
+                    font.family: root.globalFont; font.capitalization: Font.AllUppercase
+                    anchors.left: parent.left; anchors.leftMargin: root.sw * 0.009375
+                    anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375
+                }
+                Row {
+                    anchors.right: parent.right; anchors.rightMargin: root.sw * 0.009375
+                    anchors.verticalCenter: parent.verticalCenter; spacing: root.sw * 0.00625
+                    Text { text: "◄"; color: focusRow === 6 ? root.surfaceColor : root.tertiaryColor
+                        font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
+                    Text { text: detailRoot.upscalers[detailRoot.upscalerIdx].label; color: focusRow === 6 ? root.surfaceColor : root.primaryColor
+                        font.family: root.globalFont; font.capitalization: Font.AllUppercase; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0375 }
+                    Text { text: "►"; color: focusRow === 6 ? root.surfaceColor : root.tertiaryColor
                         font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: root.sh * 0.0333333 }
                 }
             }
@@ -809,7 +873,7 @@ FocusScope {
             Text {
                 id: ceLabel
                 text: "Cast & Extras"
-                color: detailRoot.focusRow === 6 ? root.accentColor : root.secondaryColor
+                color: detailRoot.focusRow === 7 ? root.accentColor : root.secondaryColor
                 font.family: root.globalFont
                 font.capitalization: Font.AllUppercase
                 anchors.top: parent.top
@@ -839,7 +903,7 @@ FocusScope {
                     // Extras get a 16:9 thumbnail, cast a 2:3 headshot, so the two
                     // read differently at a glance.
                     width: (ceList.height * 0.66) * (isExtra ? (16 / 9) : (2 / 3))
-                    property bool sel: detailRoot.focusRow === 6 && detailRoot.castIndex === index
+                    property bool sel: detailRoot.focusRow === 7 && detailRoot.castIndex === index
 
                     Column {
                         anchors.fill: parent
@@ -892,9 +956,9 @@ FocusScope {
                     MouseArea {
                         anchors.fill: parent
                         onClicked: {
-                            if (detailRoot.focusRow === 6 && detailRoot.castIndex === index)
+                            if (detailRoot.focusRow === 7 && detailRoot.castIndex === index)
                                 inputManager.touchKey("select")
-                            else { detailRoot.focusRow = 6; detailRoot.castIndex = index }
+                            else { detailRoot.focusRow = 7; detailRoot.castIndex = index }
                         }
                     }
                 }
@@ -906,7 +970,7 @@ FocusScope {
     // Footer
     Text {
         text: root.hints.back + ":BACK " + root.hints.navigate + ":NAVIGATE "
-              + (detailRoot.focusRow === 0 && detailRoot.hasSiblings ? root.hints.change + ":PREV/NEXT " : "")
+              + (detailRoot.focusRow === 1 && detailRoot.hasSiblings ? root.hints.change + ":PREV/NEXT " : "")
               + root.hints.select + ":SELECT"
         color: root.tertiaryColor
         font.family: root.globalFont

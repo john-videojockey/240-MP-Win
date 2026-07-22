@@ -249,6 +249,64 @@ void LocalFilesBackend::clearPosition(const QString &filePath) {
     saveHistory(history);
 }
 
+// Watchlist bookmark — a "watchlisted" flag on the path's history entry, kept
+// independent of the watched/tracked/resume state.
+void LocalFilesBackend::set_watchlisted(const QString &filePath, bool on) {
+    QVariantMap history = loadHistory();
+    QVariantMap entry = history.value(normKey(filePath)).toMap();
+    if (on) {
+        entry["watchlisted"] = true;
+        entry["ts"] = QDateTime::currentMSecsSinceEpoch();   // newest-first ordering
+        history[normKey(filePath)] = entry;
+    } else {
+        entry.remove("watchlisted");
+        // Drop the entry if nothing else is worth keeping.
+        if (entry.value("pos").toInt() <= 0 && !entry.value("watched").toBool())
+            history.remove(normKey(filePath));
+        else
+            history[normKey(filePath)] = entry;
+    }
+    saveHistory(history);
+}
+
+bool LocalFilesBackend::is_watchlisted(const QString &filePath) {
+    return loadHistory().value(normKey(filePath)).toMap().value("watchlisted").toBool();
+}
+
+bool LocalFilesBackend::has_watchlist() {
+    const QVariantMap history = loadHistory();
+    for (auto it = history.constBegin(); it != history.constEnd(); ++it)
+        if (it.value().toMap().value("watchlisted").toBool() && QFileInfo::exists(it.key()))
+            return true;
+    return false;
+}
+
+// Bookmarked videos still on disk, newest-first, enriched with artwork/nfo.
+QVariantList LocalFilesBackend::get_watchlist() {
+    const QVariantMap history = loadHistory();
+    struct Entry { QString path; qint64 ts; };
+    QList<Entry> entries;
+    for (auto it = history.constBegin(); it != history.constEnd(); ++it) {
+        const QVariantMap e = it.value().toMap();
+        if (!e.value("watchlisted").toBool()) continue;
+        if (!QFileInfo::exists(it.key())) continue;
+        entries.append({ it.key(), e.value("ts").toLongLong() });
+    }
+    std::sort(entries.begin(), entries.end(),
+              [](const Entry &a, const Entry &b) { return a.ts > b.ts; });
+
+    QVariantList result;
+    for (const Entry &e : entries) {
+        QVariantMap item;
+        item["name"]     = QFileInfo(e.path).fileName();
+        item["path"]     = e.path;
+        item["isFolder"] = false;
+        enrichVideoItem(item, e.path);
+        result.append(item);
+    }
+    return result;
+}
+
 void LocalFilesBackend::get_auto_subtitles_options() {
     QVariantList options;
     QVariantMap forced; forced["id"] = "forced"; forced["label"] = "Forced Only"; forced["old"] = false;
