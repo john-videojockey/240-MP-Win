@@ -232,11 +232,15 @@ FocusScope {
         height: root.sh * 0.525 //252
         clip: true
 
-        property real posterH: root.sh * 0.245
-        property real posterW: posterH * (itemsRoot.gridLandscape ? 16 / 9 : 2 / 3)
-        cellHeight: root.sh * 0.2625
-        // Horizontal gap matches the Plex Home rows and the Watchlist grid.
-        cellWidth: posterW + root.sw * 0.0125 //8
+        // Portrait libraries use a fixed 8-across grid with the Plex Home/Watchlist
+        // horizontal gap (root.sw*0.0125); episode folders keep the larger 16:9
+        // landscape cards, sized by height as before.
+        property real gridCell: Math.floor(coverGrid.width / 8)   // 8 columns, floor-safe
+        property real posterW: itemsRoot.gridLandscape ? posterH * (16 / 9)
+                                                        : gridCell - root.sw * 0.0125
+        property real posterH: itemsRoot.gridLandscape ? root.sh * 0.245 : posterW * 1.5
+        cellWidth: itemsRoot.gridLandscape ? posterW + root.sw * 0.0125 : gridCell
+        cellHeight: itemsRoot.gridLandscape ? root.sh * 0.2625 : posterH + root.sh * 0.0175
 
         Keys.onReturnPressed: itemsRoot.selectCurrent()
         Keys.onPressed: function(event) {
