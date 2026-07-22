@@ -89,13 +89,13 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive -Path "${{ github.workspace }}\stage\*" `
-            -DestinationPath "240-MP-${{ github.ref_name }}-windows-x64.zip"
+            -DestinationPath "240-MP-Win-${{ github.ref_name }}-windows-x64.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4.6.2
         with:
           name: zip-windows-x64
-          path: "240-MP-*-windows-x64.zip"
+          path: "240-MP-Win-*-windows-x64.zip"
           if-no-files-found: error
 
   # ──────────────────────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ jobs:
           if [ -s cl.md ]; then { echo "## What's New"; echo; cat cl.md; echo; echo '---'; echo; } >> RELEASE_NOTES.md; fi
           {
             printf '### Downloads:\n\n| Platform | File |\n|---|---|\n'
-            printf '| Windows 10/11 (x64) | `240-MP-%s-windows-x64.zip` |\n\n' "$GITHUB_REF_NAME"
+            printf '| Windows 10/11 (x64) | `240-MP-Win-%s-windows-x64.zip` |\n\n' "$GITHUB_REF_NAME"
             printf '### Install:\n\n```powershell\nirm https://github.com/%s/releases/latest/download/install.ps1 | iex\n```\n\n' "$GITHUB_REPOSITORY"
             printf '…or download the zip, extract anywhere, and run `240mp.exe` (needs mpv on PATH or in an `mpv\\` subfolder — see [INSTALL.md](INSTALL.md)).\n\n'
             printf '### Update:\n\nUse **Settings → Update** inside the app, or re-run the install one-liner.\n'
@@ -147,7 +147,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: "240-MP ${{ github.ref_name }}"
+          name: "240-MP-Win ${{ github.ref_name }}"
           draft: false
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
           files: |

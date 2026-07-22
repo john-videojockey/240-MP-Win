@@ -116,14 +116,14 @@ install(DIRECTORY "${CMAKE_SOURCE_DIR}/scripts"
     FILES_MATCHING PATTERN "*.lua")
 
 # ── CPack ──────────────────────────────────────────────────────────────────────
-set(CPACK_PACKAGE_NAME "240-MP")
+set(CPACK_PACKAGE_NAME "240-MP-Win")
 # Package version follows the release tag (APP_VERSION, e.g. v0.1.0) with the
 # leading "v" stripped — the git tag is the single source of truth. Local "dev"
 # builds keep "dev"; CPack isn't used by the release workflow (it zips with
 # Compress-Archive), so this only affects local packaging.
 string(REGEX REPLACE "^v" "" CPACK_PACKAGE_VERSION "${APP_VERSION}")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "240-MP Media Player")
-set(CPACK_PACKAGE_VENDOR "240-MP")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "240-MP-Win Media Player")
+set(CPACK_PACKAGE_VENDOR "240-MP-Win")
 set(CPACK_GENERATOR "ZIP")
 
 include(CPack)
