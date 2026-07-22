@@ -25,6 +25,13 @@ FocusScope {
     property int colIndex: 1   // 0 = row title, 1..N = items[colIndex - 1]
     property bool isLoading: true
 
+    // Browse View (shared setting): "Title" swaps the poster dashboard for a
+    // two-pane text menu — hubs (Continue Watching + libraries) on the left, the
+    // selected hub's titles on the right. "Cover" keeps the poster dashboard.
+    // In text mode colIndex 0 means the left (hub) pane is focused; 1..N the right.
+    property string browseView: (appCore.get_setting(moduleRoot.moduleId, "browse_view") || "Title")
+    property bool textMode: browseView === "Title"
+
     // Hover fanart + theme music (shared settings with the info/browse screens).
     property bool infoBg: true
     property real infoBgOpacity: 0.3
@@ -71,11 +78,13 @@ FocusScope {
     // Apply a saved/def cursor position after the model settles (deferred so a
     // model-driven currentIndex reset doesn't clobber it).
     function applyRestore() {
-        rowList.currentIndex = _restoreRow
         rowIndex = _restoreRow
+        if (!textMode) rowList.currentIndex = _restoreRow
         var items = currentItems()
-        colIndex = (_restoreCol >= 0) ? Math.max(0, Math.min(_restoreCol, items.length))
-                                      : (items.length > 0 ? 1 : 0)
+        if (_restoreCol >= 0)
+            colIndex = Math.max(0, Math.min(_restoreCol, items.length))
+        else
+            colIndex = textMode ? 0 : (items.length > 0 ? 1 : 0)   // text: land on the hub pane
         if (infoBg || showThemes) hoverArtDebounce.restart()
     }
 
@@ -162,10 +171,28 @@ FocusScope {
 
     focus: true
 
-    Keys.onUpPressed:   if (rowList.currentIndex > 0) rowList.currentIndex--
-    Keys.onDownPressed: if (rowList.currentIndex < hubs.length - 1) rowList.currentIndex++
-    Keys.onLeftPressed:  if (colIndex > 0) colIndex--
-    Keys.onRightPressed: if (colIndex < currentItems().length) colIndex++
+    // Poster dashboard: Up/Down move rows, Left/Right move within a row's posters.
+    // Text two-pane: Up/Down move the focused pane's cursor, Left/Right cross panes.
+    Keys.onUpPressed: {
+        if (textMode) {
+            if (colIndex === 0) { if (rowIndex > 0) rowIndex-- }
+            else if (colIndex > 1) colIndex--
+        } else if (rowList.currentIndex > 0) rowList.currentIndex--
+    }
+    Keys.onDownPressed: {
+        if (textMode) {
+            if (colIndex === 0) { if (rowIndex < hubs.length - 1) rowIndex++ }
+            else if (colIndex < currentItems().length) colIndex++
+        } else if (rowList.currentIndex < hubs.length - 1) rowList.currentIndex++
+    }
+    Keys.onLeftPressed: {
+        if (textMode) { if (colIndex > 0) colIndex = 0 }   // right pane → hub pane
+        else if (colIndex > 0) colIndex--
+    }
+    Keys.onRightPressed: {
+        if (textMode) { if (colIndex === 0 && currentItems().length > 0) colIndex = 1 }
+        else if (colIndex < currentItems().length) colIndex++
+    }
     Keys.onReturnPressed: openCurrent()
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
@@ -207,7 +234,7 @@ FocusScope {
     ListView {
         id: rowList
         model: homeRoot.hubs
-        visible: !homeRoot.isLoading && homeRoot.hubs.length > 0
+        visible: !homeRoot.isLoading && homeRoot.hubs.length > 0 && !homeRoot.textMode
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
@@ -230,6 +257,7 @@ FocusScope {
         // rows settle under a flick, and the key handlers set it directly. Either
         // way, follow it and reset the column to the row's first poster.
         onCurrentIndexChanged: {
+            if (homeRoot.textMode) return   // text mode drives rowIndex/colIndex itself
             homeRoot.rowIndex = currentIndex
             homeRoot.colIndex = homeRoot.currentItems().length > 0 ? 1 : 0
         }
@@ -335,6 +363,137 @@ FocusScope {
                                 homeRoot.colIndex = index + 1
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // Text two-pane menu (Browse View = Title): the hubs (Continue Watching +
+    // libraries) on the left at 40%, the selected hub's titles on the right at 60%.
+    Item {
+        id: twoPane
+        visible: !homeRoot.isLoading && homeRoot.hubs.length > 0 && homeRoot.textMode
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: footer.top
+        anchors.topMargin: root.sh * 0.25 //120
+        anchors.leftMargin: root.sw * 0.115625 //74
+        anchors.rightMargin: root.sw * 0.05
+        anchors.bottomMargin: root.sh * 0.02
+
+        property real gap: root.sw * 0.025
+
+        // Left pane — hubs (Continue Watching + libraries).
+        ListView {
+            id: leftList
+            model: homeRoot.hubs
+            width: (parent.width - twoPane.gap) * 0.40
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            clip: true
+            spacing: root.sh * 0.006
+            currentIndex: homeRoot.rowIndex
+            onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
+
+            delegate: Item {
+                id: lEntry
+                width: leftList.width
+                height: root.sh * 0.055
+                property bool current: index === homeRoot.rowIndex
+                property bool active:  current && homeRoot.colIndex === 0
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (lEntry.active) inputManager.touchKey("select")
+                        else { homeRoot.rowIndex = index; homeRoot.colIndex = 0 }
+                    }
+                }
+                Rectangle {
+                    anchors.fill: parent
+                    color: lEntry.active ? root.accentColor : "transparent"
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: root.sw * 0.009375
+                    anchors.rightMargin: root.sw * 0.009375
+                    text: modelData.title || ""
+                    color: lEntry.active ? root.surfaceColor
+                                         : (lEntry.current ? root.accentColor : root.primaryColor)
+                    font.family: root.globalFont
+                    font.capitalization: Font.AllUppercase
+                    elide: Text.ElideRight
+                    font.pixelSize: root.sh * 0.0375
+                }
+            }
+        }
+
+        // Right pane — the selected hub's titles.
+        ListView {
+            id: rightList
+            model: homeRoot.currentItems()
+            anchors.left: leftList.right
+            anchors.leftMargin: twoPane.gap
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            clip: true
+            spacing: root.sh * 0.006
+            currentIndex: homeRoot.colIndex - 1
+            onCurrentIndexChanged: if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
+
+            delegate: Item {
+                id: rEntry
+                width: rightList.width
+                height: root.sh * 0.055
+                property bool sel: homeRoot.colIndex - 1 === index
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (rEntry.sel) inputManager.touchKey("select")
+                        else homeRoot.colIndex = index + 1
+                    }
+                }
+                Rectangle {
+                    anchors.fill: parent
+                    color: rEntry.sel ? root.accentColor : "transparent"
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: root.sw * 0.009375
+                    anchors.rightMargin: root.sw * 0.009375
+                    text: {
+                        var base = (modelData.type === "episode" && modelData.grandparentTitle)
+                                   ? (modelData.grandparentTitle + ": " + (modelData.title || ""))
+                                   : (modelData.title || "")
+                        return modelData.editionTitle ? base + " (" + modelData.editionTitle + ")" : base
+                    }
+                    color: rEntry.sel ? root.surfaceColor : root.primaryColor
+                    font.family: root.globalFont
+                    font.capitalization: Font.AllUppercase
+                    elide: Text.ElideRight
+                    font.pixelSize: root.sh * 0.0375
+                }
+                // In-progress bar under the row (Continue Watching titles).
+                Rectangle {
+                    visible: (modelData.viewOffset || 0) > 0 && (modelData.duration || 0) > 0
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: Math.max(2, Math.round(root.sh * 0.005))
+                    color: Qt.rgba(0, 0, 0, 0.4)
+                    Rectangle {
+                        anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+                        width: parent.width * Math.min(1, (modelData.viewOffset || 0) / Math.max(1, modelData.duration || 0))
+                        color: rEntry.sel ? root.surfaceColor : root.accentColor
                     }
                 }
             }
