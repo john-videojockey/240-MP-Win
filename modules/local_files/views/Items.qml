@@ -235,7 +235,8 @@ FocusScope {
         property real posterH: root.sh * 0.245
         property real posterW: posterH * (itemsRoot.gridLandscape ? 16 / 9 : 2 / 3)
         cellHeight: root.sh * 0.2625
-        cellWidth: posterW + root.sw * 0.0078125 //5
+        // Horizontal gap matches the Plex Home rows and the Watchlist grid.
+        cellWidth: posterW + root.sw * 0.0125 //8
 
         Keys.onReturnPressed: itemsRoot.selectCurrent()
         Keys.onPressed: function(event) {
