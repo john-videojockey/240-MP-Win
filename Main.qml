@@ -405,7 +405,9 @@ Window {
         z: 100
         anchors.top: parent.top
         anchors.right: parent.right
-        anchors.topMargin: root.sh * 0.125 //60
+        // Sit above the AppBar row (its title starts at 0.125*sh) so a long view
+        // title — e.g. a show name in the Episodes view — can't run under the chips.
+        anchors.topMargin: root.sh * 0.05 //24
         anchors.rightMargin: root.sw * 0.115625 //74
         width: backChipLabel.implicitWidth + root.sw * 0.025 //16
         height: root.sh * 0.0583333 //28
