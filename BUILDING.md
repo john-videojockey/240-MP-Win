@@ -73,7 +73,7 @@ The build runs `windeployqt` as a post-build step, so `build\240mp.exe` is direc
 All user configuration is stored at:
 
 ```
-%APPDATA%\240-MP\
+%APPDATA%\240-MP-Win\
   config.json       ← app and module settings
   plex_auth.json    ← plex auth
   input.cfg         ← optional gamepad mapping overrides (see Gamepad input below)
@@ -100,7 +100,7 @@ Controller input can be turned off entirely in **Settings → Controller Input**
 
 **Overriding the mapping**
 
-- Create an `input.cfg` file in `%APPDATA%\240-MP`.
+- Create an `input.cfg` file in `%APPDATA%\240-MP-Win`.
 - Add one binding per line, `<input> <action>`;
 - Use `#` to start a comment, data is case-insensitive and you only need to include the things you want to change (anything not defined will fall back to defaults)
 - The file is live-reloaded while the app runs, so you can tune bindings without restarting.
@@ -126,7 +126,7 @@ label east  A
 
 Bad lines are skipped with a warning in the log (line number included).
 
-**Exotic controllers** — if SDL doesn't recognize your pad at all, drop a community [gamecontrollerdb.txt](https://github.com/mdqinc/SDL_GameControllerDB) into `%APPDATA%\240-MP`; it is loaded at startup before controllers are opened.
+**Exotic controllers** — if SDL doesn't recognize your pad at all, drop a community [gamecontrollerdb.txt](https://github.com/mdqinc/SDL_GameControllerDB) into `%APPDATA%\240-MP-Win`; it is loaded at startup before controllers are opened.
 
 ## Video decode tuning (mpv_video_args)
 
@@ -151,7 +151,7 @@ This config is read at each playback event, so a change applies on the next play
 240-MP builds as a GUI-subsystem app, so there is no console by default. Logs are always written to:
 
 ```
-%APPDATA%\240-MP\logs\240mp.log     (rotated to 240mp.prev.log at ~1 MB)
+%APPDATA%\240-MP-Win\logs\240mp.log     (rotated to 240mp.prev.log at ~1 MB)
 ```
 
 To also see the log lines live in your terminal, set `MP240_CONSOLE=1` before launching — the app then attaches to the parent console. It's opt-in so that a launcher started from a shell (e.g. a taskbar app run from PowerShell that spawns 240-MP) doesn't dump the app's logs into that session. `run-local.ps1` sets it for you.

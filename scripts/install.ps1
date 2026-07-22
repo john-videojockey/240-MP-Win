@@ -20,7 +20,7 @@
 .NOTES
     Install location: %LOCALAPPDATA%\Programs\240-MP  (user-writable, which is
     what lets the in-app self-updater swap the folder without elevation).
-    Settings live separately in %APPDATA%\240-MP and survive install/uninstall.
+    Settings live separately in %APPDATA%\240-MP-Win and survive install/uninstall.
 #>
 [CmdletBinding()]
 param(
@@ -95,7 +95,7 @@ if ($Uninstall) {
     Get-Process 240mp -ErrorAction SilentlyContinue | Stop-Process -Force
     Remove-Item $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item $startMenuLnk, $startupLnk -Force -ErrorAction SilentlyContinue
-    Write-Host "240-MP removed. Settings kept at $env:APPDATA\240-MP (delete manually if unwanted)."
+    Write-Host "240-MP removed. Settings kept at $env:APPDATA\240-MP-Win (delete manually if unwanted)."
     return
 }
 

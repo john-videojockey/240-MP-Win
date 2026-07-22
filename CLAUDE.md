@@ -20,7 +20,7 @@ cmake --build build
 $env:APP_ROOT = (Get-Location); .\build\240mp.exe
 ```
 
-The app is a GUI-subsystem executable: logs always go to `%APPDATA%\240-MP\logs\240mp.log`, and additionally to the parent console **only when `MP240_CONSOLE=1`** is set (opt-in, so a launcher spawned from a shell doesn't get the logs dumped into that session; `run-local.ps1` sets it). `Ctrl+Q` quits.
+The app is a GUI-subsystem executable: logs always go to `%APPDATA%\240-MP-Win\logs\240mp.log`, and additionally to the parent console **only when `MP240_CONSOLE=1`** is set (opt-in, so a launcher spawned from a shell doesn't get the logs dumped into that session; `run-local.ps1` sets it). `Ctrl+Q` quits.
 
 ---
 
@@ -43,7 +43,7 @@ This file stays intentionally lean. The detailed documentation is single-sourced
 - **`registerModule` wires optional backend signals/slots by introspection** (`dynamicOptionsReady`, `authStateChanged`, `onSettingChanged`) — declare them with the exact signatures and no `main.cpp` changes are needed.
 - **Every module's QML entry point is `Root.qml`** (the router). Views are `FocusScope`s that pass state via `navParams` and communicate via `navigateTo` / `goBack` signals. Size everything with `root.sh` / `root.sw`, never hardcoded pixels.
 - **`PlexBackend` is the reference implementation** for backends.
-- **Config** is `config.json` in `%APPDATA%\240-MP`; module settings live under `modules.<id>`. Use `save_setting` / `get_setting` (dot-notation supported), not direct file writes.
+- **Config** is `config.json` in `%APPDATA%\240-MP-Win`; module settings live under `modules.<id>`. Use `save_setting` / `get_setting` (dot-notation supported), not direct file writes.
 - **Gamepad input is centralized in `src/input/InputManager`** (SDL2) and arrives in QML as ordinary synthesized key events — never add gamepad-specific handling to views; if a view handles the right keys it handles gamepads. Footer hint labels bind to `root.hints.*` (adapts keyboard↔gamepad), never hardcoded `[ESC]`/`[ENTER]` strings and never `inputManager.hints.*` directly — context-property bindings throw TypeErrors when the view Loader tears down; id-resolved `root.*` is teardown-safe. (Details: [ARCHITECTURE.md → Input](ARCHITECTURE.md#input-inputmanager).)
 - **Windows platform glue lives in `src/win_utils.cpp`** (file/console logging, display keep-awake, mpv/yt-dlp PATH discovery) — one call each from `main()`; keep new platform-specific code there, not scattered through backends.
 - **`tests/mock-mpv/`** is a scripted mpv stand-in (named-pipe JSON IPC) — copy its two files into `<repo>\mpv\` to exercise the playback hand-off without a real mpv install; delete the folder afterwards.

@@ -50,7 +50,7 @@ Only the platform layer was rebuilt — not translated line‑by‑line:
 - **mpv control** over a Windows named pipe (`\\.\pipe\240mp-mpv`); **hardware decode** via D3D11VA (`--hwdec=auto-safe`, override with the `mpv_video_args` setting). mpv can be bundled by dropping `mpv.exe` into `<app folder>\mpv\`, which 240-MP prefers over any system install.
 - **Gamepads** via SDL2 — XInput and DirectInput pads (Xbox, PlayStation, 8BitDo, NES‑style clones) with hotplug.
 - **Install** is one PowerShell script (no admin) that also brings in mpv/yt‑dlp via winget/scoop/choco, with optional autostart‑at‑logon. **Self‑update** from Settings → Update swaps the per‑user install (`%LOCALAPPDATA%\Programs\240-MP`) with a detached helper.
-- **Directory browser** navigates above `C:\` to switch drives. **Logs** land in `%APPDATA%\240-MP\logs\240mp.log` (`MP240_CONSOLE=1` also mirrors them to a launching terminal). The display is kept awake while the app runs.
+- **Directory browser** navigates above `C:\` to switch drives. **Logs** land in `%APPDATA%\240-MP-Win\logs\240mp.log` (`MP240_CONSOLE=1` also mirrors them to a launching terminal). The display is kept awake while the app runs.
 
 Everything Raspberry‑Pi‑specific (KMS/DRM hand‑off, per‑Pi decode profiles, systemd autostart) doesn't apply here and was removed rather than ported.
 

@@ -459,4 +459,4 @@ User configuration is stored in `config.json` in the app's data directory:
 }
 ```
 
-Each module's settings live under `modules.<id>`. Use `save_setting` / `get_setting` (which support dot-notation keys) rather than writing the file directly. The data directory (`%APPDATA%\240-MP`) is created on first run and is separate from the app itself, so rebuilding or updating never wipes user settings. See [BUILDING.md](BUILDING.md#configuration).
+Each module's settings live under `modules.<id>`. Use `save_setting` / `get_setting` (which support dot-notation keys) rather than writing the file directly. The data directory (`%APPDATA%\240-MP-Win`) is created on first run and is separate from the app itself, so rebuilding or updating never wipes user settings. See [BUILDING.md](BUILDING.md#configuration).

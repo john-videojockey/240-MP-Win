@@ -10,6 +10,7 @@ Window {
     // lets the taskbar button and the on-screen chip minimize it despite the
     // missing title bar.
     flags: Qt.FramelessWindowHint | Qt.Window | Qt.WindowMinimizeButtonHint
+    title:  "240-MP-Win"
     x:      Screen.virtualX
     y:      Screen.virtualY
     width:  Screen.width

@@ -51,16 +51,16 @@ Wrap the same download in a script block so it stays execution-policy-free while
 
 - The app starts fullscreen. Navigate with **arrow keys / Enter / Esc** or a game controller (Xbox, PlayStation, 8BitDo… — hotplug works).
 - **Ctrl+Q** quits from anywhere; there's also a Quit entry in Settings.
-- Local Files looks for media in `%APPDATA%\240-MP\media` by default — point it at your library in **Settings → Local Files → Media Directory** (you can browse to any drive).
+- Local Files looks for media in `%APPDATA%\240-MP-Win\media` by default — point it at your library in **Settings → Local Files → Media Directory** (you can browse to any drive).
 
 ## Where your data lives
 
 | What | Where |
 |---|---|
 | App | `%LOCALAPPDATA%\Programs\240-MP` |
-| Settings, auth, history | `%APPDATA%\240-MP\` (`config.json`, `plex_auth.json`, …) |
-| Logs | `%APPDATA%\240-MP\logs\240mp.log` |
-| Gamepad overrides | `%APPDATA%\240-MP\input.cfg` ([details](BUILDING.md#gamepad-input-inputcfg)) |
+| Settings, auth, history | `%APPDATA%\240-MP-Win\` (`config.json`, `plex_auth.json`, …) |
+| Logs | `%APPDATA%\240-MP-Win\logs\240mp.log` |
+| Gamepad overrides | `%APPDATA%\240-MP-Win\input.cfg` ([details](BUILDING.md#gamepad-input-inputcfg)) |
 | Your own mpv preferences | `%APPDATA%\mpv\mpv.conf` (read by mpv on every launch) |
 
 Settings live outside the app folder, so updating or reinstalling never wipes them.
@@ -75,7 +75,7 @@ Use **Settings → Update** inside the app — it checks GitHub Releases, downlo
 irm https://github.com/john-videojockey/240-MP-Win/releases/latest/download/install.ps1 | iex; & "$env:TEMP\install.ps1" -Uninstall
 ```
 
-…or simply download `install.ps1` and run `.\install.ps1 -Uninstall`, or delete `%LOCALAPPDATA%\Programs\240-MP` and the Start Menu/Startup shortcuts yourself. Delete `%APPDATA%\240-MP` too if you want your settings gone.
+…or simply download `install.ps1` and run `.\install.ps1 -Uninstall`, or delete `%LOCALAPPDATA%\Programs\240-MP` and the Start Menu/Startup shortcuts yourself. Delete `%APPDATA%\240-MP-Win` too if you want your settings gone.
 
 ## Raspberry Pi or macOS?
 

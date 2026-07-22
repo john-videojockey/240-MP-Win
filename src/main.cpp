@@ -49,7 +49,7 @@ static QString resolveDataRoot() {
         return QDir(envRoot).canonicalPath();
     }
 
-    // %APPDATA%/240-MP — roaming, survives reinstalls of the app folder.
+    // %APPDATA%/240-MP-Win — roaming, survives reinstalls of the app folder.
     QString path = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     QDir().mkpath(path);
     return path;
@@ -57,7 +57,9 @@ static QString resolveDataRoot() {
 
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
-    app.setApplicationName("240-MP");
+    // Names the roaming data dir (%APPDATA%/240-MP-Win via QStandardPaths). The
+    // window/taskbar title is set explicitly on the QML Window.
+    app.setApplicationName("240-MP-Win");
     app.setApplicationVersion(QStringLiteral(APP_VERSION));
 
     // Hide cursor — 240-MP is keyboard/gamepad-only so the cursor serves no purpose.

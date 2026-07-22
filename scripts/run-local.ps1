@@ -58,5 +58,5 @@ $env:APP_ROOT = $repo
 # This is a deliberate run-from-terminal, so opt in to console logging (the app
 # only attaches to the parent console when MP240_CONSOLE is set).
 $env:MP240_CONSOLE = '1'
-Write-Host "Running $build\240mp.exe (logs also land in %APPDATA%\240-MP\logs\240mp.log; Ctrl+Q quits)"
+Write-Host "Running $build\240mp.exe (logs also land in %APPDATA%\240-MP-Win\logs\240mp.log; Ctrl+Q quits)"
 & "$build\240mp.exe"
