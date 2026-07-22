@@ -592,8 +592,14 @@ void LocalFilesBackend::enrichFolderItem(QVariantMap &item, const QString &folde
         if (!QFileInfo::exists(nfoPath)) continue;
         const QVariantMap meta = parseNfo(nfoPath);
         if (meta.isEmpty()) continue;
-        for (auto it = meta.constBegin(); it != meta.constEnd(); ++it)
+        for (auto it = meta.constBegin(); it != meta.constEnd(); ++it) {
+            // A show's tvshow.nfo carries <season>/<episode> *total counts*, not
+            // this folder's own numbers — copying them would make the browse treat
+            // the folder as an episode (landscape grid) instead of a poster.
+            if (it.key() == QLatin1String("season") || it.key() == QLatin1String("episode"))
+                continue;
             item[it.key()] = it.value();
+        }
         break;
     }
 }

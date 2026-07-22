@@ -39,7 +39,9 @@ FocusScope {
 
     function anyEpisodes(arr) {
         for (var i = 0; i < arr.length; i++) {
-            if (arr[i].episode > 0) return true
+            // Only actual episode videos count — a show *folder* carries its
+            // tvshow.nfo episode *total*, which isn't an episode of this listing.
+            if (!arr[i].isFolder && arr[i].episode > 0) return true
         }
         return false
     }
