@@ -132,3 +132,16 @@ mp.add_forced_key_binding("REWIND",  "mk-rewind",  function() seek_with_menu("no
 
 mp.add_forced_key_binding("NEXT", "mk-next", function() seek_with_menu("no-osd add chapter 1") end)
 mp.add_forced_key_binding("PREV", "mk-prev", function() seek_with_menu("no-osd add chapter -1") end)
+
+-- Keep mpv locked in fullscreen. The app runs it borderless-fullscreen with its
+-- window married to the app window (a single composed window); leaving fullscreen
+-- tears down that composition and the video goes black until playback ends. mpv's
+-- default bindings toggle fullscreen on a double-click (MBTN_LEFT_DBL — which a
+-- rapid tap on the on-screen controls fires as the second click) and on f / F, so
+-- swallow all three. Forced bindings win over mpv's defaults. (Window dragging is
+-- disabled for the same "the window is fixed" reason, via --window-dragging=no;
+-- ESC/BS are remapped to quit in the input.conf, so no default unsets fullscreen.)
+local function swallow() end
+mp.add_forced_key_binding("MBTN_LEFT_DBL", "mk-lock-fs-dblclick", swallow)
+mp.add_forced_key_binding("f",             "mk-lock-fs-f",        swallow)
+mp.add_forced_key_binding("F",             "mk-lock-fs-shift-f",  swallow)
