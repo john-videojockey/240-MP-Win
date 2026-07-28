@@ -398,6 +398,17 @@ FocusScope {
     Component.onCompleted: {
         focusRow = 1
 
+        // Arrived by finishing an episode with autoplay off: the player repointed
+        // here and passed the audio/subtitle language it was playing. Carry it onto
+        // this episode by language (its stream IDs differ) so applyDetail selects
+        // the same tracks rather than the episode's own default — the same carry the
+        // in-place PREV/NEXT swap uses. Absent on a normal browse navigation.
+        if (item.carryAudioLang !== undefined || item.carrySubLang !== undefined) {
+            carryPending   = true
+            carryAudioLang = item.carryAudioLang || ""
+            carrySubLang   = (item.carrySubLang !== undefined) ? item.carrySubLang : "__off__"
+        }
+
         // Read the theme settings and start the theme FIRST, before any slower work
         // below (detail load, config writes). A theme playing on hover in browse /
         // Continue Watching only carries over gap-free if play_theme — which cancels
