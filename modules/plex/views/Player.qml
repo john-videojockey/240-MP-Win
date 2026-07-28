@@ -325,6 +325,10 @@ FocusScope {
                     type: detail.type || "episode",
                     title: detail.title || "",
                     grandparentTitle: detail.grandparentTitle || "",
+                    // Carry the show key: the detail screen's titleKey() (per-show
+                    // volume/upscaler overrides) needs it for an episode, else it
+                    // falls back to the episode's own key and the overrides reset.
+                    grandparentRatingKey: detail.grandparentRatingKey || "",
                     parentIndex: detail.parentIndex,
                     index: detail.index
                 })
@@ -381,6 +385,9 @@ FocusScope {
             type: detail.type || "episode",
             title: detail.title || "",
             grandparentTitle: detail.grandparentTitle || "",
+            // Carry the show key so the detail screen's per-show volume/upscaler
+            // overrides resolve (titleKey() falls back to the episode key without it).
+            grandparentRatingKey: detail.grandparentRatingKey || "",
             parentIndex: detail.parentIndex,
             index: detail.index
         })
