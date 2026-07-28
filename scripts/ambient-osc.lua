@@ -125,5 +125,10 @@ end
 mp.add_forced_key_binding("UP",   "open_menu_up",   toggle_menu)
 mp.add_forced_key_binding("DOWN", "open_menu_down", toggle_menu)
 
+-- Swallow right-click (a Windows touch press-and-hold) so it can't hit mpv's
+-- default MBTN_RIGHT = cycle pause. media-keys.lua leaves MBTN_RIGHT to the OSC
+-- scripts; ambient mode has no right-click action, so drop it here.
+mp.add_forced_key_binding("MBTN_RIGHT", "amb-swallow-rclick", function() end)
+
 mp.add_key_binding("ESC", "bg-esc", function() mp.command("quit") end)
 mp.add_key_binding("BS",  "bg-bs",  function() mp.command("quit") end)

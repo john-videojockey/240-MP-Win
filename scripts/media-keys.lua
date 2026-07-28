@@ -146,11 +146,7 @@ mp.add_forced_key_binding("MBTN_LEFT_DBL", "mk-lock-fs-dblclick", swallow)
 mp.add_forced_key_binding("f",             "mk-lock-fs-f",        swallow)
 mp.add_forced_key_binding("F",             "mk-lock-fs-shift-f",  swallow)
 
--- Swallow right-click. Windows synthesizes a right-click from a touch
--- press-and-hold, so holding the on-screen SUBTITLE button to turn subs off
--- (a deliberate long-press gesture in mpv-osc.lua) also fired mpv's default
--- MBTN_RIGHT binding — cycle pause — pausing the video mid-gesture. The app has
--- no right-click action, so drop it. (The screen saver still rebinds MBTN_RIGHT
--- as a dismiss key while active; that transient forced binding shadows this one
--- and restores it on dismiss, same as it does for PLAYPAUSE.)
-mp.add_forced_key_binding("MBTN_RIGHT", "mk-swallow-rclick", swallow)
+-- MBTN_RIGHT (a Windows touch press-and-hold) is owned by the OSC scripts, not
+-- here: mpv-osc.lua turns subtitles off when the hold lands on the SUBTITLE
+-- button and swallows it otherwise, and ambient-osc.lua swallows it. This script
+-- loads after them, so binding MBTN_RIGHT here would shadow that handling.

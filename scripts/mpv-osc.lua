@@ -546,6 +546,30 @@ mp.add_forced_key_binding("MBTN_LEFT", "osc-click", function(t)
     hide_menu()
 end, {complex = true})
 
+-- Right-click is how Windows delivers a touch press-and-hold (the OS synthesizes
+-- it from a long touch instead of a sustained left button, so the MBTN_LEFT hold
+-- timer above never fires on a touchscreen). Use it as the touch equivalent of
+-- the SUBTITLE button's long-press: a hold on that button turns subtitles off.
+-- Anywhere else it does nothing — which also overrides mpv's default MBTN_RIGHT
+-- (cycle pause), so a stray touch-hold can't pause. media-keys.lua deliberately
+-- does not bind MBTN_RIGHT (it loads later and would shadow this); the screen
+-- saver still rebinds it transiently while active.
+mp.add_forced_key_binding("MBTN_RIGHT", "osc-rclick", function(t)
+    if t.event ~= "down" or not menu_visible then return end
+    local mpos = mp.get_property_native("mouse-pos") or {}
+    local mx, my = mpos.x or -1, mpos.y or -1
+    local g = layout()
+    if not g then return end
+    for _, btn in ipairs(g.btns) do
+        if btn.sub and hit({x=btn.x, y=btn.y, w=btn.width, h=btn.h}, mx, my) then
+            set_sub_none()
+            reset_idle_timer(MOUSE_TIMEOUT)
+            draw_menu()
+            return
+        end
+    end
+end, {complex = true})
+
 -- The volume bar (media-keys.lua) broadcasts this when it appears; close the
 -- menu so the two OSDs never overlap.
 mp.register_script_message("240mp-osd-menu-hide", hide_menu)
