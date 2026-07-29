@@ -174,6 +174,23 @@ FocusScope {
             appCore.save_setting("", "mpv_volume_gain_active", String(volumeDb))
             carryPending = false
         }
+        // Per-show audio/subtitle language override (set when the user cycles these
+        // on the info screen). Applied over the server-derived selection so the
+        // choice sticks across every episode of the show — including landing here
+        // after an episode ends — since Plex keeps no per-show track preference and
+        // an account default (e.g. subtitles on) would otherwise reassert each time.
+        var ao = appCore.get_map_setting("", "audio_lang_overrides", titleKey())
+        if (ao && ao !== "" && d.audioStreams) {
+            for (var ai = 0; ai < d.audioStreams.length; ai++)
+                if (d.audioStreams[ai].language === ao) { audioIdx = ai; break }
+        }
+        var so = appCore.get_map_setting("", "sub_lang_overrides", titleKey())
+        if (so === "off") {
+            subtitleIdx = 0
+        } else if (so && so !== "" && d.subtitleStreams) {
+            for (var sj = 1; sj < d.subtitleStreams.length; sj++)
+                if (d.subtitleStreams[sj].language === so) { subtitleIdx = sj; break }
+        }
         // Theme song for this item (if enabled and one exists). An episode's own
         // detail carries no theme — only the show does — so fall back to the
         // passed-in item's theme (the show's, set on the browse/Continue Watching
@@ -373,6 +390,29 @@ FocusScope {
         appCore.save_setting("", "mpv_volume_gain_active", String(volumeDb))
     }
 
+    // Per-show audio/subtitle language, remembered per show/movie like the volume
+    // and upscaler. Stored by language (not stream id, which differs per episode)
+    // and re-applied on every episode by applyDetail, so a choice sticks across the
+    // whole show. Plex keeps no per-show track preference, so without this the
+    // account default (e.g. subtitles on) reasserts on each episode.
+    function cycleAudio(dir) {
+        if (!detail || !detail.audioStreams || detail.audioStreams.length < 2) return
+        var n = detail.audioStreams.length
+        audioIdx = (audioIdx + dir + n) % n
+        appCore.save_map_setting("", "audio_lang_overrides", titleKey(),
+                                 (detail.audioStreams[audioIdx] || {}).language || "")
+    }
+    function cycleSubtitle(dir) {
+        if (!detail || !detail.subtitleStreams || detail.subtitleStreams.length < 2) return
+        var n = detail.subtitleStreams.length
+        subtitleIdx = (subtitleIdx + dir + n) % n
+        // Index 0 is the synthetic "OFF" pseudo-stream; store "off" for it so the
+        // subtitles-off choice is remembered even though it has no language.
+        appCore.save_map_setting("", "sub_lang_overrides", titleKey(),
+                                 subtitleIdx === 0 ? "off"
+                                 : ((detail.subtitleStreams[subtitleIdx] || {}).language || ""))
+    }
+
     // The play/options + playback-settings block now all fits at once (compact,
     // like the Local Files screen), so nothing scrolls until Cast & Extras (6);
     // then More Like This (7). Rows 0-5 stay at the top.
@@ -397,17 +437,6 @@ FocusScope {
 
     Component.onCompleted: {
         focusRow = 1
-
-        // Arrived by finishing an episode with autoplay off: the player repointed
-        // here and passed the audio/subtitle language it was playing. Carry it onto
-        // this episode by language (its stream IDs differ) so applyDetail selects
-        // the same tracks rather than the episode's own default — the same carry the
-        // in-place PREV/NEXT swap uses. Absent on a normal browse navigation.
-        if (item.carryAudioLang !== undefined || item.carrySubLang !== undefined) {
-            carryPending   = true
-            carryAudioLang = item.carryAudioLang || ""
-            carrySubLang   = (item.carrySubLang !== undefined) ? item.carrySubLang : "__off__"
-        }
 
         // Read the theme settings and start the theme FIRST, before any slower work
         // below (detail load, config writes). A theme playing on hover in browse /
@@ -495,10 +524,10 @@ FocusScope {
             if (actionCol > 0) actionCol--
         } else if (focusRow === 0) {
             if (epCol > 0 && episodeItem) epCol--   // → EPISODES
-        } else if (focusRow === 3 && detail.audioStreams && detail.audioStreams.length > 1)
-            audioIdx = (audioIdx - 1 + detail.audioStreams.length) % detail.audioStreams.length
-        else if (focusRow === 4 && detail.subtitleStreams && detail.subtitleStreams.length > 1)
-            subtitleIdx = (subtitleIdx - 1 + detail.subtitleStreams.length) % detail.subtitleStreams.length
+        } else if (focusRow === 3)
+            detailRoot.cycleAudio(-1)
+        else if (focusRow === 4)
+            detailRoot.cycleSubtitle(-1)
         else if (focusRow === 5)
             detailRoot.cycleVolume(-1)
         else if (focusRow === 6)
@@ -517,10 +546,10 @@ FocusScope {
             if (actionCol < 1) actionCol++
         } else if (focusRow === 0) {
             if (epCol < 1 && watchlistAvailable) epCol++   // → WATCHLIST
-        } else if (focusRow === 3 && detail.audioStreams && detail.audioStreams.length > 1)
-            audioIdx = (audioIdx + 1) % detail.audioStreams.length
-        else if (focusRow === 4 && detail.subtitleStreams && detail.subtitleStreams.length > 1)
-            subtitleIdx = (subtitleIdx + 1) % detail.subtitleStreams.length
+        } else if (focusRow === 3)
+            detailRoot.cycleAudio(1)
+        else if (focusRow === 4)
+            detailRoot.cycleSubtitle(1)
         else if (focusRow === 5)
             detailRoot.cycleVolume(1)
         else if (focusRow === 6)

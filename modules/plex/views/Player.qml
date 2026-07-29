@@ -330,14 +330,7 @@ FocusScope {
                     // falls back to the episode's own key and the overrides reset.
                     grandparentRatingKey: detail.grandparentRatingKey || "",
                     parentIndex: detail.parentIndex,
-                    index: detail.index,
-                    // Carry the audio/subtitle language being watched so the next
-                    // episode's info screen selects the same tracks (matched by
-                    // language — stream IDs are per-file) instead of that episode's
-                    // own default. The autoplay-on path carries it through playback;
-                    // this is the equivalent for finishing with autoplay off.
-                    carryAudioLang: playerRoot.carryAudioLang,
-                    carrySubLang: playerRoot.carrySubLang
+                    index: detail.index
                 })
                 goBack()
                 return
