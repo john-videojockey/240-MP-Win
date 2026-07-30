@@ -24,6 +24,14 @@ constexpr Sint16 kAxisRelease = 12000;
 constexpr int kRepeatDelayMs    = 300;
 constexpr int kRepeatIntervalMs = 45;
 
+// Gamepad poll cadence. SDL needs periodic polling to read button/axis state
+// and to catch device hotplug, but polling every frame only matters while a pad
+// is actually open. With none open — no controller connected, or controller
+// input disabled — idle at a slow rate that still notices a plug-in within half
+// a second, instead of waking 60x/s forever for nothing.
+constexpr int kPollFastMs = 16;
+constexpr int kPollSlowMs = 500;
+
 // Qt reports both shift keys as Qt::Key_Shift; telling them apart takes the
 // platform code. Windows delivers PC scan code set 1, where Right Shift is
 // 0x36 on every keyboard layout.
@@ -116,7 +124,9 @@ void InputManager::initSdl() {
 
     // SDL emits CONTROLLERDEVICEADDED for already-connected pads on init,
     // so the poll loop handles initial enumeration and hotplug identically.
-    m_pollTimer.start(16);
+    // Start fast so that initial enumeration is prompt; pollSdl() then settles
+    // the cadence to match whether any pad is actually open.
+    m_pollTimer.start(kPollFastMs);
     qInfo("[input] SDL game-controller subsystem ready");
 }
 
@@ -144,6 +154,19 @@ void InputManager::pollSdl() {
         default: break;
         }
     }
+    // Settle the poll cadence to match the current controller state (device
+    // add/remove above may have changed it). Only restarts on a transition.
+    updatePollRate();
+}
+
+// Poll every frame only while a pad is open; otherwise idle slowly (still catches
+// hotplug). Restarts the timer only when the target interval actually changes.
+void InputManager::updatePollRate() {
+    if (!m_sdlReady) return;
+    const int want = (m_controllerInputEnabled && !m_controllers.isEmpty())
+                     ? kPollFastMs : kPollSlowMs;
+    if (m_pollTimer.interval() != want)
+        m_pollTimer.start(want);
 }
 
 void InputManager::touchKey(const QString &action) {
@@ -175,6 +198,7 @@ void InputManager::setControllerInputEnabled(bool on) {
         closeAllControllers();
         setLastInputDevice(QStringLiteral("keyboard"));
     }
+    updatePollRate();   // fast only while a pad is open under an enabled setting
     qInfo("[input] controller input %s", on ? "enabled" : "disabled");
 }
 
