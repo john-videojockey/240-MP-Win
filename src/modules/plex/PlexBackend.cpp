@@ -2360,6 +2360,8 @@ void PlexBackend::play_theme(const QString &themePath, int volumePercent) {
          << "--force-window=no"
          << "--idle=no"
          << "--loop-file=inf"      // loop the (short) theme while the info screen is up
+         << "--cache=yes"          // buffer the whole clip so looping replays from RAM,
+                                    // never re-streaming the theme from the server
          << QStringLiteral("--volume=%1").arg(qBound(0, volumePercent, 100))
          << QStringLiteral("--http-header-fields=X-Plex-Token:%1").arg(token);
     if (QUrl(url).host().endsWith(QStringLiteral(".plex.direct")))

@@ -327,7 +327,15 @@ Window {
                 source: root.appBgUrl
                 fillMode: Image.PreserveAspectCrop
                 cache: false
-                playing: true
+                // Only animate while the background is actually on screen. Decoding a
+                // full-screen GIF is continuous CPU/GPU work, so stop it whenever the
+                // background is covered: during video playback (mpv's window is on
+                // top), while the opaque screen-saver overlay is up, or when minimized.
+                // QMovie resumes from the same frame, and the GIF is hidden in all
+                // three states, so there is no visible change.
+                playing: root.visibility !== Window.Minimized
+                         && !root.screenSaverActive
+                         && !(idleTracker && idleTracker.mpvActive)
             }
         }
         // Tint toward the theme surface color so menu text stays legible.
