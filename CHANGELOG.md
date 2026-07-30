@@ -5,6 +5,31 @@ All notable changes to 240-MP for Windows are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-07-30
+
+### Fixed
+- **Plex playback settings now stick across a show.** After an episode ended
+  (or on reopening any episode), the info screen used to reset the audio track,
+  subtitle track, volume, and upscaler to defaults. Volume and upscaler are again
+  remembered per show, and audio/subtitle language is now remembered per show too
+  and re-applied to every episode — so, for example, "subtitles off for this
+  show" sticks even though Plex keeps no per-show track preference and an account
+  default (e.g. subtitles on) would otherwise reassert on each episode.
+- **Touch: holding the Subtitles button turns subtitles off again**, and a touch
+  press-and-hold no longer pauses playback. On Windows a long touch is delivered
+  as a right-click, which had hijacked the gesture (and mpv's default
+  right-click-to-pause); it now drives subtitles-off when it lands on that button.
+
+### Performance
+- **The animated background stops when it can't be seen** — during video
+  playback, while the screen saver is up, and when minimized — instead of
+  decoding every frame regardless. Idle resource use while minimized is now
+  near-zero. (A visible animated background still costs what it costs.)
+- **Theme music is buffered** rather than re-streamed from the server on each loop.
+- **Gamepad polling is adaptive** — fast only while a controller is connected,
+  and idle (2 Hz, enough to catch a plug-in) otherwise, instead of a constant
+  60 Hz for the whole session.
+
 ## [0.6.1] - 2026-07-23
 
 ### Fixed
@@ -170,6 +195,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Keyboard, gamepad (SDL2) and touchscreen input; per-user install with an
     in-app self-updater; one-line PowerShell installer.
 
+[0.6.2]: https://github.com/john-videojockey/240-MP-Win/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/john-videojockey/240-MP-Win/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.4.1...v0.5.0
