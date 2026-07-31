@@ -9,10 +9,13 @@
 #include <QMutex>
 #include <QStandardPaths>
 
+#include <QtConcurrent>
+
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <ws2tcpip.h>   // getaddrinfo — DNS pre-warm (warmHostDns)
 #include <shobjidl.h>   // ITaskbarList (drop mpv's separate taskbar button)
 #include <cstdio>
 
@@ -253,6 +256,24 @@ void redrawWindow(quintptr hwnd) {
     if (!h || !IsWindow(h))
         return;
     RedrawWindow(h, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+}
+
+void warmHostDns(const QString &host) {
+    if (host.isEmpty())
+        return;
+    // A cold lookup can block for ~10 s, so resolve off-thread. Winsock is already
+    // started (Qt's networking did it). The result is discarded — the point is the
+    // side effect of populating the system DNS cache that mpv's own resolver reads.
+    const QByteArray h = host.toUtf8();
+    (void)QtConcurrent::run([h]() {
+        addrinfo hints;
+        ZeroMemory(&hints, sizeof(hints));
+        hints.ai_family   = AF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        addrinfo *res = nullptr;
+        if (getaddrinfo(h.constData(), "443", &hints, &res) == 0 && res)
+            freeaddrinfo(res);
+    });
 }
 
 // ── Display (monitor) power watcher ─────────────────────────────────────────────

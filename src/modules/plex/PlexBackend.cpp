@@ -1,4 +1,5 @@
 #include "PlexBackend.h"
+#include "../../win_utils.h"
 
 #include <QFile>
 #include <QJsonDocument>
@@ -2641,6 +2642,10 @@ void PlexBackend::stop_transcode(const QString &sessionId) {
 void PlexBackend::warm_connection() {
     QString uri = serverUrl(), token = serverToken();
     if (uri.isEmpty()) return;
+    // Prime the OS DNS cache mpv will read (a Qt request alone is served from Qt's
+    // own resolver cache and never refreshes the system one).
+    warmHostDns(QUrl(uri).host());
+    // And keep a TCP/TLS connection warm on our side.
     auto *reply = plexGet(QUrl(uri + "/identity"), token);
     connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
 }

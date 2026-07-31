@@ -48,6 +48,7 @@ target_link_libraries(240mp PRIVATE
     SDL2::SDL2
     ole32       # CoCreateInstance for ITaskbarList (win_utils window marriage)
     user32      # EnumWindows / SetWindowLongPtr / SetForegroundWindow
+    ws2_32      # getaddrinfo for the DNS pre-warm (win_utils warmHostDns)
 )
 
 target_include_directories(240mp PRIVATE

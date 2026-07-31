@@ -331,13 +331,15 @@ FocusScope {
         }
     }
 
-    // While suspended, keep the server's name resolution and a connection warm with
-    // a light periodic request, so resuming doesn't pay a cold DNS lookup (which,
-    // for a remote server, can add ~10 s before mpv even starts connecting).
+    // While suspended, keep the server's name resolution warm with a light periodic
+    // OS-level lookup, so resuming doesn't pay a cold DNS lookup (which, for a remote
+    // server, can add ~10 s before mpv even starts connecting). Frequent, because the
+    // host's DNS TTL may be short; each hit is a no-op once the cache is warm.
     Timer {
-        interval: 25000
+        interval: 8000
         repeat: true
         running: playerRoot.suspended
+        triggeredOnStart: true
         onTriggered: plexBackend.warm_connection()
     }
 
@@ -350,6 +352,7 @@ FocusScope {
 
     function resumeFromSuspend() {
         if (!suspended) return
+        plexBackend.warm_connection() // final DNS nudge before mpv opens the stream
         suspended = false
         resuming = true               // the held-frame overlay shows "RESUMING…"
         stoppedReported = false       // a fresh session will need its own stop report

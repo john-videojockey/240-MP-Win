@@ -88,6 +88,13 @@ void setWindowTopmost(quintptr hwnd, bool on);
 // the monitor was off recovers instead of staying frozen. No-op on an invalid HWND.
 void redrawWindow(quintptr hwnd);
 
+// Resolve a hostname on a background thread purely to prime the OS DNS cache
+// (a raw getaddrinfo, so it refreshes the system resolver that a *separate*
+// process like mpv reads — unlike a Qt request, which is served from Qt's own
+// resolver cache and never refreshes the OS one). Used while a stream is
+// suspended so resuming doesn't pay a cold ~10 s name lookup. Fire-and-forget.
+void warmHostDns(const QString &host);
+
 // Watches the console (monitor) power state. Installs a native event filter and
 // registers for GUID_CONSOLE_DISPLAY_STATE on appHwnd; onDisplayState(state) is
 // then called on monitor off(0)/on(1)/dimmed(2). Call once, after the app window
