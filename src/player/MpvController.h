@@ -14,6 +14,9 @@ class MpvController : public QObject {
     Q_PROPERTY(int position    READ position    NOTIFY positionChanged)
     Q_PROPERTY(int duration    READ duration    NOTIFY durationChanged)
     Q_PROPERTY(int playlistPos READ playlistPos NOTIFY playlistPosChanged)
+    // Mirrors mpv's pause state so a Player view can report the correct timeline
+    // state to its server (playing vs paused) instead of always "playing".
+    Q_PROPERTY(bool paused     READ paused      NOTIFY pausedChanged)
 
 public:
     explicit MpvController(const QString &appRoot, AppCore *appCore = nullptr,
@@ -23,6 +26,7 @@ public:
     int position()    const { return m_position;    }
     int duration()    const { return m_duration;    }
     int playlistPos() const { return m_playlistPos; }
+    bool paused()     const { return m_paused;      }
 
     Q_INVOKABLE void loadAndPlay(const QString &url, float startSeconds,
                                   int audioTrack, int subTrack,
@@ -80,6 +84,7 @@ signals:
     void positionChanged(int ms);
     void durationChanged(int ms);
     void playlistPosChanged(int pos);
+    void pausedChanged(bool paused);
     // Emitted exactly once when mpv exits, with the reason it ended:
     //   "eof"     — file played to its natural end. (What a module does with this
     //               is its own concern.  as an example: Plex may autoplay the next episode)

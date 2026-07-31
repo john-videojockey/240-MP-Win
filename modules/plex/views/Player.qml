@@ -458,6 +458,17 @@ FocusScope {
             }
         }
 
+        // Report pause/resume to Plex the instant it happens, so the server shows
+        // the correct state instead of waiting up to 10 s for the periodic reporter.
+        // Without this a paused stream is reported as "playing", which Plex counts
+        // as play time and keeps advancing on its dashboard.
+        function onPausedChanged(paused) {
+            if (mpvController.position > 0)
+                plexBackend.update_timeline(playerRoot.ratingKey, playerRoot.partKey,
+                                            paused ? "paused" : "playing",
+                                            mpvController.position, mpvController.duration)
+        }
+
         // The OSC's SKIP button was activated: jump past the current intro.
         function onSkipRequested() {
             if (playerRoot.activeSegment) {
@@ -534,7 +545,8 @@ FocusScope {
         running:  true
         onTriggered: {
             if (mpvController.position > 0)
-                plexBackend.update_timeline(ratingKey, partKey, "playing",
+                plexBackend.update_timeline(ratingKey, partKey,
+                                            mpvController.paused ? "paused" : "playing",
                                             mpvController.position, mpvController.duration)
         }
     }

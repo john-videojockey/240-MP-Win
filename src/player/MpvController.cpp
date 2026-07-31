@@ -503,7 +503,11 @@ void MpvController::onIpcReadyRead() {
         const QJsonValue  data = obj["data"];
         if (data.isNull() || data.isUndefined()) continue; // property unavailable during shutdown
         if (name == "pause") {
-            m_paused = data.toBool();
+            const bool p = data.toBool();
+            if (p != m_paused) {
+                m_paused = p;
+                emit pausedChanged(m_paused);
+            }
             continue;
         }
         if (name == "window-minimized") {
