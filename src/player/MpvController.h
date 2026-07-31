@@ -54,6 +54,13 @@ public:
     // while the server stream is released. Each call uses a fresh filename.
     Q_INVOKABLE QString grabFrame();
 
+    // When set, the next mpv exit does NOT pull the app window to the foreground.
+    // Used for pause-suspend while the app is minimized, so releasing the stream
+    // doesn't yank the window back in front of whatever the user switched to. It
+    // is cleared automatically when the next playback starts.
+    Q_INVOKABLE void setHoldBackground(bool v) { m_holdBackground = v; }
+    Q_INVOKABLE bool holdBackground() const { return m_holdBackground; }
+
     // The app's main (menu) window. Used to marry mpv's fullscreen window to it
     // so the two behave as a single window (see win_utils adoptMpvWindow).
     void setMainWindow(QQuickWindow *w) { m_mainWindow = w; }
@@ -148,6 +155,7 @@ private:
     bool          m_paused         = false;  // mirrors mpv's pause property (watchdog exemption)
     int           m_grabSeq        = 0;      // fresh filename per grabFrame() (cache-bust)
     QString       m_lastGrabPath;            // previous grab, removed when the next is taken
+    bool          m_holdBackground = false;  // suppress the raise-on-exit (minimized suspend)
     QString       m_appRoot;
     QString       m_pipePath;           // \\.\pipe\... — mpv's --input-ipc-server on Windows
     QString       m_inputConfPath;

@@ -98,6 +98,10 @@ public:
     // Stop a VOD universal-transcode session, freeing the server's transcoder and
     // its stream slot. Used when a paused stream is suspended to release the slot.
     Q_INVOKABLE void stop_transcode(const QString &sessionId);
+    // Lightweight keep-alive GET to the server. Called periodically while a stream
+    // is suspended so the host's DNS entry and a connection stay warm, keeping the
+    // resume from paying a cold name-resolution.
+    Q_INVOKABLE void warm_connection();
     Q_INVOKABLE void set_audio_stream(const QString &streamId, const QString &partId);
     Q_INVOKABLE void set_subtitle_stream(const QString &streamId, const QString &partId);
     // Watched state (scrobble/unscrobble) and Continue Watching membership for

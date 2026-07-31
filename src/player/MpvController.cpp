@@ -131,6 +131,7 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     m_duration    = 0;
     m_playlistPos = -1;
     m_paused      = false;
+    m_holdBackground = false;   // a fresh playback foregrounds normally on exit
     m_lastEndFileReason.clear();
 
     // PATH was extended at startup (win_utils prependToolDirsToPath) to cover
@@ -427,6 +428,10 @@ void MpvController::minimizePlayer() {
 }
 
 void MpvController::raiseAppWindow() {
+    // Suppressed while a minimized pause-suspend is releasing the stream — the
+    // window should stay where the user left it, not jump to the foreground.
+    if (m_holdBackground)
+        return;
     if (m_mainWindow)
         forceForegroundWindow(m_mainWindow->winId());
 }
@@ -462,7 +467,12 @@ QString MpvController::grabFrame() {
     // from accumulating shots across repeated suspends.
     if (!m_lastGrabPath.isEmpty())
         QFile::remove(m_lastGrabPath);
-    m_lastGrabPath = QDir::tempPath() + QStringLiteral("/240mp-suspend-%1.png").arg(++m_grabSeq);
+    m_lastGrabPath = QDir::tempPath() + QStringLiteral("/240mp-suspend-%1.jpg").arg(++m_grabSeq);
+    QFile::remove(m_lastGrabPath);   // clear any stale shot at this path (seq resets each run)
+    // JPEG, not PNG: it is 8-bit and quick to encode, and Qt decodes it (the poster
+    // grid already does). A PNG screenshot of a high-bit-depth (HDR/10-bit) source
+    // comes out 16-bit rgba64, which Qt rejects as "Unsupported image format", and
+    // its encode can block mpv for seconds.
     sendCommand({"screenshot-to-file", m_lastGrabPath, "subtitles"});
     return QUrl::fromLocalFile(m_lastGrabPath).toString();
 }

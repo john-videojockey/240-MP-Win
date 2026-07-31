@@ -2635,6 +2635,16 @@ void PlexBackend::stop_transcode(const QString &sessionId) {
     connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
 }
 
+// Keep the server host warm while a stream is suspended: a tiny /identity GET so
+// the DNS cache and a TCP/TLS connection stay alive, so resume doesn't pay a cold
+// name resolution (which can be ~10 s to a remote server). Fire-and-forget.
+void PlexBackend::warm_connection() {
+    QString uri = serverUrl(), token = serverToken();
+    if (uri.isEmpty()) return;
+    auto *reply = plexGet(QUrl(uri + "/identity"), token);
+    connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
+}
+
 // Mark an item played (scrobble) or unplayed (unscrobble). Fire-and-forget;
 // the detail view updates its own state optimistically and re-emits so the
 // button label flips without a round-trip.

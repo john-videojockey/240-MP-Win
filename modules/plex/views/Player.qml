@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import Components
 
 FocusScope {
@@ -311,7 +312,7 @@ FocusScope {
     }
     Timer {
         id: suspendKillTimer
-        interval: 300   // let mpv finish writing the screenshot before it exits
+        interval: 500   // let mpv finish writing the screenshot before it exits
         repeat: false
         onTriggered: {
             // The screenshot file now exists — point the held frame at it, then
@@ -321,9 +322,23 @@ FocusScope {
             playerRoot.reportStopped(mpvController.position, mpvController.duration)
             if (playerRoot.isTranscoding)
                 plexBackend.stop_transcode(playerRoot.sessionId)   // free the transcoder
+            // If the app is minimized (e.g. the user is watching the server
+            // dashboard), releasing the stream must not pull it back to the front.
+            if (root.visibility === Window.Minimized)
+                mpvController.setHoldBackground(true)
             mpvController.stop()                         // drop the connection / slot
             playerRoot.forceActiveFocus()               // take keys while mpv is gone
         }
+    }
+
+    // While suspended, keep the server's name resolution and a connection warm with
+    // a light periodic request, so resuming doesn't pay a cold DNS lookup (which,
+    // for a remote server, can add ~10 s before mpv even starts connecting).
+    Timer {
+        interval: 25000
+        repeat: true
+        running: playerRoot.suspended
+        onTriggered: plexBackend.warm_connection()
     }
 
     function suspendForPause() {
@@ -336,8 +351,7 @@ FocusScope {
     function resumeFromSuspend() {
         if (!suspended) return
         suspended = false
-        resuming = true
-        isLaunching = true            // loading indicator over the held frame
+        resuming = true               // the held-frame overlay shows "RESUMING…"
         stoppedReported = false       // a fresh session will need its own stop report
         sessionId = newSessionId()    // the old session was torn down
         pendingResume = true
@@ -528,10 +542,8 @@ FocusScope {
                 playerRoot.playbackStarted = true
                 // Resume from a suspended pause has landed its first frame — drop
                 // the held frame and loading indicator.
-                if (playerRoot.resuming) {
+                if (playerRoot.resuming)
                     playerRoot.resuming = false
-                    playerRoot.isLaunching = false
-                }
 
                 // Skip Intro: once playback is up, pull the intro markers; then
                 // watch for the intro segment and auto-skip or show the OSC button.

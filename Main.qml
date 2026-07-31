@@ -217,6 +217,10 @@ Window {
                 idleTracker.mpvActive = false
                 idleTracker.resetActivity()
             }
+            // A minimized pause-suspend releases the stream without disturbing the
+            // window — leave it minimized/behind where the user put it.
+            if (mpvController && mpvController.holdBackground())
+                return
             // If the pair was left minimized when playback ended, restore the
             // menu and re-take OS focus so input routes back to QML.
             if (root.visibility === Window.Minimized)
