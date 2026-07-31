@@ -2620,6 +2620,21 @@ void PlexBackend::update_timeline(const QString &ratingKey, const QString &partK
     connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
 }
 
+// Stop a VOD universal-transcode session (same endpoint as the live stop). The
+// server tears down the transcoder and frees the stream slot; the timeline was
+// already reported "stopped" by the caller. Fire-and-forget.
+void PlexBackend::stop_transcode(const QString &sessionId) {
+    if (sessionId.isEmpty()) return;
+    QString uri = serverUrl(), token = serverToken();
+    QUrl url(uri + "/video/:/transcode/universal/stop");
+    QUrlQuery q;
+    q.addQueryItem("session", sessionId);
+    q.addQueryItem("X-Plex-Client-Identifier", clientId());
+    url.setQuery(q);
+    auto *reply = plexGet(url, token);
+    connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
+}
+
 // Mark an item played (scrobble) or unplayed (unscrobble). Fire-and-forget;
 // the detail view updates its own state optimistically and re-emits so the
 // button label flips without a round-trip.

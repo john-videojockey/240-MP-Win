@@ -55,6 +55,20 @@ FocusScope {
     property string carryAudioLang:     ""        // language code of the chosen audio track
     property string carrySubLang:       "__off__" // language code, or "__off__" when subtitles are off
 
+    // Pause-suspend: once a stream has been paused for pauseGraceMs, tear it down
+    // to release the server's stream slot (a paused Plex session still counts
+    // against the simultaneous-stream limit), hold the last frame, and reload at
+    // the same position on resume. `suspended` = mpv is gone and the held frame is
+    // shown awaiting resume; `resuming` = the stream is being rebuilt until its
+    // first frame is back; `pendingResume` routes the rebuilt URL back to mpv.
+    readonly property int pauseGraceMs: 60000
+    property bool   suspended:         false
+    property bool   resuming:          false
+    property bool   pendingResume:     false
+    property int    suspendedOffsetMs: 0
+    property string heldFrameUrl:      ""
+    property string _pendingShot:      ""   // grab in flight until the file is written
+
     // Skip Intro (Plex intro markers). intro_skip is Off / Auto / Button.
     property var    segments:         []
     property var    activeSegment:    null
@@ -83,6 +97,23 @@ FocusScope {
     focus: true
 
     Keys.onPressed: function(event) {
+        if (playerRoot.suspended) {
+            // mpv is gone; this view owns the keys. Back exits (stop was already
+            // reported); Play/Select/media-play resume by reloading the stream.
+            if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
+                goBack()
+            } else if (event.key === Qt.Key_Space || event.key === Qt.Key_Return
+                       || event.key === Qt.Key_Enter || event.key === Qt.Key_MediaTogglePlayPause
+                       || event.key === Qt.Key_MediaPlay || event.key === Qt.Key_MediaPause) {
+                resumeFromSuspend()
+            }
+            event.accepted = true
+            return
+        }
+        if (playerRoot.resuming) {
+            event.accepted = true   // swallow input during the brief re-buffer
+            return
+        }
         if (overlayVisible) {
             if (event.key === Qt.Key_Escape || event.key === Qt.Key_Backspace || event.key === Qt.Key_Back) {
                 goBack()
@@ -261,6 +292,64 @@ FocusScope {
         beginPlayback(0)
     }
 
+    // Current audio/subtitle stream IDs for a (re)start, from the selected indices.
+    function currentAudioId() {
+        return (audioStreams[audioIdx] && audioStreams[audioIdx].id) ? audioStreams[audioIdx].id : ""
+    }
+    function currentSubId() {
+        return (subtitleStreams[subtitleIdx] && subtitleStreams[subtitleIdx].id)
+               ? subtitleStreams[subtitleIdx].id : "0"
+    }
+
+    // Pause held past the grace period: grab the last frame, then release the
+    // server slot and tear mpv down (a short delay lets the screenshot land first).
+    Timer {
+        id: pauseGraceTimer
+        interval: playerRoot.pauseGraceMs
+        repeat: false
+        onTriggered: playerRoot.suspendForPause()
+    }
+    Timer {
+        id: suspendKillTimer
+        interval: 300   // let mpv finish writing the screenshot before it exits
+        repeat: false
+        onTriggered: {
+            // The screenshot file now exists — point the held frame at it, then
+            // reveal the overlay and tear the stream down.
+            playerRoot.heldFrameUrl = playerRoot._pendingShot
+            playerRoot.suspended = true
+            playerRoot.reportStopped(mpvController.position, mpvController.duration)
+            if (playerRoot.isTranscoding)
+                plexBackend.stop_transcode(playerRoot.sessionId)   // free the transcoder
+            mpvController.stop()                         // drop the connection / slot
+            playerRoot.forceActiveFocus()               // take keys while mpv is gone
+        }
+    }
+
+    function suspendForPause() {
+        if (suspended || mpvController.position <= 0) return
+        suspendedOffsetMs = mpvController.position
+        _pendingShot = mpvController.grabFrame()   // capture the paused frame (async write)
+        suspendKillTimer.restart()
+    }
+
+    function resumeFromSuspend() {
+        if (!suspended) return
+        suspended = false
+        resuming = true
+        isLaunching = true            // loading indicator over the held frame
+        stoppedReported = false       // a fresh session will need its own stop report
+        sessionId = newSessionId()    // the old session was torn down
+        pendingResume = true
+        // Rebuild the stream at offset 0 (full timeline) — doStartPlayback seeks to
+        // the saved position — via the same paths the initial launch uses.
+        if (isTranscoding)
+            plexBackend.request_transcode(ratingKey, partKey, sessionId,
+                                          currentAudioId(), currentSubId(), 0)
+        else
+            plexBackend.build_stream_url(ratingKey, partKey, sessionId)
+    }
+
     function formatTime(ms) {
         var s = Math.floor(ms / 1000)
         var h = Math.floor(s / 3600)
@@ -294,6 +383,16 @@ FocusScope {
                 var sub = buildSubArgs()
                 mpvController.loadAndPlay(url, viewOffset / 1000.0, audioIdx + 1, sub.track, sub.urls, [], false, -1, 0.0, plexToken,
                                            false, "", false, [], 0.0, false, playerExtraArgs())
+                return
+            }
+            if (pendingResume) {
+                // Resuming a suspended pause: the rebuilt stream is ready — reload
+                // mpv at the saved offset. doStartPlayback handles the transcode
+                // (seek) vs direct-play (--start) distinction.
+                pendingResume = false
+                playerRoot.streamUrl = url
+                playerRoot.plexToken = plexToken
+                doStartPlayback(suspendedOffsetMs)
                 return
             }
         }
@@ -427,6 +526,12 @@ FocusScope {
                 // First position update means mpv is up and playing — drop the
                 // loading indicator (mpv's own window now covers the screen).
                 playerRoot.playbackStarted = true
+                // Resume from a suspended pause has landed its first frame — drop
+                // the held frame and loading indicator.
+                if (playerRoot.resuming) {
+                    playerRoot.resuming = false
+                    playerRoot.isLaunching = false
+                }
 
                 // Skip Intro: once playback is up, pull the intro markers; then
                 // watch for the intro segment and auto-skip or show the OSC button.
@@ -463,10 +568,14 @@ FocusScope {
         // Without this a paused stream is reported as "playing", which Plex counts
         // as play time and keeps advancing on its dashboard.
         function onPausedChanged(paused) {
+            if (playerRoot.suspended) return   // ignore mpv's teardown pause events
             if (mpvController.position > 0)
                 plexBackend.update_timeline(playerRoot.ratingKey, playerRoot.partKey,
                                             paused ? "paused" : "playing",
                                             mpvController.position, mpvController.duration)
+            // Arm the slot-release grace timer on pause; cancel it on resume.
+            if (paused) pauseGraceTimer.restart()
+            else        pauseGraceTimer.stop()
         }
 
         // The OSC's SKIP button was activated: jump past the current intro.
@@ -495,6 +604,9 @@ FocusScope {
         }
 
         function onPlaybackEnded(finalPositionMs, finalDurationMs, reason) {
+            // mpv was torn down on purpose to suspend a long pause — stay on the
+            // held frame and wait for the user to resume, don't exit to the menu.
+            if (playerRoot.suspended) return
             if (reason === "failed") {
                 if (!isTranscoding) {
                     // Direct play failed (e.g. HTTP 500 from PMS on WAN). Retry
@@ -544,6 +656,9 @@ FocusScope {
         repeat:   true
         running:  true
         onTriggered: {
+            // Silent while suspended/resuming: mpv is gone (its position is stale)
+            // and the session was intentionally stopped — a ping would revive it.
+            if (playerRoot.suspended || playerRoot.resuming) return
             if (mpvController.position > 0)
                 plexBackend.update_timeline(ratingKey, partKey,
                                             mpvController.paused ? "paused" : "playing",
@@ -660,6 +775,53 @@ FocusScope {
                     font.pixelSize: root.sh * 0.0333333
                     anchors.horizontalCenter: parent.horizontalCenter
                 }
+            }
+        }
+    }
+
+    // Held-frame overlay for a suspended pause: mpv and the server stream are gone
+    // (slot released), so show the captured last frame with a resume hint. Also
+    // covers the brief re-buffer while resuming, until mpv's first frame is back.
+    Rectangle {
+        anchors.fill: parent
+        color: "black"
+        visible: playerRoot.suspended || playerRoot.resuming
+        z: 1000
+
+        Image {
+            anchors.fill: parent
+            source: playerRoot.heldFrameUrl
+            fillMode: Image.PreserveAspectFit
+            cache: false
+            asynchronous: true
+        }
+        Rectangle { anchors.fill: parent; color: "black"; opacity: 0.4 }
+
+        // Touch: tap anywhere to resume (disabled once resuming is under way).
+        MouseArea {
+            anchors.fill: parent
+            enabled: playerRoot.suspended
+            onClicked: playerRoot.resumeFromSuspend()
+        }
+
+        Column {
+            anchors.centerIn: parent
+            spacing: root.sh * 0.025
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: playerRoot.resuming ? "RESUMING…" : "❚❚  PAUSED"
+                color: "white"
+                font.family: root.globalFont
+                font.pixelSize: root.sh * 0.0666667
+            }
+            Text {
+                visible: playerRoot.suspended
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "STREAM RELEASED — " + root.hints.select + " TO RESUME, "
+                      + root.hints.back + " TO EXIT"
+                color: root.secondaryColor
+                font.family: root.globalFont
+                font.pixelSize: root.sh * 0.03
             }
         }
     }

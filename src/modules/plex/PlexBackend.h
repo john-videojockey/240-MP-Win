@@ -95,6 +95,9 @@ public:
                                        int offsetMs);
     Q_INVOKABLE void update_timeline(const QString &ratingKey, const QString &partKey,
                                      const QString &state, int timeMs, int durationMs);
+    // Stop a VOD universal-transcode session, freeing the server's transcoder and
+    // its stream slot. Used when a paused stream is suspended to release the slot.
+    Q_INVOKABLE void stop_transcode(const QString &sessionId);
     Q_INVOKABLE void set_audio_stream(const QString &streamId, const QString &partId);
     Q_INVOKABLE void set_subtitle_stream(const QString &streamId, const QString &partId);
     // Watched state (scrobble/unscrobble) and Continue Watching membership for

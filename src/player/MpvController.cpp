@@ -10,6 +10,7 @@
 #include <QDateTime>
 #include <QRegularExpression>
 #include <QQuickWindow>
+#include <QUrl>
 #include <QDebug>
 
 MpvController::MpvController(const QString &appRoot, AppCore *appCore, QObject *parent)
@@ -452,6 +453,18 @@ void MpvController::seekTo(int positionMs) {
 
 void MpvController::sendKey(const QString &key) {
     sendCommand({"keypress", key});
+}
+
+QString MpvController::grabFrame() {
+    // "video" = the decoded frame with subtitles but without the OSC/OSD, so the
+    // held frame looks like the paused video, not the controls. A fresh filename
+    // each call sidesteps the QML image cache; drop the previous one to keep %TEMP%
+    // from accumulating shots across repeated suspends.
+    if (!m_lastGrabPath.isEmpty())
+        QFile::remove(m_lastGrabPath);
+    m_lastGrabPath = QDir::tempPath() + QStringLiteral("/240mp-suspend-%1.png").arg(++m_grabSeq);
+    sendCommand({"screenshot-to-file", m_lastGrabPath, "subtitles"});
+    return QUrl::fromLocalFile(m_lastGrabPath).toString();
 }
 
 void MpvController::showOsdSkipPrompt() {

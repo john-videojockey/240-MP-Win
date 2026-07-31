@@ -49,6 +49,10 @@ public:
     Q_INVOKABLE void sendKey(const QString &key);
     Q_INVOKABLE void showOsdSkipPrompt();
     Q_INVOKABLE void clearOsdPrompt();
+    // Write the current video frame (no OSD/controls) to a temp PNG and return its
+    // file URL, so a paused player can be torn down and still show its last frame
+    // while the server stream is released. Each call uses a fresh filename.
+    Q_INVOKABLE QString grabFrame();
 
     // The app's main (menu) window. Used to marry mpv's fullscreen window to it
     // so the two behave as a single window (see win_utils adoptMpvWindow).
@@ -142,6 +146,8 @@ private:
     int           m_adoptTries     = 0;
     qint64        m_lastIpcEventMs = 0;
     bool          m_paused         = false;  // mirrors mpv's pause property (watchdog exemption)
+    int           m_grabSeq        = 0;      // fresh filename per grabFrame() (cache-bust)
+    QString       m_lastGrabPath;            // previous grab, removed when the next is taken
     QString       m_appRoot;
     QString       m_pipePath;           // \\.\pipe\... — mpv's --input-ipc-server on Windows
     QString       m_inputConfPath;
