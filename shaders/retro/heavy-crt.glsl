@@ -15,6 +15,14 @@
 #define CA 0.004          // radial chromatic aberration (R/B split, grows to the edges)
 #define BRIGHTNESS 0.92   // overall level trimmed a notch
 
+// Resolution-independent per-pixel hash (Dave Hoskins). No sin(), so it can't lose
+// precision at high pixel coordinates and turn the grain into structured moiré.
+float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
 vec4 hook() {
     vec2 p  = HOOKED_pos;
     vec2 px = HOOKED_pt;
@@ -46,8 +54,8 @@ vec4 hook() {
     float m = 0.5 + 0.5 * cos(p.y * LINES * 6.28318530718);
     c *= (1.0 - SCAN_DEPTH * (1.0 - m));
 
-    // Subtle phosphor grain (per-pixel, animated).
-    float n = fract(sin(dot(p * HOOKED_size + t, vec2(12.9898, 78.233))) * 43758.5453);
+    // Subtle phosphor grain (per-pixel, animated) — sin-free hash, no moiré.
+    float n = hash12(floor(p * HOOKED_size) + vec2(t, t * 1.7));
     c += (n - 0.5) * GRAIN;
 
     // Deep tube vignette.
