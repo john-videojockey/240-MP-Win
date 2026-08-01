@@ -343,6 +343,19 @@ FocusScope {
         onTriggered: plexBackend.warm_connection()
     }
 
+    // Idle escalation: a suspend is a lightweight hold for a short break. If it
+    // lasts a couple of hours the user has clearly wandered off, so escalate to a
+    // full stop — return to the info screen. The stop was already reported at
+    // suspend, so the resume point is saved; the user just plays fresh (fast, warm)
+    // from there. goBack() is plain navigation, so it doesn't disturb a minimized
+    // window. Keeps the connection-warm/held-frame from lingering all day.
+    Timer {
+        interval: 2 * 60 * 60 * 1000   // 2 hours
+        repeat: false
+        running: playerRoot.suspended
+        onTriggered: playerRoot.goBack()
+    }
+
     function suspendForPause() {
         if (suspended || mpvController.position <= 0) return
         suspendedOffsetMs = mpvController.position

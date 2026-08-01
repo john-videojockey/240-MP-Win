@@ -401,7 +401,10 @@ void MpvController::tryAdoptMpvWindow() {
         }
         return;
     }
-    if (++m_adoptTries > 80) {   // ~10 s — cover a slow-to-appear mpv window
+    if (++m_adoptTries > 200) {  // ~24 s — cover a slow-to-appear window, e.g. a
+                                 // resume that pays a cold DNS lookup (mpv makes no
+                                 // window until the stream opens); the poll self-stops
+                                 // the moment the process exits, so this isn't wasteful
         m_adoptTimer->stop();
         qWarning("[MpvController] gave up marrying mpv window (not found / ownership refused)");
         return;
