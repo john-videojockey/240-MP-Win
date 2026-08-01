@@ -345,6 +345,7 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
          << "--fullscreen";
     appendVideoArgs(args);
     appendUpscalerArgs(args);
+    appendRetroArgs(args);   // retro look hooks OUTPUT, so it lands after the upscaler
     // Per-title volume gain (dB) resolved by the info screen. Additive over mpv's
     // own volume, and not saved by watch-later, so it's authoritative per play.
     if (m_appCore) {
@@ -714,6 +715,36 @@ void MpvController::appendUpscalerArgs(QStringList &args) const {
         args << "--gpu-api=vulkan";
 
     const QString dir = m_appRoot + "/shaders/upscalers/";
+    for (const QString &s : shaders)
+        args << QString("--glsl-shaders-append=%1").arg(dir + s);
+}
+
+void MpvController::appendRetroArgs(QStringList &args) const {
+    if (!m_appCore) return;
+    // Per-title only (no global default): the info screen publishes the chosen look
+    // as "mpv_retro_active" for this play. Empty / "off" means no filter.
+    QString sel = m_appCore->get_setting(QString(), "mpv_retro_active").toString().toLower();
+    if (sel.isEmpty() || sel == "off") return;
+
+    // A "_curved" suffix appends the shared curvature warp after the base look.
+    const bool curved = sel.endsWith(QLatin1String("_curved"));
+    const QString base = curved ? sel.left(sel.length() - 7) : sel;
+
+    QStringList shaders;
+    bool heavy = false;   // needs the Vulkan backend (slow D3D11 HLSL compile)
+    if      (base == "scanlines") shaders << "scanlines.glsl";
+    else if (base == "crt")       shaders << "crt.glsl";
+    else if (base == "vhs")       shaders << "vhs.glsl";
+    else if (base == "ntsc")    { shaders << "ntsc.glsl";      heavy = true; }
+    else if (base == "heavycrt"){ shaders << "heavy-crt.glsl"; heavy = true; }
+    else return;
+    if (curved) shaders << "curvature.glsl";   // last, so it warps the shaded image
+
+    // Share the Vulkan decision with the upscaler: set it once if either is heavy.
+    if (heavy && !args.contains(QStringLiteral("--gpu-api=vulkan")))
+        args << "--gpu-api=vulkan";
+
+    const QString dir = m_appRoot + "/shaders/retro/";
     for (const QString &s : shaders)
         args << QString("--glsl-shaders-append=%1").arg(dir + s);
 }

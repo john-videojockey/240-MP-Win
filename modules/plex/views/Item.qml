@@ -380,6 +380,37 @@ FocusScope {
         appCore.save_setting("", "mpv_upscaler_active", id)                  // apply to next play
     }
 
+    // Retro filter — bundled GLSL looks (shaders/retro), ordered by GPU cost. Each
+    // has a (CURVED) variant (a shared curvature pass). Per-title only (no global
+    // default): shaders are content-specific, so an unset title is just OFF. `tier`
+    // drives the muted colour on the selected value (0 none / 1 low / 2 med / 3 high).
+    property var retros: [
+        { id: "off",              label: "OFF",                tier: 0 },
+        { id: "scanlines",        label: "SCANLINES",          tier: 1 },
+        { id: "scanlines_curved", label: "SCANLINES (CURVED)", tier: 1 },
+        { id: "crt",              label: "CRT",                tier: 1 },
+        { id: "crt_curved",       label: "CRT (CURVED)",       tier: 2 }
+    ]
+    property int retroIdx: 0
+    // Muted, theme-friendly tier tints (low → high GPU demand).
+    readonly property var retroTierColors: ["", "#7FA8C4", "#C9B36E", "#C68A8A"]
+    function retroColor() {
+        var t = (retros[retroIdx] || {}).tier || 0
+        return t === 0 ? root.primaryColor : retroTierColors[t]
+    }
+    function cycleRetro(dir) {
+        retroIdx = (retroIdx + dir + retros.length) % retros.length
+        var id = retros[retroIdx].id
+        appCore.save_map_setting("", "retro_overrides", titleKey(), id)   // remembered per title
+        appCore.save_setting("", "mpv_retro_active", id)                  // applied to next play
+    }
+
+    // Shared sizing for the five playback-option rows (Audio / Subtitles / Volume /
+    // Upscaler / Shader), shrunk from the original so all five fit above the fold.
+    readonly property real optRowH:  root.sh * 0.0384
+    readonly property real optFont:  root.sh * 0.0333
+    readonly property real optArrow: root.sh * 0.03
+
     // Per-title volume gain (dB, default 0), remembered per show/movie like the
     // upscaler. Applied to the next playback via mpv --volume-gain.
     property int volumeDb: 0
@@ -413,11 +444,11 @@ FocusScope {
                                  : ((detail.subtitleStreams[subtitleIdx] || {}).language || ""))
     }
 
-    // The play/options + playback-settings block now all fits at once (compact,
-    // like the Local Files screen), so nothing scrolls until Cast & Extras (6);
-    // then More Like This (7). Rows 0-5 stay at the top.
-    property real sectionScroll: focusRow <= 6 ? 0
-                               : focusRow === 7 ? castSection.y
+    // The play/options + playback-settings block all fits at once, so nothing
+    // scrolls until Cast & Extras (8); then More Like This (9). Rows 0-7 (through
+    // the Shader row) stay at the top.
+    property real sectionScroll: focusRow <= 7 ? 0
+                               : focusRow === 8 ? castSection.y
                                : relatedSection.y
     // Keyboard focus scroll: a focusRow change moves sectionScroll; animate the
     // Flickable's contentY to it. Touch sets contentY directly and never touches
@@ -470,6 +501,14 @@ FocusScope {
             if (upscalers[ui].id === up) { upscalerIdx = ui; break }
         appCore.save_setting("", "mpv_upscaler_active", upscalers[upscalerIdx].id)
 
+        // Per-title retro filter (no global default — unset = OFF). Publish the
+        // active value so playing straight from here uses this title's look.
+        var rovr = (appCore.get_map_setting("", "retro_overrides", titleKey()) || "off").toString().toLowerCase()
+        retroIdx = 0
+        for (var ri = 0; ri < retros.length; ri++)
+            if (retros[ri].id === rovr) { retroIdx = ri; break }
+        appCore.save_setting("", "mpv_retro_active", retros[retroIdx].id)
+
         // Per-title volume gain (dB), published as the active value for playback.
         var vovr = appCore.get_map_setting("", "volume_overrides", titleKey())
         volumeDb = (vovr && vovr !== "") ? parseInt(vovr) : 0
@@ -501,8 +540,9 @@ FocusScope {
         if (r === 4) return detail && detail.subtitleStreams && detail.subtitleStreams.length > 1
         if (r === 5) return !!detail   // Volume — playback setting, always shown
         if (r === 6) return !!detail   // Upscaler — playback setting, always shown
-        if (r === 7) return detailRoot.castExtras.length > 0
-        if (r === 8) return detailRoot.showRelated && detailRoot.relatedItems.length > 0
+        if (r === 7) return !!detail   // Shader — playback setting, always shown
+        if (r === 8) return detailRoot.castExtras.length > 0
+        if (r === 9) return detailRoot.showRelated && detailRoot.relatedItems.length > 0
         return false
     }
     Keys.onUpPressed: {
@@ -512,7 +552,7 @@ FocusScope {
     }
     Keys.onDownPressed: {
         if (isLaunching || !detail) return
-        for (var r = focusRow + 1; r <= 8; r++)
+        for (var r = focusRow + 1; r <= 9; r++)
             if (rowAvailable(r)) { focusRow = r; break }
     }
     Keys.onLeftPressed: {
@@ -532,9 +572,11 @@ FocusScope {
             detailRoot.cycleVolume(-1)
         else if (focusRow === 6)
             detailRoot.cycleUpscaler(-1)
-        else if (focusRow === 7 && detailRoot.castExtras.length > 0)
+        else if (focusRow === 7)
+            detailRoot.cycleRetro(-1)
+        else if (focusRow === 8 && detailRoot.castExtras.length > 0)
             detailRoot.castIndex = (detailRoot.castIndex - 1 + detailRoot.castExtras.length) % detailRoot.castExtras.length
-        else if (focusRow === 8 && detailRoot.relatedItems.length > 0)
+        else if (focusRow === 9 && detailRoot.relatedItems.length > 0)
             detailRoot.relatedIndex = (detailRoot.relatedIndex - 1 + detailRoot.relatedItems.length) % detailRoot.relatedItems.length
     }
     Keys.onRightPressed: {
@@ -554,9 +596,11 @@ FocusScope {
             detailRoot.cycleVolume(1)
         else if (focusRow === 6)
             detailRoot.cycleUpscaler(1)
-        else if (focusRow === 7 && detailRoot.castExtras.length > 0)
+        else if (focusRow === 7)
+            detailRoot.cycleRetro(1)
+        else if (focusRow === 8 && detailRoot.castExtras.length > 0)
             detailRoot.castIndex = (detailRoot.castIndex + 1) % detailRoot.castExtras.length
-        else if (focusRow === 8 && detailRoot.relatedItems.length > 0)
+        else if (focusRow === 9 && detailRoot.relatedItems.length > 0)
             detailRoot.relatedIndex = (detailRoot.relatedIndex + 1) % detailRoot.relatedItems.length
     }
     Keys.onReturnPressed: {
@@ -571,12 +615,12 @@ FocusScope {
             else if (detailRoot.episodeItem) detailRoot.openEpisodes()
             return
         }
-        if (focusRow === 8 && detailRoot.relatedItems.length > 0) {
+        if (focusRow === 9 && detailRoot.relatedItems.length > 0) {
             // Open the highlighted related title's info screen.
             detailRoot.navigateTo("Item.qml", { item: detailRoot.relatedItems[detailRoot.relatedIndex] })
             return
         }
-        if (focusRow === 7 && detailRoot.castExtras.length > 0) {
+        if (focusRow === 8 && detailRoot.castExtras.length > 0) {
             var card = detailRoot.castExtras[detailRoot.castIndex]
             if (card && card.kind === "extra" && card.ratingKey) {
                 // Resolve and play the extra; loading overlay until it hands off.
@@ -852,7 +896,7 @@ FocusScope {
                             text: "\u25C4"
                             color: prevButton.sel ? root.surfaceColor : root.primaryColor
                             font.family: root.globalFont
-                            font.pixelSize: root.sh * 0.0416667 //20
+                            font.pixelSize: root.sh * 0.0416667
                         }
                     }
 
@@ -911,7 +955,7 @@ FocusScope {
                             text: "\u25BA"
                             color: nextButton.sel ? root.surfaceColor : root.primaryColor
                             font.family: root.globalFont
-                            font.pixelSize: root.sh * 0.0416667 //20
+                            font.pixelSize: root.sh * 0.0416667
                         }
                     }
                 }
@@ -1096,7 +1140,7 @@ FocusScope {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.topMargin: root.sh * 0.0083333
-            height: root.sh * 0.048 //23
+            height: detailRoot.optRowH
 
             // Touch: first tap focuses the row; tapping the focused row cycles
             // its value forward, reusing the LEFT/RIGHT keyboard handlers.
@@ -1122,7 +1166,7 @@ FocusScope {
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.left: parent.left
                 anchors.leftMargin: root.sw * 0.009375 //6
-                font.pixelSize: root.sh * 0.0416667 //20
+                font.pixelSize: detailRoot.optFont
             }
 
             Row {
@@ -1136,7 +1180,7 @@ FocusScope {
                     color: focusRow === 3 ? root.surfaceColor : root.tertiaryColor
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
-                    font.pixelSize: root.sh * 0.0375 //18
+                    font.pixelSize: detailRoot.optArrow
 
                     // Tap \u25C4 to cycle backward (row must be focused first; a
                     // stray tap focuses it instead of changing it).
@@ -1156,14 +1200,14 @@ FocusScope {
                     font.family: root.globalFont
                     font.capitalization: Font.AllUppercase
                     anchors.verticalCenter: parent.verticalCenter
-                    font.pixelSize:root.sh * 0.0416667 //20
+                    font.pixelSize:detailRoot.optFont
                 }
                 Text {
                     text: "\u25BA"
                     color: focusRow === 3 ? root.surfaceColor : root.tertiaryColor
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
-                    font.pixelSize: root.sh * 0.0375 //18
+                    font.pixelSize: detailRoot.optArrow
 
                     MouseArea {
                         anchors.fill: parent
@@ -1184,7 +1228,7 @@ FocusScope {
             anchors.top: audioRow.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            height: root.sh * 0.048 //23
+            height: detailRoot.optRowH
 
             MouseArea {
                 anchors.fill: parent
@@ -1207,7 +1251,7 @@ FocusScope {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.leftMargin: root.sw * 0.009375 //6
-                font.pixelSize: root.sh * 0.0416667 //20
+                font.pixelSize: detailRoot.optFont
             }
 
             Row {
@@ -1221,7 +1265,7 @@ FocusScope {
                     color: focusRow === 4 ? root.surfaceColor : root.tertiaryColor
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
-                    font.pixelSize: root.sh * 0.0375 //18
+                    font.pixelSize: detailRoot.optArrow
 
                     MouseArea {
                         anchors.fill: parent
@@ -1239,14 +1283,14 @@ FocusScope {
                     font.family: root.globalFont
                     font.capitalization: Font.AllUppercase
                     anchors.verticalCenter: parent.verticalCenter
-                    font.pixelSize:root.sh * 0.0416667 //20
+                    font.pixelSize:detailRoot.optFont
                 }
                 Text {
                     text: "\u25BA"
                     color: focusRow === 4 ? root.surfaceColor : root.tertiaryColor
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
-                    font.pixelSize: root.sh * 0.0375 //18
+                    font.pixelSize: detailRoot.optArrow
 
                     MouseArea {
                         anchors.fill: parent
@@ -1266,7 +1310,7 @@ FocusScope {
             anchors.top: subtitleRow.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            height: root.sh * 0.048 //23
+            height: detailRoot.optRowH
 
             MouseArea {
                 anchors.fill: parent
@@ -1289,7 +1333,7 @@ FocusScope {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.leftMargin: root.sw * 0.009375 //6
-                font.pixelSize: root.sh * 0.0416667 //20
+                font.pixelSize: detailRoot.optFont
             }
 
             Row {
@@ -1303,7 +1347,7 @@ FocusScope {
                     color: focusRow === 5 ? root.surfaceColor : root.tertiaryColor
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
-                    font.pixelSize: root.sh * 0.0375 //18
+                    font.pixelSize: detailRoot.optArrow
 
                     MouseArea {
                         anchors.fill: parent
@@ -1320,14 +1364,14 @@ FocusScope {
                     font.family: root.globalFont
                     font.capitalization: Font.AllUppercase
                     anchors.verticalCenter: parent.verticalCenter
-                    font.pixelSize:root.sh * 0.0416667 //20
+                    font.pixelSize:detailRoot.optFont
                 }
                 Text {
                     text: "►"
                     color: focusRow === 5 ? root.surfaceColor : root.tertiaryColor
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
-                    font.pixelSize: root.sh * 0.0375 //18
+                    font.pixelSize: detailRoot.optArrow
 
                     MouseArea {
                         anchors.fill: parent
@@ -1348,7 +1392,7 @@ FocusScope {
             anchors.top: volumeRow.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            height: root.sh * 0.048 //23
+            height: detailRoot.optRowH
 
             MouseArea {
                 anchors.fill: parent
@@ -1371,7 +1415,7 @@ FocusScope {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.leftMargin: root.sw * 0.009375 //6
-                font.pixelSize: root.sh * 0.0416667 //20
+                font.pixelSize: detailRoot.optFont
             }
 
             Row {
@@ -1385,7 +1429,7 @@ FocusScope {
                     color: focusRow === 6 ? root.surfaceColor : root.tertiaryColor
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
-                    font.pixelSize: root.sh * 0.0375 //18
+                    font.pixelSize: detailRoot.optArrow
 
                     MouseArea {
                         anchors.fill: parent
@@ -1402,14 +1446,14 @@ FocusScope {
                     font.family: root.globalFont
                     font.capitalization: Font.AllUppercase
                     anchors.verticalCenter: parent.verticalCenter
-                    font.pixelSize:root.sh * 0.0416667 //20
+                    font.pixelSize:detailRoot.optFont
                 }
                 Text {
                     text: "►"
                     color: focusRow === 6 ? root.surfaceColor : root.tertiaryColor
                     font.family: root.globalFont
                     anchors.verticalCenter: parent.verticalCenter
-                    font.pixelSize: root.sh * 0.0375 //18
+                    font.pixelSize: detailRoot.optArrow
 
                     MouseArea {
                         anchors.fill: parent
@@ -1423,13 +1467,98 @@ FocusScope {
             }
         }
 
+        // SHADER row — per-title retro filter (shaders/retro), cycled here and
+        // applied on the next playback. The selected value is tinted by GPU cost.
+        Item {
+            id: shaderRow
+            anchors.top: upscalerRow.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: detailRoot.optRowH
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    if (focusRow === 7) inputManager.touchKey("right")
+                    else focusRow = 7
+                }
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                color: focusRow === 7 ? root.accentColor : "transparent"
+            }
+
+            Text {
+                text: "Shader"
+                color: focusRow === 7 ? root.surfaceColor : root.primaryColor
+                font.family: root.globalFont
+                font.capitalization: Font.AllUppercase
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: root.sw * 0.009375
+                font.pixelSize: detailRoot.optFont
+            }
+
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.right: parent.right
+                anchors.rightMargin: root.sw * 0.009375
+                spacing: root.sw * 0.00625
+
+                Text {
+                    text: "◄"
+                    color: focusRow === 7 ? root.surfaceColor : root.tertiaryColor
+                    font.family: root.globalFont
+                    anchors.verticalCenter: parent.verticalCenter
+                    font.pixelSize: detailRoot.optArrow
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 7) inputManager.touchKey("left")
+                            else focusRow = 7
+                        }
+                    }
+                }
+                Text {
+                    text: detailRoot.retros[detailRoot.retroIdx].label
+                    // Value tinted by GPU-cost tier; the "Shader" label stays normal.
+                    color: detailRoot.retros[detailRoot.retroIdx].tier > 0
+                           ? detailRoot.retroColor()
+                           : (focusRow === 7 ? root.surfaceColor : root.primaryColor)
+                    font.family: root.globalFont
+                    font.capitalization: Font.AllUppercase
+                    anchors.verticalCenter: parent.verticalCenter
+                    font.pixelSize: detailRoot.optFont
+                }
+                Text {
+                    text: "►"
+                    color: focusRow === 7 ? root.surfaceColor : root.tertiaryColor
+                    font.family: root.globalFont
+                    anchors.verticalCenter: parent.verticalCenter
+                    font.pixelSize: detailRoot.optArrow
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -root.sh * 0.0125
+                        onClicked: {
+                            if (focusRow === 7) inputManager.touchKey("right")
+                            else focusRow = 7
+                        }
+                    }
+                }
+            }
+        }
+
         // SECTION: Cast & Extras — actor headshots (name + character) and any
         // extras (trailers/featurettes), same reveal-on-scroll as More Like This.
         // Informational for now: navigable to browse, no per-card action.
         Item {
             id: castSection
             visible: detailRoot.castExtras.length > 0
-            anchors.top: upscalerRow.bottom
+            anchors.top: shaderRow.bottom
             anchors.topMargin: visible ? root.sh * 0.03 : 0
             anchors.left: parent.left
             anchors.right: parent.right
@@ -1438,12 +1567,12 @@ FocusScope {
             Text {
                 id: castLabel
                 text: "Cast & Extras"
-                color: detailRoot.focusRow === 7 ? root.accentColor : root.secondaryColor
+                color: detailRoot.focusRow === 8 ? root.accentColor : root.secondaryColor
                 font.family: root.globalFont
                 font.capitalization: Font.AllUppercase
                 anchors.top: parent.top
                 anchors.left: parent.left
-                font.pixelSize: root.sh * 0.0375 //18
+                font.pixelSize: root.sh * 0.0375
             }
 
             ListView {
@@ -1469,7 +1598,7 @@ FocusScope {
                     // Extras get a 16:9 thumbnail (landscape); cast a 2:3 headshot
                     // (portrait), so the two kinds read differently at a glance.
                     width: (castList.height * 0.66) * (isExtra ? (16 / 9) : (2 / 3))
-                    property bool sel: detailRoot.focusRow === 7 && detailRoot.castIndex === index
+                    property bool sel: detailRoot.focusRow === 8 && detailRoot.castIndex === index
 
                     Column {
                         anchors.fill: parent
@@ -1523,9 +1652,9 @@ FocusScope {
                     MouseArea {
                         anchors.fill: parent
                         onClicked: {
-                            if (detailRoot.focusRow === 7 && detailRoot.castIndex === index)
+                            if (detailRoot.focusRow === 8 && detailRoot.castIndex === index)
                                 inputManager.touchKey("select")
-                            else { detailRoot.focusRow = 7; detailRoot.castIndex = index }
+                            else { detailRoot.focusRow = 8; detailRoot.castIndex = index }
                         }
                     }
                 }
@@ -1546,12 +1675,12 @@ FocusScope {
             Text {
                 id: relatedLabel
                 text: "More Like This"
-                color: detailRoot.focusRow === 8 ? root.accentColor : root.secondaryColor
+                color: detailRoot.focusRow === 9 ? root.accentColor : root.secondaryColor
                 font.family: root.globalFont
                 font.capitalization: Font.AllUppercase
                 anchors.top: parent.top
                 anchors.left: parent.left
-                font.pixelSize: root.sh * 0.0375 //18
+                font.pixelSize: root.sh * 0.0375
             }
 
             ListView {
@@ -1577,9 +1706,9 @@ FocusScope {
                         id: relBox
                         anchors.fill: parent
                         color: "transparent"
-                        border.color: (detailRoot.focusRow === 8 && detailRoot.relatedIndex === index)
+                        border.color: (detailRoot.focusRow === 9 && detailRoot.relatedIndex === index)
                                       ? root.accentColor : root.tertiaryColor
-                        border.width: (detailRoot.focusRow === 8 && detailRoot.relatedIndex === index)
+                        border.width: (detailRoot.focusRow === 9 && detailRoot.relatedIndex === index)
                                       ? Math.max(2, Math.floor(root.sh * 0.00625)) : 1
 
                         Image {
@@ -1610,9 +1739,9 @@ FocusScope {
                     MouseArea {
                         anchors.fill: parent
                         onClicked: {
-                            if (detailRoot.focusRow === 8 && detailRoot.relatedIndex === index)
+                            if (detailRoot.focusRow === 9 && detailRoot.relatedIndex === index)
                                 inputManager.touchKey("select")
-                            else { detailRoot.focusRow = 8; detailRoot.relatedIndex = index }
+                            else { detailRoot.focusRow = 9; detailRoot.relatedIndex = index }
                         }
                     }
                 }

@@ -138,6 +138,10 @@ private:
     // Appends real-time upscaler args for the app-level "mpv_upscaler" setting
     // (GLSL shader chains from shaders/upscalers, or mpv's built-in HQ scalers).
     void appendUpscalerArgs(QStringList &args) const;
+    // Appends the retro filter for the per-title "mpv_retro_active" setting: a
+    // bundled GLSL look from shaders/retro (scanlines/CRT/…), plus the shared
+    // curvature pass for a "_curved" selection. Runs after the upscaler.
+    void appendRetroArgs(QStringList &args) const;
     // App-level "auto_crop" setting (default OFF). When ON, playback starts with
     // panscan=1 so video fills a CRT/4:3 screen by default (still toggleable live).
     bool autoCropEnabled() const;
