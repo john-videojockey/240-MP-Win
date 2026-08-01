@@ -5,6 +5,32 @@ All notable changes to 240-MP for Windows are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-08-01
+
+### Added
+- **Retro filters (Plex & Local Files).** A new **Shader** row on the info screen
+  lays a bundled CRT/tape look over playback — chosen per title like the other
+  playback settings and remembered per show. Six looks, each with a curved-tube
+  **(CURVED)** variant:
+  - **Scanlines** — gentle horizontal scanlines.
+  - **CRT** — a soft tube: scanline bloom, a light horizontal bleed and a mild glow.
+  - **NTSC** — composite colour done in YIQ (NTSC's native encoding): band-limited
+    chroma, the signature "wrong-tint" hue drift, a warm cast, and dot-crawl shimmer.
+  - **VHS** — chroma fringe, tape grain, a slow tracking bar, an organic wobble that
+    swells into brief dropouts, and pixelated head-switching noise torn along the
+    bottom edge.
+  - **Heavy CRT** — a bigger tube: deeper scanlines, a strong centre-weighted glow,
+    a vignette, and a touch of chromatic aberration.
+  The filter runs after the upscaler and leaves subtitles and the on-screen controls
+  untouched. The shaders are self-authored GLSL bundled with the app; the heavier
+  looks use Vulkan to avoid a first-play shader-compile stall.
+
+### Fixed
+- **Bundled GLSL shaders now ship in the release package.** The `shaders/` folder
+  was left out of the packaged build, so a release install had no GLSL upscalers
+  (only the built-in High-Quality scaler worked). The retro filters and the
+  ArtCNN / FSRCNNX / Anime4K upscalers are now all included.
+
 ## [0.7.0] - 2026-08-01
 
 ### Added

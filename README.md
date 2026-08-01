@@ -10,7 +10,7 @@ It works in conjunction with [mpv](https://mpv.io/), which the [install script](
 
 |  |  |
 |--|--|
-| ![Plex Home and Continue Watching](screenshots/plex_cover_view.png)<br>**Plex Home** — Continue Watching (with watch‑progress bars) alongside your own hub rows, over hover fanart with the show's theme music playing. | ![Episode info and playback settings](screenshots/plex_media_info.png)<br>**Info screen** — PREV / PLAY / NEXT, plus per‑title **Audio, Subtitles, Volume and Upscaler** that carry across a whole show. |
+| ![Plex Home and Continue Watching](screenshots/plex_cover_view.png)<br>**Plex Home** — Continue Watching (with watch‑progress bars) alongside your own hub rows, over hover fanart with the show's theme music playing. | ![Episode info and playback settings](screenshots/plex_media_info.png)<br>**Info screen** — PREV / PLAY / NEXT, plus per‑title **Audio, Subtitles, Volume, Upscaler and Shader** that carry across a whole show. |
 | ![Local Files cover view](screenshots/local_files_cover_view.png)<br>**Local Files** — a Cover browse view rendered from Kodi / TinyMediaManager poster artwork. | ![Plex settings](screenshots/plex_options.png)<br>**Settings** — reorder sources, Cover view, fanart backgrounds, theme music, autoplay and more. |
 | ![VCR‑style player controls](screenshots/player_controls.png)<br>**Playback** — mpv fullscreen with a VCR‑style on‑screen control bar (seek, audio, subtitle, crop). |  |
 
@@ -32,8 +32,9 @@ On top of the platform rewrite, this port adds a number of features — all opti
 - **Series handling** — a show/movie folder shows its videos flattened unless it has `Season N` subfolders (then those are seasons); bonus videos appear under Cast & Extras.
 
 **Plex & Local Files**
-- **Per‑title playback settings** — audio language, subtitle language, volume gain (± dB) and video upscaler, chosen on the info screen and carried across a show's episodes.
+- **Per‑title playback settings** — audio language, subtitle language, volume gain (± dB), video upscaler and retro filter, chosen on the info screen and carried across a show's episodes.
 - **Video upscalers** — GPU‑accelerated mpv GLSL shaders (**ArtCNN, FSRCNNX, Anime4K**, plus a High‑Quality preset) — handy for bringing SD anime up to a 4K panel.
+- **Retro filters** — optional CRT / tape looks (**Scanlines, CRT, NTSC, VHS, Heavy CRT**, each with a curved‑tube variant) laid over playback and chosen per title. Self‑authored mpv GLSL that runs after the upscaler and leaves subtitles crisp.
 - **“Up next”** — finishing an episode (or backing out during the credits) lands on the *next* episode's info.
 - **Seamless theme music** — a show's theme starts on hover while browsing and carries, uninterrupted, into its info screen.
 - **Info‑screen actions** — Watched/Unwatched and Remove‑from‑Continue‑Watching buttons under Play.
