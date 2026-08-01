@@ -15,10 +15,11 @@
 #define BAND_H      0.30   // traveling tracking-bar height (fraction of screen)
 #define BAND_AMT    0.06   // tracking-bar brightness lift (subtle)
 #define BAND_PERIOD 540.0  // frames per pass (~9s at 60fps; raise if it travels too fast)
-#define HS_H     0.012     // head-switching strip height (very thin — ~2-3 lines of 240p)
-#define HS_LINES 240.0     // tape vertical resolution — pixelate the strip low-res, not HD
-#define HS_CHUNK 16.0      // horizontal crunch chunks across the width
-#define HS_TEAR  0.08      // per-chunk sideways crunch amplitude
+#define HS_H      0.012    // head-switching strip height (very thin — ~2-3 lines of 240p)
+#define HS_LINES  240.0    // tape vertical resolution — pixelate the strip low-res, not HD
+#define HS_CHUNK  16.0     // horizontal colour-chunk blocks across the width
+#define HS_DRIFT  0.05     // consistent sideways offset of the strip (~5%; +right / -left)
+#define HS_JITTER 0.02     // small per-frame jump around the drift (~+/-2%)
 
 // 1D value noise in [-0.5, 0.5]: smoothstep-interpolated hash for the wobble.
 float vnoise(float x) {
@@ -100,10 +101,14 @@ vec4 hook() {
     if (hsw > 0.0) {
         vec2  res   = vec2(HS_LINES * HOOKED_size.x / HOOKED_size.y, HS_LINES);  // square 240p pixels
         float line  = floor(p.y * res.y);                // which tape line
-        float chunk = floor(p.x * HS_CHUNK);             // which crunch chunk
-        vec2  key   = vec2(chunk, line);                 // per-chunk, per-line — rows don't match
-        float cs    = (hash12(key + tb) - 0.5) * HS_TEAR * hsw;       // sideways crunch
-        vec2  uv    = (floor(vec2(p.x + cs, p.y) * res) + 0.5) / res;  // pixelate to tape resolution
+        float chunk = floor(p.x * HS_CHUNK);             // which colour-chunk block
+        vec2  key   = vec2(chunk, line);                 // per-chunk, per-line — rows don't match colour
+        // Horizontal head-switch offset: a consistent sideways drift with a small
+        // per-frame jump (a time-base error of the whole strip), not per-chunk noise.
+        // Scaled by hsw, so it skews from aligned at the top to fully offset at the edge.
+        float jump  = (hash12(vec2(3.0, tb)) - 0.5) * 2.0 * HS_JITTER;   // ~+/-2%, uniform, per frame
+        float shift = (HS_DRIFT + jump) * hsw;           // +HS_DRIFT drifts the picture right
+        vec2  uv    = (floor(vec2(p.x - shift, p.y) * res) + 0.5) / res; // sample left -> drifts right
         vec3  base  = HOOKED_tex(vec2(fract(uv.x), uv.y)).rgb;
         // Mild per-block colour wobble — unstable colour, but it's still the real picture.
         vec3  tint  = 0.6 + 0.8 * vec3(hash12(key + 11.0), hash12(key + 23.0), hash12(key + 37.0));
