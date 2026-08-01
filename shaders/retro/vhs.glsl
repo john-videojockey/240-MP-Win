@@ -16,8 +16,8 @@
 #define BAND_AMT    0.06   // tracking-bar brightness lift (subtle)
 #define BAND_PERIOD 540.0  // frames per pass (~9s at 60fps; raise if it travels too fast)
 #define HS_H     0.012     // head-switching strip height (very thin — ~2-3 lines of 240p)
-#define HS_CHUNK 32.0      // horizontal blocks across the width (pixelated colour chunks)
-#define HS_ROWS  3.0       // independent rows within the strip (so rows don't share colour)
+#define HS_CHUNK 16.0      // horizontal crunch chunks across the width (wider = fewer tears)
+#define HS_ROWS  3.0       // chunky rows within the strip (so rows don't share colour)
 #define HS_TEAR  0.08      // per-block sideways crunch amplitude
 
 // 1D value noise in [-0.5, 0.5]: smoothstep-interpolated hash for the wobble.
@@ -101,14 +101,13 @@ vec4 hook() {
         // edged rather than a smooth rainbow smear.
         float rowf = (p.y - (1.0 - HS_H)) / HS_H;                    // 0..1 down the strip
         vec2  bi   = floor(vec2(p.x * HS_CHUNK, rowf * HS_ROWS));    // block (col, row) index
-        float cs   = (hash12(bi + vec2(tb, tb * 1.7)) - 0.5) * HS_TEAR * hsw;  // per-block crunch
-        float sx   = (bi.x + 0.5) / HS_CHUNK + cs;                   // snapped x (+crunch) = pixelated
-        float sy   = (1.0 - HS_H) + (bi.y + 0.5) / HS_ROWS * HS_H;   // snapped y (per-row)
-        vec3  base = HOOKED_tex(vec2(fract(sx), sy)).rgb;
-        // Blocky, hard-edged colour corruption per block (no smooth channel split, so
-        // no rainbow banding) — each block a different wrong colour.
-        vec3  corrupt = vec3(hash12(bi + 11.0), hash12(bi + 23.0), hash12(bi + 37.0));
-        vec3  hsCol   = mix(base, base * (0.4 + 1.6 * corrupt), 0.6);
+        float cs   = (hash12(bi + vec2(tb, tb * 1.7)) - 0.5) * HS_TEAR * hsw;  // per-block sideways crunch
+        float sy   = (1.0 - HS_H) + (bi.y + 0.5) / HS_ROWS * HS_H;   // snap to a chunky row
+        vec3  base = HOOKED_tex(vec2(fract(p.x + cs), sy)).rgb;      // torn picture (detail kept), shifted
+        // Mild per-block colour wobble so the colour is unstable — the picture stays
+        // legible rather than becoming a random colour mosaic.
+        vec3  tint = 0.6 + 0.8 * vec3(hash12(bi + 11.0), hash12(bi + 23.0), hash12(bi + 37.0));
+        vec3  hsCol = base * mix(vec3(1.0), tint, 0.3);
         col = mix(col, hsCol, hsw);
     }
 
