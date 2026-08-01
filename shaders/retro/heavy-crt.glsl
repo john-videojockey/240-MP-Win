@@ -2,19 +2,21 @@
 //!BIND HOOKED
 //!DESC 240-MP retro: Heavy CRT
 
-// Beefier CRT: the same soft-tube base as crt.glsl (bleed + glow) but with deeper
-// scanlines, a much stronger glow and a tube vignette. Like CRT it has NO hard
-// shadow mask (that reads as a screendoor). Heavier (more glow taps), so it is
-// grouped with the high-cost filters.
+// Beefier CRT: the soft-tube base (bleed + glow) with a lighter scanline than before
+// and everything else leaned into — a strong glow, a deeper vignette, and a touch of
+// phosphor grain. No hard shadow mask (that reads as a screendoor). Heavier (glow
+// taps + grain), so it is grouped with the high-cost filters.
 #define LINES 320.0
-#define SCAN_DEPTH 0.40   // deeper scanlines than the plain CRT
+#define SCAN_DEPTH 0.30   // lighter scanline (was 0.40) — lean on the other effects
 #define BLEED 0.30        // horizontal softening/blend
-#define GLOW 0.28         // strong bloom
-#define VIGNETTE 0.24
+#define GLOW 0.34         // strong bloom
+#define VIGNETTE 0.28     // deeper tube vignette
+#define GRAIN 0.035       // subtle phosphor grain
 
 vec4 hook() {
     vec2 p  = HOOKED_pos;
     vec2 px = HOOKED_pt;
+    float t = mod(float(frame), 2048.0);
 
     // Horizontal bleed (tube softness).
     vec3 c  = HOOKED_tex(p).rgb;
@@ -28,11 +30,15 @@ vec4 hook() {
               + HOOKED_tex(p + vec2(0.0,  s.y)).rgb + HOOKED_tex(p + vec2(0.0, -s.y)).rgb;
     c += glow * 0.25 * GLOW;
 
-    // Deep scanlines.
+    // Lighter scanlines.
     float m = 0.5 + 0.5 * cos(p.y * LINES * 6.28318530718);
     c *= (1.0 - SCAN_DEPTH * (1.0 - m));
 
-    // Tube vignette.
+    // Subtle phosphor grain (per-pixel, animated).
+    float n = fract(sin(dot(p * HOOKED_size + t, vec2(12.9898, 78.233))) * 43758.5453);
+    c += (n - 0.5) * GRAIN;
+
+    // Deep tube vignette.
     vec2 v = p - 0.5;
     c *= 1.0 - VIGNETTE * dot(v, v) * 2.0;
 

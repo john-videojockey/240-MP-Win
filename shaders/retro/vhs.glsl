@@ -2,23 +2,36 @@
 //!BIND HOOKED
 //!DESC 240-MP retro: VHS
 
-// Composite-tape look: a light chroma bleed, a slow low-frequency horizontal drift,
-// and — the point of the look — visible tape GRAIN. The earlier version was soft and
-// glossy because the smear dominated and the grain was both too weak and hashed in
-// normalised coords (so it came out smooth). Grain is now strong and hashed in true
-// pixel coordinates; the smear is only a whisper so it reads as noise, not gloss.
+// Composite-tape look: a light chroma bleed, visible tape grain, and an organic
+// horizontal instability. The wobble is driven by value noise (smooth but
+// non-repeating) rather than a pure sine, so it reads as irregular tape distortion
+// instead of clean bands scrolling up the frame. Two octaves drift in opposite
+// directions to break up any uniform scan.
 #define BLEED  0.0022  // chroma horizontal offset (fraction of width)
-#define SMEAR  0.08    // faint tape softness (kept low — was glossy at 0.22)
+#define SMEAR  0.08    // faint tape softness (kept low — was glossy higher)
 #define GRAIN  0.07    // visible tape grain
-#define WOBBLE 0.0006  // horizontal drift amplitude (fraction of width)
-#define WFREQ  5.0     // drift bands down the screen (low = gentle, not a ripple)
+#define WOBBLE 0.0009  // horizontal instability amplitude (fraction of width)
+
+// 1D value noise in [-0.5, 0.5]: smoothstep-interpolated hash, so the displacement
+// varies continuously down the frame with no visible periodicity.
+float vnoise(float x) {
+    float i = floor(x);
+    float f = fract(x);
+    float a = fract(sin(i * 12.9898) * 43758.5453);
+    float b = fract(sin((i + 1.0) * 12.9898) * 43758.5453);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(a, b, f) - 0.5;
+}
 
 vec4 hook() {
     vec2 p = HOOKED_pos;
-    float t = mod(float(frame), 2048.0);   // bounded so the animation stays crisp
+    float t = mod(float(frame), 4096.0);   // bounded so the animation stays crisp
 
-    // Slow, gentle horizontal drift — a few wide bands, drifting lazily.
-    p.x += sin(p.y * WFREQ + t * 0.03) * WOBBLE;
+    // Organic horizontal instability: a broad waver plus a finer jitter, drifting
+    // in opposite directions so it never resolves into a clean travelling wave.
+    float w = vnoise(p.y * 9.0  + t * 0.10) * 0.7
+            + vnoise(p.y * 31.0 - t * 0.05) * 0.3;
+    p.x += w * WOBBLE;
 
     // Chroma bleed: pull red left and blue right of the luma.
     float r = HOOKED_tex(vec2(p.x - BLEED, p.y)).r;
@@ -31,8 +44,7 @@ vec4 hook() {
                 + HOOKED_tex(vec2(p.x + HOOKED_pt.x, p.y)).rgb) * 0.5;
     col = mix(col, smear, SMEAR);
 
-    // Tape grain — hashed in pixel coords + frame so it's genuinely per-pixel and
-    // animates. This is what should read as "grainy" rather than soft.
+    // Tape grain — hashed in pixel coords + frame so it's genuinely per-pixel.
     float n = fract(sin(dot(p * HOOKED_size + t, vec2(12.9898, 78.233))) * 43758.5453);
     col += (n - 0.5) * GRAIN;
 
