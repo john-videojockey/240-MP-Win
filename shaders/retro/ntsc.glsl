@@ -10,8 +10,9 @@
 // chroma, rotate hue, desaturate a touch, YIQ->RGB, then a dot-crawl shimmer keyed to
 // where colour is. Heavier than the CRT looks. Runs on the final image (subs crisp).
 #define BLEED 0.0015  // chroma sample spacing — band-limits I/Q (Q wider than I)
-#define HUE   0.18    // chroma phase rotation, radians — the NTSC wrong-tint drift
-#define SAT   0.90    // chroma scale — the slight NTSC desaturation
+#define HUE  -0.24    // chroma phase rotation, radians — negative drifts colours toward blue/green
+#define SAT   0.86    // chroma scale — the slight NTSC desaturation
+#define WARM  0.06    // warm white-point cast (lift red / drop blue; 0 = neutral)
 #define CRAWL 0.03    // dot-crawl shimmer along colour edges
 
 vec3 rgb2yiq(vec3 c) {
@@ -45,6 +46,11 @@ vec4 hook() {
     float Qr = (I * sa + Q * ca) * SAT;
 
     vec3 col = yiq2rgb(vec3(Y, Ir, Qr));
+
+    // Warm white-point cast (aged NTSC sets ran warm): lift red, drop blue. The hue
+    // rotation above drifts saturated colours toward green; this warms the overall
+    // tone on top of it.
+    col *= vec3(1.0 + WARM, 1.0, 1.0 - WARM);
 
     // Dot crawl: a moving shimmer wherever there is chroma (subcarrier bleeding into
     // luma), which is exactly where composite dot crawl appears.

@@ -11,7 +11,7 @@
 #define BLEED  0.0008  // base chroma horizontal offset (fraction of width — subtle;
                        // it's a colour fringe, not full chromatic aberration)
 #define SMEAR  0.06    // faint tape softness
-#define GRAIN  0.07    // base tape grain
+#define GRAIN  0.05    // base tape grain (kept subtle; bursts kick it up)
 #define WOBBLE 0.0016  // peak horizontal instability amplitude (fraction of width)
 
 // 1D value noise in [-0.5, 0.5]: smoothstep-interpolated hash, so it varies
@@ -29,25 +29,25 @@ vec4 hook() {
     vec2 p = HOOKED_pos;
     float t = mod(float(frame), 4096.0);   // bounded so the animation stays crisp
 
-    // Organic horizontal instability: a broad waver plus a gentle secondary bend.
-    // Kept low-frequency on purpose — a high-frequency displacement shifts adjacent
-    // scanlines by different amounts and slices the image into visible lines, so we
-    // low-pass it into a smooth, diffused warp that holds a beat rather than sliding.
-    float w = vnoise(p.y * 6.0  + t * 0.03) * 0.72
-            + vnoise(p.y * 13.0 - t * 0.02) * 0.28;
+    // A single, very-low-frequency horizontal sway. Any per-row variation fast enough
+    // to differ between adjacent scanlines slices the picture into visible lines, so
+    // this stays broad (y*3) — the displacement changes so gradually top-to-bottom
+    // that it reads as a gentle whole-frame lean, not lines. Irregular (value noise),
+    // drifting slowly so it holds a beat.
+    float w = vnoise(p.y * 3.0 + t * 0.02);
 
     // Burst level: slow, calm-biased noise. Mostly ~0 (clean) with occasional swells.
-    // Decorrelated from the waver so dropouts land on their own rhythm.
+    // Decorrelated from the sway so dropouts land on their own rhythm.
     float burst = vnoise(t * 0.025 + 100.0) + 0.5;   // 0..1
     burst = burst * burst;                           // bias toward calm
-    float gate = 0.18 + 1.6 * burst;                 // ~0.18 rest .. ~1.78 peak
+    float gate = 0.15 + 1.0 * burst;                 // subtle rest, gentle swell
 
     p.x += w * WOBBLE * gate;
 
     // During a burst the signal degrades a little: a touch more chroma fringe and
     // grain (kept modest so colours still mostly line up).
     float bleed = BLEED * (1.0 + 1.5 * burst);
-    float grain = GRAIN * (1.0 + 1.5 * burst);
+    float grain = GRAIN * (1.0 + 1.8 * burst);
 
     // Chroma bleed: pull red left and blue right of the luma.
     vec3 col;
