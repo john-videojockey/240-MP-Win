@@ -16,6 +16,7 @@
 #endif
 #include <windows.h>
 #include <ws2tcpip.h>   // getaddrinfo — DNS pre-warm (warmHostDns)
+#include <dpapi.h>      // CryptProtectData/CryptUnprotectData (credential storage)
 #include <shobjidl.h>   // ITaskbarList (drop mpv's separate taskbar button)
 #include <cstdio>
 
@@ -256,6 +257,35 @@ void redrawWindow(quintptr hwnd) {
     if (!h || !IsWindow(h))
         return;
     RedrawWindow(h, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+}
+
+QByteArray dpapiProtect(const QByteArray &plain) {
+    DATA_BLOB in{ static_cast<DWORD>(plain.size()),
+                  reinterpret_cast<BYTE *>(const_cast<char *>(plain.constData())) };
+    DATA_BLOB out{};
+    if (!CryptProtectData(&in, L"240-MP-Win credentials", nullptr, nullptr, nullptr,
+                          CRYPTPROTECT_UI_FORBIDDEN, &out))
+        return {};
+    QByteArray result(reinterpret_cast<const char *>(out.pbData), static_cast<int>(out.cbData));
+    LocalFree(out.pbData);
+    return result;
+}
+
+QByteArray dpapiUnprotect(const QByteArray &cipher) {
+    if (cipher.isEmpty())
+        return {};
+    DATA_BLOB in{ static_cast<DWORD>(cipher.size()),
+                  reinterpret_cast<BYTE *>(const_cast<char *>(cipher.constData())) };
+    DATA_BLOB out{};
+    if (!CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr,
+                            CRYPTPROTECT_UI_FORBIDDEN, &out))
+        return {};
+    QByteArray result(reinterpret_cast<const char *>(out.pbData), static_cast<int>(out.cbData));
+    if (out.pbData) {
+        SecureZeroMemory(out.pbData, out.cbData);   // wipe the decrypted copy DPAPI allocated
+        LocalFree(out.pbData);
+    }
+    return result;
 }
 
 void warmHostDns(const QString &host) {

@@ -188,6 +188,13 @@ private:
     QJsonObject loadAuth() const;
     void saveAuth(const QJsonObject &auth) const;
 
+    // Credential-file storage: the token file and the device key are DPAPI-encrypted
+    // at rest (see win_utils dpapiProtect). writeSecureFile encrypts with a magic
+    // header; readSecureFile decrypts when it sees that header, else returns the file
+    // as legacy plaintext and sets *wasPlaintext so the caller can migrate it.
+    void writeSecureFile(const QString &path, const QByteArray &plain) const;
+    QByteArray readSecureFile(const QString &path, bool *wasPlaintext = nullptr) const;
+
     // Config file helpers (shared with AppCore)
     QJsonObject loadConfig() const;
     void saveConfig(const QJsonObject &cfg) const;

@@ -1,5 +1,6 @@
 #pragma once
 #include <QString>
+#include <QByteArray>
 #include <QtGlobal>
 #include <functional>
 
@@ -94,6 +95,17 @@ void redrawWindow(quintptr hwnd);
 // resolver cache and never refreshes the OS one). Used while a stream is
 // suspended so resuming doesn't pay a cold ~10 s name lookup. Fire-and-forget.
 void warmHostDns(const QString &host);
+
+// Encrypt/decrypt bytes with the Windows Data Protection API (DPAPI), keyed to
+// the current user's login — no passphrase or key management, so it stays
+// "just works". Used to store credential files (the Plex device key and tokens)
+// as ciphertext at rest, so a copy taken off the machine — a backup, a synced
+// roaming profile, malware — can't be read on another machine or by another
+// user. dpapiProtect returns empty if encryption is unavailable (caller should
+// then store plaintext rather than lose the credential); dpapiUnprotect returns
+// empty when the blob can't be decrypted here (e.g. moved to a different user).
+QByteArray dpapiProtect(const QByteArray &plain);
+QByteArray dpapiUnprotect(const QByteArray &cipher);
 
 // Watches the console (monitor) power state. Installs a native event filter and
 // registers for GUID_CONSOLE_DISPLAY_STATE on appHwnd; onDisplayState(state) is

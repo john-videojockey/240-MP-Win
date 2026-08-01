@@ -47,26 +47,57 @@ PlexBackend::PlexBackend(const QString &appRoot, const QString &dataRoot, QObjec
 // File I/O
 // ---------------------------------------------------------------------------
 
-QJsonObject PlexBackend::loadAuth() const {
-    QFile f(m_dataRoot + "/plex_auth.json");
-    if (f.open(QIODevice::ReadOnly)) {
-        QJsonParseError err;
-        auto doc = QJsonDocument::fromJson(f.readAll(), &err);
-        if (err.error == QJsonParseError::NoError && doc.isObject())
-            return doc.object();
+// Marks a DPAPI-encrypted credential file. Chosen so it can never be the start of
+// the plaintext it replaces: JSON begins with '{'/whitespace, a PEM key with '-'.
+static const QByteArray kSecureMagic = QByteArrayLiteral("240MP-DPAPI-v1\n");
+
+void PlexBackend::writeSecureFile(const QString &path, const QByteArray &plain) const {
+    const QByteArray cipher = dpapiProtect(plain);
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly)) {
+        qWarning("[PlexBackend] Could not write %s: %s",
+                 qPrintable(path), qPrintable(f.errorString()));
+        return;
     }
-    return {};
+    // Kept for parity with the rest of the app; on Windows this only clears the
+    // read-only bit — the real at-rest protection is the DPAPI encryption below.
+    f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    if (cipher.isEmpty()) {
+        // DPAPI unavailable — never lose the credential; fall back to plaintext.
+        qWarning("[PlexBackend] DPAPI unavailable; storing %s unencrypted", qPrintable(path));
+        f.write(plain);
+    } else {
+        f.write(kSecureMagic);
+        f.write(cipher);
+    }
+    f.close();
+}
+
+QByteArray PlexBackend::readSecureFile(const QString &path, bool *wasPlaintext) const {
+    if (wasPlaintext) *wasPlaintext = false;
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return {};
+    const QByteArray raw = f.readAll();
+    if (raw.startsWith(kSecureMagic))
+        return dpapiUnprotect(raw.mid(kSecureMagic.size()));   // empty if it won't decrypt here
+    if (wasPlaintext) *wasPlaintext = true;
+    return raw;   // legacy plaintext, pre-encryption
+}
+
+QJsonObject PlexBackend::loadAuth() const {
+    bool wasPlaintext = false;
+    const QByteArray data = readSecureFile(m_dataRoot + "/plex_auth.json", &wasPlaintext);
+    if (data.isEmpty()) return {};
+    QJsonParseError err;
+    const auto doc = QJsonDocument::fromJson(data, &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) return {};
+    if (wasPlaintext) saveAuth(doc.object());   // migrate a pre-encryption file in place
+    return doc.object();
 }
 
 void PlexBackend::saveAuth(const QJsonObject &auth) const {
-    QFile f(m_dataRoot + "/plex_auth.json");
-    if (!f.open(QIODevice::WriteOnly)) {
-        qWarning("[PlexBackend] Could not write plex_auth.json: %s", qPrintable(f.errorString()));
-        return;
-    }
-    f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-    f.write(QJsonDocument(auth).toJson(QJsonDocument::Indented));
-    f.close();
+    writeSecureFile(m_dataRoot + "/plex_auth.json",
+                    QJsonDocument(auth).toJson(QJsonDocument::Indented));
 }
 
 QJsonObject PlexBackend::loadConfig() const {
@@ -192,15 +223,7 @@ QByteArray PlexBackend::generateAndSaveKeyPair(const QString &keyId) {
     QByteArray pemData(bptr->data, static_cast<int>(bptr->length));
     BIO_free(bio);
 
-    QFile keyFile(m_dataRoot + "/plex_key.pem");
-    if (keyFile.open(QIODevice::WriteOnly)) {
-        keyFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-        keyFile.write(pemData);
-        keyFile.close();
-    } else {
-        qWarning("[PlexBackend] Could not write plex_key.pem: %s",
-                 qPrintable(keyFile.errorString()));
-    }
+    writeSecureFile(m_dataRoot + "/plex_key.pem", pemData);   // DPAPI-encrypted at rest
 
     // Export 32-byte raw public key for JWK
     size_t pubLen = 32;
@@ -224,12 +247,14 @@ QByteArray PlexBackend::generateAndSaveKeyPair(const QString &keyId) {
 }
 
 EVP_PKEY *PlexBackend::loadPrivateKey() const {
-    QFile f(m_dataRoot + "/plex_key.pem");
-    if (!f.open(QIODevice::ReadOnly)) return nullptr;
-    QByteArray pem = f.readAll();
+    bool wasPlaintext = false;
+    const QByteArray pem = readSecureFile(m_dataRoot + "/plex_key.pem", &wasPlaintext);
+    if (pem.isEmpty()) return nullptr;
     BIO *bio = BIO_new_mem_buf(pem.constData(), pem.size());
     EVP_PKEY *pkey = PEM_read_bio_PrivateKey(bio, nullptr, nullptr, nullptr);
     BIO_free(bio);
+    if (pkey && wasPlaintext)
+        writeSecureFile(m_dataRoot + "/plex_key.pem", pem);   // migrate a pre-encryption key
     return pkey;
 }
 
