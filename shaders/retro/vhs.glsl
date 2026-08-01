@@ -103,10 +103,11 @@ vec4 hook() {
         float line  = floor(p.y * res.y);                // which tape line
         float chunk = floor(p.x * HS_CHUNK);             // which colour-chunk block
         vec2  key   = vec2(chunk, line);                 // per-chunk, per-line — rows don't match colour
-        // Horizontal head-switch offset: a consistent sideways drift with a small
-        // per-frame jump (a time-base error of the whole strip), not per-chunk noise.
-        // Scaled by hsw, so it skews from aligned at the top to fully offset at the edge.
-        float jump  = (hash12(vec2(3.0, tb)) - 0.5) * 2.0 * HS_JITTER;   // ~+/-2%, uniform, per frame
+        // Horizontal head-switch offset: a consistent sideways drift plus a small jump
+        // that varies PER LINE (and per frame), so each tape line jumps sharply by its
+        // own amount — jumbled — instead of the whole strip sliding as one clean cut.
+        // Scaled by hsw so it still fades in from the top of the strip.
+        float jump  = (hash12(vec2(line, tb)) - 0.5) * 2.0 * HS_JITTER;  // ~+/-2%, per line, per frame
         float shift = (HS_DRIFT + jump) * hsw;           // +HS_DRIFT drifts the picture right
         vec2  uv    = (floor(vec2(p.x - shift, p.y) * res) + 0.5) / res; // sample left -> drifts right
         vec3  base  = HOOKED_tex(vec2(fract(uv.x), uv.y)).rgb;
