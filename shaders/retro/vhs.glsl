@@ -16,9 +16,9 @@
 #define BAND_AMT    0.06   // tracking-bar brightness lift (subtle)
 #define BAND_PERIOD 540.0  // frames per pass (~9s at 60fps; raise if it travels too fast)
 #define HS_H     0.012     // head-switching strip height (very thin — ~2-3 lines of 240p)
-#define HS_CHUNK 16.0      // horizontal crunch chunks across the width (wider = fewer tears)
-#define HS_ROWS  3.0       // chunky rows within the strip (so rows don't share colour)
-#define HS_TEAR  0.08      // per-block sideways crunch amplitude
+#define HS_LINES 240.0     // tape vertical resolution — pixelate the strip low-res, not HD
+#define HS_CHUNK 16.0      // horizontal crunch chunks across the width
+#define HS_TEAR  0.08      // per-chunk sideways crunch amplitude
 
 // 1D value noise in [-0.5, 0.5]: smoothstep-interpolated hash for the wobble.
 float vnoise(float x) {
@@ -90,24 +90,24 @@ vec4 hook() {
     col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))), 0.14 * band);  // wash-out
 
     // Head-switching noise: a very thin strip at the very bottom edge (only ~2-3 lines
-    // of a 240p frame) where the head leaves the tape. The picture there breaks into
-    // wide horizontal colour chunks that crunch sideways, concentrated hard at the very
-    // edge. (Shares the bottom edge with the tracking bar; if that shows at the top
-    // instead, this will too — one flip fixes both.)
-    float hsw = smoothstep(1.0 - HS_H, 1.0, p.y);        // 0 above the strip .. 1 at the very edge
+    // of a 240p frame) where the head leaves the tape. The picture there is pixelated
+    // down to tape resolution (so it stops betraying the source's sharp HD detail),
+    // torn into wide chunks that crunch sideways, with the colour going unstable. The
+    // effect fades toward the top of the strip, so the top line still reads the video.
+    // (Shares the bottom edge with the tracking bar; if that shows at the top instead,
+    // this will too — one flip fixes both.)
+    float hsw = smoothstep(1.0 - HS_H, 1.0, p.y);        // 0 at the strip's top .. 1 at the very edge
     if (hsw > 0.0) {
-        // Dice the thin strip into coarse blocks (pixelated), each an independent tape
-        // fragment — so adjacent rows and columns don't share colour and it reads hard-
-        // edged rather than a smooth rainbow smear.
-        float rowf = (p.y - (1.0 - HS_H)) / HS_H;                    // 0..1 down the strip
-        vec2  bi   = floor(vec2(p.x * HS_CHUNK, rowf * HS_ROWS));    // block (col, row) index
-        float cs   = (hash12(bi + vec2(tb, tb * 1.7)) - 0.5) * HS_TEAR * hsw;  // per-block sideways crunch
-        float sy   = (1.0 - HS_H) + (bi.y + 0.5) / HS_ROWS * HS_H;   // snap to a chunky row
-        vec3  base = HOOKED_tex(vec2(fract(p.x + cs), sy)).rgb;      // torn picture (detail kept), shifted
-        // Mild per-block colour wobble so the colour is unstable — the picture stays
-        // legible rather than becoming a random colour mosaic.
-        vec3  tint = 0.6 + 0.8 * vec3(hash12(bi + 11.0), hash12(bi + 23.0), hash12(bi + 37.0));
-        vec3  hsCol = base * mix(vec3(1.0), tint, 0.3);
+        vec2  res   = vec2(HS_LINES * HOOKED_size.x / HOOKED_size.y, HS_LINES);  // square 240p pixels
+        float line  = floor(p.y * res.y);                // which tape line
+        float chunk = floor(p.x * HS_CHUNK);             // which crunch chunk
+        vec2  key   = vec2(chunk, line);                 // per-chunk, per-line — rows don't match
+        float cs    = (hash12(key + tb) - 0.5) * HS_TEAR * hsw;       // sideways crunch
+        vec2  uv    = (floor(vec2(p.x + cs, p.y) * res) + 0.5) / res;  // pixelate to tape resolution
+        vec3  base  = HOOKED_tex(vec2(fract(uv.x), uv.y)).rgb;
+        // Mild per-block colour wobble — unstable colour, but it's still the real picture.
+        vec3  tint  = 0.6 + 0.8 * vec3(hash12(key + 11.0), hash12(key + 23.0), hash12(key + 37.0));
+        vec3  hsCol = base * mix(vec3(1.0), tint, 0.25);
         col = mix(col, hsCol, hsw);
     }
 
