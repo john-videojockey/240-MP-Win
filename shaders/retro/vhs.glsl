@@ -29,11 +29,12 @@ vec4 hook() {
     vec2 p = HOOKED_pos;
     float t = mod(float(frame), 4096.0);   // bounded so the animation stays crisp
 
-    // Organic horizontal instability: a broad waver plus a finer jitter, drifting
-    // slowly in opposite directions so it warps the picture (different lines shift by
-    // different amounts) and holds a beat rather than sliding by.
-    float w = vnoise(p.y * 12.0 + t * 0.03) * 0.65
-            + vnoise(p.y * 34.0 - t * 0.02) * 0.35;
+    // Organic horizontal instability: a broad waver plus a gentle secondary bend.
+    // Kept low-frequency on purpose — a high-frequency displacement shifts adjacent
+    // scanlines by different amounts and slices the image into visible lines, so we
+    // low-pass it into a smooth, diffused warp that holds a beat rather than sliding.
+    float w = vnoise(p.y * 6.0  + t * 0.03) * 0.72
+            + vnoise(p.y * 13.0 - t * 0.02) * 0.28;
 
     // Burst level: slow, calm-biased noise. Mostly ~0 (clean) with occasional swells.
     // Decorrelated from the waver so dropouts land on their own rhythm.
