@@ -77,28 +77,23 @@ FocusScope {
         appCore.save_setting("", "mpv_upscaler_active", id)                  // apply to next play
     }
 
-    // Retro filter — bundled GLSL looks (shaders/retro), ordered by GPU cost, same
-    // control as the Plex info screen. Per-title only (no global default); an unset
-    // title is OFF. `tier` drives the muted colour on the selected value.
+    // Retro filter — bundled GLSL looks (shaders/retro), same control as the Plex info
+    // screen, ordered by texture-tap count (a rough cost hint, not shown in the UI).
+    // Per-title only (no global default); an unset title is OFF.
     property var retros: [
-        { id: "off",              label: "OFF",                tier: 0 },
-        { id: "scanlines",        label: "SCANLINES",          tier: 1 },
-        { id: "scanlines_curved", label: "SCANLINES (CURVED)", tier: 1 },
-        { id: "crt",              label: "CRT",                tier: 1 },
-        { id: "crt_curved",       label: "CRT (CURVED)",       tier: 1 },
-        { id: "vhs",              label: "VHS",                tier: 2 },
-        { id: "vhs_curved",       label: "VHS (CURVED)",       tier: 2 },
-        { id: "ntsc",             label: "NTSC",               tier: 3 },
-        { id: "ntsc_curved",      label: "NTSC (CURVED)",      tier: 3 },
-        { id: "heavycrt",         label: "HEAVY CRT",          tier: 3 },
-        { id: "heavycrt_curved",  label: "HEAVY CRT (CURVED)", tier: 3 }
+        { id: "off",              label: "OFF" },
+        { id: "scanlines",        label: "SCANLINES" },
+        { id: "scanlines_curved", label: "SCANLINES (CURVED)" },
+        { id: "crt",              label: "CRT" },
+        { id: "crt_curved",       label: "CRT (CURVED)" },
+        { id: "ntsc",             label: "NTSC" },
+        { id: "ntsc_curved",      label: "NTSC (CURVED)" },
+        { id: "vhs",              label: "VHS" },
+        { id: "vhs_curved",       label: "VHS (CURVED)" },
+        { id: "heavycrt",         label: "HEAVY CRT" },
+        { id: "heavycrt_curved",  label: "HEAVY CRT (CURVED)" }
     ]
     property int retroIdx: 0
-    readonly property var retroTierColors: ["", "#7FA8C4", "#C9B36E", "#C68A8A"]
-    function retroColor() {
-        var t = (retros[retroIdx] || {}).tier || 0
-        return t === 0 ? root.primaryColor : retroTierColors[t]
-    }
     function cycleRetro(dir) {
         retroIdx = (retroIdx + dir + retros.length) % retros.length
         var id = retros[retroIdx].id
@@ -964,9 +959,7 @@ FocusScope {
                     Text { text: "◄"; color: focusRow === 7 ? root.surfaceColor : root.tertiaryColor
                         font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: detailRoot.optArrow }
                     Text { text: detailRoot.retros[detailRoot.retroIdx].label
-                        color: detailRoot.retros[detailRoot.retroIdx].tier > 0
-                               ? detailRoot.retroColor()
-                               : (focusRow === 7 ? root.surfaceColor : root.primaryColor)
+                        color: focusRow === 7 ? root.surfaceColor : root.primaryColor
                         font.family: root.globalFont; font.capitalization: Font.AllUppercase; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: detailRoot.optFont }
                     Text { text: "►"; color: focusRow === 7 ? root.surfaceColor : root.tertiaryColor
                         font.family: root.globalFont; anchors.verticalCenter: parent.verticalCenter; font.pixelSize: detailRoot.optArrow }

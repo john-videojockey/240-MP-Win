@@ -380,30 +380,25 @@ FocusScope {
         appCore.save_setting("", "mpv_upscaler_active", id)                  // apply to next play
     }
 
-    // Retro filter — bundled GLSL looks (shaders/retro), ordered by GPU cost. Each
-    // has a (CURVED) variant (a shared curvature pass). Per-title only (no global
-    // default): shaders are content-specific, so an unset title is just OFF. `tier`
-    // drives the muted colour on the selected value (0 none / 1 low / 2 med / 3 high).
+    // Retro filter — bundled GLSL looks (shaders/retro), ordered by texture-tap count
+    // (they're all light single-pass post shaders; the order is just a rough cost hint,
+    // not shown in the UI). Each has a (CURVED) variant (a shared curvature pass).
+    // Per-title only (no global default): shaders are content-specific, so an unset
+    // title is just OFF.
     property var retros: [
-        { id: "off",              label: "OFF",                tier: 0 },
-        { id: "scanlines",        label: "SCANLINES",          tier: 1 },
-        { id: "scanlines_curved", label: "SCANLINES (CURVED)", tier: 1 },
-        { id: "crt",              label: "CRT",                tier: 1 },
-        { id: "crt_curved",       label: "CRT (CURVED)",       tier: 1 },
-        { id: "vhs",              label: "VHS",                tier: 2 },
-        { id: "vhs_curved",       label: "VHS (CURVED)",       tier: 2 },
-        { id: "ntsc",             label: "NTSC",               tier: 3 },
-        { id: "ntsc_curved",      label: "NTSC (CURVED)",      tier: 3 },
-        { id: "heavycrt",         label: "HEAVY CRT",          tier: 3 },
-        { id: "heavycrt_curved",  label: "HEAVY CRT (CURVED)", tier: 3 }
+        { id: "off",              label: "OFF" },
+        { id: "scanlines",        label: "SCANLINES" },
+        { id: "scanlines_curved", label: "SCANLINES (CURVED)" },
+        { id: "crt",              label: "CRT" },
+        { id: "crt_curved",       label: "CRT (CURVED)" },
+        { id: "ntsc",             label: "NTSC" },
+        { id: "ntsc_curved",      label: "NTSC (CURVED)" },
+        { id: "vhs",              label: "VHS" },
+        { id: "vhs_curved",       label: "VHS (CURVED)" },
+        { id: "heavycrt",         label: "HEAVY CRT" },
+        { id: "heavycrt_curved",  label: "HEAVY CRT (CURVED)" }
     ]
     property int retroIdx: 0
-    // Muted, theme-friendly tier tints (low → high GPU demand).
-    readonly property var retroTierColors: ["", "#7FA8C4", "#C9B36E", "#C68A8A"]
-    function retroColor() {
-        var t = (retros[retroIdx] || {}).tier || 0
-        return t === 0 ? root.primaryColor : retroTierColors[t]
-    }
     function cycleRetro(dir) {
         retroIdx = (retroIdx + dir + retros.length) % retros.length
         var id = retros[retroIdx].id
@@ -1530,10 +1525,7 @@ FocusScope {
                 }
                 Text {
                     text: detailRoot.retros[detailRoot.retroIdx].label
-                    // Value tinted by GPU-cost tier; the "Shader" label stays normal.
-                    color: detailRoot.retros[detailRoot.retroIdx].tier > 0
-                           ? detailRoot.retroColor()
-                           : (focusRow === 7 ? root.surfaceColor : root.primaryColor)
+                    color: focusRow === 7 ? root.surfaceColor : root.primaryColor
                     font.family: root.globalFont
                     font.capitalization: Font.AllUppercase
                     anchors.verticalCenter: parent.verticalCenter
