@@ -5,6 +5,32 @@ All notable changes to 240-MP for Windows are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-08-01
+
+### Added
+- **Idle Mode (Plex).** When a Plex video is paused for a minute, its server
+  stream is released — freeing the slot for other devices — and the last frame is
+  held on screen with the player's title, audio/subtitle, time, and a frozen
+  progress bar (plus an `IDLE - STREAM RELEASED` line). Pressing play reloads
+  from where you left off. A new **Plex Settings → Idle Mode** toggle (on by
+  default) controls it. Either way, any pause left for **two hours** returns to
+  the info screen (the resume point is kept). While idle the connection's name
+  resolution is kept warm so resuming is quick rather than a cold reconnect.
+
+### Fixed
+- **A paused Plex stream is reported as paused, not playing.** Previously a
+  left-paused video was reported to the server as actively playing forever —
+  which inflated the account's watch-time statistics and looped a phantom
+  progress bar on the Plex dashboard. It now reports paused (and, with Idle Mode,
+  releases the stream entirely).
+
+### Security
+- **Plex credentials are encrypted at rest (Windows DPAPI).** The device signing
+  key and tokens (`plex_key.pem`, `plex_auth.json`) are now encrypted with the
+  Windows Data Protection API, keyed to your login, so a copied file can't be
+  read on another machine or by another user. Existing files migrate
+  automatically on first launch; same-machine reinstalls keep you signed in.
+
 ## [0.6.2] - 2026-07-30
 
 ### Fixed
@@ -195,6 +221,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Keyboard, gamepad (SDL2) and touchscreen input; per-user install with an
     in-app self-updater; one-line PowerShell installer.
 
+[0.7.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/john-videojockey/240-MP-Win/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/john-videojockey/240-MP-Win/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/john-videojockey/240-MP-Win/compare/v0.5.0...v0.6.0
