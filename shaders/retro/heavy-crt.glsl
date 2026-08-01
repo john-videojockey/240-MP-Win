@@ -10,7 +10,7 @@
 #define SCAN_DEPTH 0.30   // lighter scanline (was 0.40) — lean on the other effects
 #define BLEED 0.30        // horizontal softening/blend
 #define GLOW 0.34         // strong bloom
-#define VIGNETTE 0.28     // deeper tube vignette
+#define VIGNETTE 0.42     // deep tube vignette
 #define GRAIN 0.035       // subtle phosphor grain
 
 vec4 hook() {
@@ -18,17 +18,22 @@ vec4 hook() {
     vec2 px = HOOKED_pt;
     float t = mod(float(frame), 2048.0);
 
+    vec2 v = p - 0.5;
+    float r2 = dot(v, v);   // 0 at centre, ~0.5 in the corners
+
     // Horizontal bleed (tube softness).
     vec3 c  = HOOKED_tex(p).rgb;
     vec3 cl = HOOKED_tex(p - vec2(px.x, 0.0)).rgb;
     vec3 cr = HOOKED_tex(p + vec2(px.x, 0.0)).rgb;
     c = mix(c, (cl + c + cr) / 3.0, BLEED);
 
-    // Phosphor glow: a soft cross neighbourhood so bright areas bloom.
+    // Phosphor glow: a soft cross neighbourhood so bright areas bloom, weighted a
+    // little stronger toward the centre of the tube.
     vec2 s = px * 2.0;
     vec3 glow = HOOKED_tex(p + vec2( s.x, 0.0)).rgb + HOOKED_tex(p + vec2(-s.x, 0.0)).rgb
               + HOOKED_tex(p + vec2(0.0,  s.y)).rgb + HOOKED_tex(p + vec2(0.0, -s.y)).rgb;
-    c += glow * 0.25 * GLOW;
+    float centreBoost = 1.0 + 0.20 * (1.0 - r2 * 2.0);   // ~1.2 centre, ~1.0 corners
+    c += glow * 0.25 * GLOW * centreBoost;
 
     // Lighter scanlines.
     float m = 0.5 + 0.5 * cos(p.y * LINES * 6.28318530718);
@@ -39,8 +44,7 @@ vec4 hook() {
     c += (n - 0.5) * GRAIN;
 
     // Deep tube vignette.
-    vec2 v = p - 0.5;
-    c *= 1.0 - VIGNETTE * dot(v, v) * 2.0;
+    c *= 1.0 - VIGNETTE * r2 * 2.0;
 
     return vec4(c, 1.0);
 }

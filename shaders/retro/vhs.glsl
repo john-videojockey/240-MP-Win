@@ -28,10 +28,17 @@ vec4 hook() {
     float t = mod(float(frame), 4096.0);   // bounded so the animation stays crisp
 
     // Organic horizontal instability: a broad waver plus a finer jitter, drifting
-    // in opposite directions so it never resolves into a clean travelling wave.
-    float w = vnoise(p.y * 9.0  + t * 0.10) * 0.7
-            + vnoise(p.y * 31.0 - t * 0.05) * 0.3;
-    p.x += w * WOBBLE;
+    // slowly in opposite directions so the distortion holds a beat before it moves
+    // (real tape wobble lingers) and never resolves into a clean travelling wave.
+    float w = vnoise(p.y * 9.0  + t * 0.03) * 0.7
+            + vnoise(p.y * 31.0 - t * 0.02) * 0.3;
+
+    // Amplitude gate: a slow, calm-biased noise so the wobble mostly rests and
+    // swells into occasional bursts (like tracking / head-switching instability).
+    float g = vnoise(t * 0.03 + 100.0) + 0.5;   // 0..1, decorrelated from the waver
+    float gate = 0.6 + 0.7 * (g * g);           // ~0.6 baseline, bursts past 1.0
+
+    p.x += w * WOBBLE * gate;
 
     // Chroma bleed: pull red left and blue right of the luma.
     float r = HOOKED_tex(vec2(p.x - BLEED, p.y)).r;
