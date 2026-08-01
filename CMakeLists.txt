@@ -111,6 +111,7 @@ install(DIRECTORY
     "${CMAKE_SOURCE_DIR}/views"
     "${CMAKE_SOURCE_DIR}/modules"
     "${CMAKE_SOURCE_DIR}/assets"
+    "${CMAKE_SOURCE_DIR}/shaders"
     DESTINATION . COMPONENT Runtime)
 
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/scripts"

@@ -389,7 +389,13 @@ FocusScope {
         { id: "scanlines",        label: "SCANLINES",          tier: 1 },
         { id: "scanlines_curved", label: "SCANLINES (CURVED)", tier: 1 },
         { id: "crt",              label: "CRT",                tier: 1 },
-        { id: "crt_curved",       label: "CRT (CURVED)",       tier: 2 }
+        { id: "crt_curved",       label: "CRT (CURVED)",       tier: 1 },
+        { id: "vhs",              label: "VHS",                tier: 2 },
+        { id: "vhs_curved",       label: "VHS (CURVED)",       tier: 2 },
+        { id: "ntsc",             label: "NTSC",               tier: 3 },
+        { id: "ntsc_curved",      label: "NTSC (CURVED)",      tier: 3 },
+        { id: "heavycrt",         label: "HEAVY CRT",          tier: 3 },
+        { id: "heavycrt_curved",  label: "HEAVY CRT (CURVED)", tier: 3 }
     ]
     property int retroIdx: 0
     // Muted, theme-friendly tier tints (low → high GPU demand).
