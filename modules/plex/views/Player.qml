@@ -811,10 +811,37 @@ FocusScope {
     // (slot released), so show the captured last frame with a resume hint. Also
     // covers the brief re-buffer while resuming, until mpv's first frame is back.
     Rectangle {
+        id: idlePanel
         anchors.fill: parent
         color: "black"
         visible: playerRoot.suspended || playerRoot.resuming
         z: 1000
+
+        // A static, display-only reproduction of mpv's OSC (which is gone with mpv):
+        // same layout fractions, same VCR font and white, so the paused idle state
+        // matches the live player. The interactive button row is intentionally left
+        // out — nothing is scrubbable/clickable until playback resumes.
+        readonly property real fs:      root.sh * 0.0333333            // OSC font size
+        readonly property real lm:      root.sw * 0.12                 // left margin
+        readonly property real rm:      root.sw * 0.88                 // right margin
+        readonly property real barW:    rm - lm
+        readonly property real barH:    fs * 2
+        readonly property real titleCY: root.sh * 0.0666667 + (fs * 1.5) / 2
+        readonly property real infoY:   root.sh * 0.125
+        readonly property real infoLH:  fs * 1.5
+        readonly property real row1Y:   root.sh * 0.7083333
+        readonly property real barY:    root.sh * 0.74375
+        readonly property real hintCY:  root.sh * 0.8333333
+        readonly property real pct:     playerRoot.lastKnownDurationMs > 0
+            ? Math.min(1, Math.max(0, playerRoot.suspendedOffsetMs / playerRoot.lastKnownDurationMs)) : 0
+        readonly property string audioStr: (playerRoot.audioStreams[playerRoot.audioIdx]
+            && playerRoot.audioStreams[playerRoot.audioIdx].displayTitle)
+            ? playerRoot.audioStreams[playerRoot.audioIdx].displayTitle : "(NONE)"
+        readonly property bool hasSub: playerRoot.subtitleStreams && playerRoot.subtitleStreams.length > 1
+        readonly property string subStr: (playerRoot.subtitleIdx > 0
+            && playerRoot.subtitleStreams[playerRoot.subtitleIdx]
+            && playerRoot.subtitleStreams[playerRoot.subtitleIdx].displayTitle)
+            ? playerRoot.subtitleStreams[playerRoot.subtitleIdx].displayTitle : "(NONE)"
 
         Image {
             anchors.fill: parent
@@ -823,7 +850,9 @@ FocusScope {
             cache: false
             asynchronous: true
         }
-        Rectangle { anchors.fill: parent; color: "black"; opacity: 0.4 }
+        // Light scrim only — the OSC normally sits over undimmed video; a touch of
+        // dim keeps the white text legible over a bright held frame.
+        Rectangle { anchors.fill: parent; color: "black"; opacity: 0.25 }
 
         // Touch: tap anywhere to resume (disabled once resuming is under way).
         MouseArea {
@@ -832,25 +861,84 @@ FocusScope {
             onClicked: playerRoot.resumeFromSuspend()
         }
 
-        Column {
-            anchors.centerIn: parent
-            spacing: root.sh * 0.025
-            Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: playerRoot.resuming ? "RESUMING…" : "❚❚  PAUSED"
+        // ── Title (top-left) ──
+        Text {
+            x: idlePanel.lm
+            y: idlePanel.titleCY - height / 2
+            width: idlePanel.barW
+            text: playerRoot.mediaTitle
+            color: "white"
+            font.family: root.globalFont
+            font.pixelSize: idlePanel.fs
+            font.capitalization: Font.AllUppercase
+            elide: Text.ElideRight
+        }
+        // ── Track info ──
+        Text {
+            x: idlePanel.lm
+            y: idlePanel.infoY - height / 2
+            text: "AUDIO: " + idlePanel.audioStr
+            color: "white"
+            font.family: root.globalFont
+            font.pixelSize: idlePanel.fs
+            font.capitalization: Font.AllUppercase
+        }
+        Text {
+            visible: idlePanel.hasSub
+            x: idlePanel.lm
+            y: idlePanel.infoY + idlePanel.infoLH - height / 2
+            text: "SUBTITLE: " + idlePanel.subStr
+            color: "white"
+            font.family: root.globalFont
+            font.pixelSize: idlePanel.fs
+            font.capitalization: Font.AllUppercase
+        }
+        // ── Time text (position left, duration right) ──
+        Text {
+            x: idlePanel.lm
+            y: idlePanel.row1Y - height / 2
+            text: playerRoot.formatTime(playerRoot.suspendedOffsetMs)
+            color: "white"
+            font.family: root.globalFont
+            font.pixelSize: idlePanel.fs
+        }
+        Text {
+            x: idlePanel.rm - width
+            y: idlePanel.row1Y - height / 2
+            text: playerRoot.lastKnownDurationMs > 0
+                  ? playerRoot.formatTime(playerRoot.lastKnownDurationMs) : "--:--"
+            color: "white"
+            font.family: root.globalFont
+            font.pixelSize: idlePanel.fs
+        }
+        // ── Seek bar, frozen at the pause point ──
+        Rectangle {
+            x: idlePanel.lm
+            y: idlePanel.barY
+            width: idlePanel.barW
+            height: idlePanel.barH
+            color: "transparent"
+            border.color: "white"
+            border.width: 2
+            Rectangle {
+                x: 4; y: 4
+                width: Math.max(0, (parent.width - 8) * idlePanel.pct)
+                height: parent.height - 8
                 color: "white"
-                font.family: root.globalFont
-                font.pixelSize: root.sh * 0.0666667
             }
-            Text {
-                visible: playerRoot.suspended
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "STREAM RELEASED — " + root.hints.select + " TO RESUME, "
-                      + root.hints.back + " TO EXIT"
-                color: root.secondaryColor
-                font.family: root.globalFont
-                font.pixelSize: root.sh * 0.03
-            }
+        }
+        // ── Resume hint, where the button row would be ──
+        Text {
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: idlePanel.hintCY - height / 2
+            text: playerRoot.resuming ? "RESUMING…"
+                  : ("❚❚  " + root.hints.select + " TO RESUME     "
+                     + root.hints.back + " TO EXIT")
+            color: "white"
+            opacity: 0.7
+            font.family: root.globalFont
+            font.pixelSize: idlePanel.fs
+            font.capitalization: Font.AllUppercase
         }
     }
 }
