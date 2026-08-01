@@ -62,6 +62,7 @@ FocusScope {
     // the same position on resume. `suspended` = mpv is gone and the held frame is
     // shown awaiting resume; `resuming` = the stream is being rebuilt until its
     // first frame is back; `pendingResume` routes the rebuilt URL back to mpv.
+    property bool   idleModeEnabled:   true   // Plex setting "idle_mode"
     readonly property int pauseGraceMs: 60000
     property bool   suspended:         false
     property bool   resuming:          false
@@ -343,21 +344,25 @@ FocusScope {
         onTriggered: plexBackend.warm_connection()
     }
 
-    // Idle escalation: a suspend is a lightweight hold for a short break. If it
-    // lasts a couple of hours the user has clearly wandered off, so escalate to a
-    // full stop — return to the info screen. The stop was already reported at
-    // suspend, so the resume point is saved; the user just plays fresh (fast, warm)
-    // from there. goBack() is plain navigation, so it doesn't disturb a minimized
-    // window. Keeps the connection-warm/held-frame from lingering all day.
+    // Long-pause escalation: whether the pause is a lightweight hold (Idle Mode on,
+    // stream suspended) or an ordinary paused-and-connected video (Idle Mode off),
+    // two hours means the user has wandered off — so return to the info screen. When
+    // suspended, mpv is already gone and the stop was reported at suspend, so just
+    // leave; otherwise quit mpv (which reports stopped and routes back to info). The
+    // resume point is saved either way. goBack() is plain navigation, so a minimized
+    // window is left undisturbed.
     Timer {
         interval: 2 * 60 * 60 * 1000   // 2 hours
         repeat: false
-        running: playerRoot.suspended
-        onTriggered: playerRoot.goBack()
+        running: mpvController.paused || playerRoot.suspended
+        onTriggered: {
+            if (playerRoot.suspended) playerRoot.goBack()
+            else                      playerRoot.stopPlayback()
+        }
     }
 
     function suspendForPause() {
-        if (suspended || mpvController.position <= 0) return
+        if (!idleModeEnabled || suspended || mpvController.position <= 0) return
         suspendedOffsetMs = mpvController.position
         _pendingShot = mpvController.grabFrame()   // capture the paused frame (async write)
         suspendKillTimer.restart()
@@ -602,8 +607,9 @@ FocusScope {
                                             paused ? "paused" : "playing",
                                             mpvController.position, mpvController.duration)
             // Arm the slot-release grace timer on pause; cancel it on resume.
-            if (paused) pauseGraceTimer.restart()
-            else        pauseGraceTimer.stop()
+            // Skipped entirely when Idle Mode is off (a paused video stays connected).
+            if (paused && playerRoot.idleModeEnabled) pauseGraceTimer.restart()
+            else                                      pauseGraceTimer.stop()
         }
 
         // The OSC's SKIP button was activated: jump past the current intro.
@@ -702,6 +708,9 @@ FocusScope {
         // once the user touches it, but accept the legacy "ON" string too.
         var autoplayRaw = appCore.get_setting(moduleRoot.moduleId, "autoplay_next_episode")
         autoplayNext  = (autoplayRaw === true || autoplayRaw === "ON")
+        // Idle Mode defaults ON — enabled unless explicitly turned off.
+        var idleRaw = appCore.get_setting(moduleRoot.moduleId, "idle_mode")
+        idleModeEnabled = (idleRaw !== false && idleRaw !== "OFF")
         introSkipSetting = appCore.get_setting(moduleRoot.moduleId, "intro_skip") || "Off"
 
         if (resumeSetting === "ask" && viewOffset > 0) {
@@ -888,6 +897,17 @@ FocusScope {
             x: idlePanel.lm
             y: idlePanel.infoY + idlePanel.infoLH - height / 2
             text: "SUBTITLE: " + idlePanel.subStr
+            color: "white"
+            font.family: root.globalFont
+            font.pixelSize: idlePanel.fs
+            font.capitalization: Font.AllUppercase
+        }
+        // ── Idle status line (below the track info) ──
+        Text {
+            visible: playerRoot.suspended
+            x: idlePanel.lm
+            y: idlePanel.infoY + idlePanel.infoLH * (idlePanel.hasSub ? 2 : 1) - height / 2
+            text: "IDLE - STREAM RELEASED"
             color: "white"
             font.family: root.globalFont
             font.pixelSize: idlePanel.fs

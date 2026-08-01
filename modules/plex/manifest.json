@@ -98,6 +98,14 @@
       "requires_auth": true
     },
     {
+      "key": "idle_mode",
+      "label": "Idle Mode",
+      "type": "toggle",
+      "default": "ON",
+      "requires_auth": true,
+      "description": "When a video is paused for a minute, release its Plex stream (freeing the slot for other devices) and hold the last frame; press play to resume where you left off. After two hours it stops and returns to the info screen. Turn off to keep a paused video connected."
+    },
+    {
       "key": "intro_skip",
       "label": "Skip Intro",
       "type": "list_single",
