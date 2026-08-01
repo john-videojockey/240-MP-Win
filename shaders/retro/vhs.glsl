@@ -12,6 +12,8 @@
 #define SMEAR  0.06    // faint tape softness
 #define GRAIN  0.05    // base tape grain (subtle; bursts kick it up)
 #define WOBBLE 0.0016  // peak horizontal instability amplitude (fraction of width)
+#define BAND_H   0.30  // traveling tracking-bar height (fraction of screen)
+#define BAND_AMT 0.05  // tracking-bar brightness lift (very subtle)
 
 // 1D value noise in [-0.5, 0.5]: smoothstep-interpolated hash for the wobble.
 float vnoise(float x) {
@@ -67,6 +69,20 @@ vec4 hook() {
     // Tape grain — genuinely per-pixel and animated, no structured moiré.
     float n = hash12(floor(p * HOOKED_size) + vec2(t, t * 1.7));
     col += (n - 0.5) * grain;
+
+    // Traveling tracking bar (a "tape crease" / slow brightness beat): a tall, soft
+    // band that scrolls slowly up the frame. Sharp-ish onset at its bottom edge, a
+    // gradual fade upward, then a quick fade-out over the top 20% — matching how the
+    // real artefact looks. Very subtle. (Flip the sign on `edge` to travel downward.)
+    float tb   = mod(float(frame), 2000.0);              // 2000-frame loop = seamless wrap
+    float edge = fract(-tb * 0.0005);                    // bottom edge, travels upward (~83s/pass)
+    float f    = fract(edge - p.y) / BAND_H;             // 0 at the sharp bottom edge .. 1 at top
+    float onset = smoothstep(0.0, 0.05, f);              // diffused-but-sharp bottom edge
+    float fade  = mix(1.0, 0.35, clamp(f / 0.8, 0.0, 1.0)); // gradual fade over the lower 80%
+    float tail  = 1.0 - smoothstep(0.8, 1.0, f);         // quick fade over the top 20%
+    float band  = onset * fade * tail;                   // 0 everywhere outside the band
+    col *= 1.0 + BAND_AMT * band;                        // subtle brightness lift
+    col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))), 0.12 * band);  // whisper of wash-out
 
     return vec4(col, 1.0);
 }
