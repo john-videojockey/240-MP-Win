@@ -12,8 +12,12 @@
 #define SMEAR  0.06    // faint tape softness
 #define GRAIN  0.05    // base tape grain (subtle; bursts kick it up)
 #define WOBBLE 0.0016  // peak horizontal instability amplitude (fraction of width)
-#define BAND_H   0.30  // traveling tracking-bar height (fraction of screen)
-#define BAND_AMT 0.05  // tracking-bar brightness lift (very subtle)
+#define BAND_H      0.30   // traveling tracking-bar height (fraction of screen)
+#define BAND_AMT    0.10   // tracking-bar brightness lift
+#define BAND_PERIOD 540.0  // frames per pass (~9s at 60fps; raise if it travels too fast)
+#define HS_H      0.04     // head-switching strip height at the very bottom (fraction)
+#define HS_TEAR   0.06     // horizontal tear amplitude in that strip
+#define HS_STATIC 0.85     // how much static overtakes the picture at the bottom edge
 
 // 1D value noise in [-0.5, 0.5]: smoothstep-interpolated hash for the wobble.
 float vnoise(float x) {
@@ -74,15 +78,28 @@ vec4 hook() {
     // band that scrolls slowly up the frame. Sharp-ish onset at its bottom edge, a
     // gradual fade upward, then a quick fade-out over the top 20% — matching how the
     // real artefact looks. Very subtle. (Flip the sign on `edge` to travel downward.)
-    float tb   = mod(float(frame), 2000.0);              // 2000-frame loop = seamless wrap
-    float edge = fract(-tb * 0.0005);                    // bottom edge, travels upward (~83s/pass)
+    float tb   = mod(float(frame), BAND_PERIOD);         // one loop per pass = seamless wrap
+    float edge = fract(-tb / BAND_PERIOD);               // bottom edge, travels upward (~9s/pass)
     float f    = fract(edge - p.y) / BAND_H;             // 0 at the sharp bottom edge .. 1 at top
     float onset = smoothstep(0.0, 0.05, f);              // diffused-but-sharp bottom edge
     float fade  = mix(1.0, 0.35, clamp(f / 0.8, 0.0, 1.0)); // gradual fade over the lower 80%
     float tail  = 1.0 - smoothstep(0.8, 1.0, f);         // quick fade over the top 20%
     float band  = onset * fade * tail;                   // 0 everywhere outside the band
-    col *= 1.0 + BAND_AMT * band;                        // subtle brightness lift
-    col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))), 0.12 * band);  // whisper of wash-out
+    col *= 1.0 + BAND_AMT * band;                        // brightness lift
+    col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))), 0.18 * band);  // wash-out
+
+    // Head-switching noise: the fixed strip at the very bottom edge where the video
+    // head leaves the tape — each scanline tears horizontally and fills with static,
+    // strongest at the very bottom. (Shares the bottom edge with the tracking bar
+    // above; if that shows at the top instead, this will too — one flip fixes both.)
+    float hsw = smoothstep(1.0 - HS_H, 1.0, p.y);        // 0 above the strip .. 1 at the bottom edge
+    if (hsw > 0.0) {
+        float lineRand = hash12(vec2(floor(p.y * HOOKED_size.y), tb)) - 0.5;
+        vec3 torn = HOOKED_tex(vec2(fract(p.x + lineRand * HS_TEAR * hsw), p.y)).rgb;
+        float st = hash12(floor(p * HOOKED_size) + vec2(tb * 3.1, tb * 1.3));
+        vec3 hsCol = mix(torn, vec3(st), clamp(hsw * HS_STATIC, 0.0, 1.0));
+        col = mix(col, hsCol, hsw);
+    }
 
     return vec4(col, 1.0);
 }
