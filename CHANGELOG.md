@@ -5,6 +5,18 @@ All notable changes to 240-MP for Windows are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-08-04
+
+### Fixed
+- **Stray keys no longer pan, zoom or distort the video during playback.** mpv's
+  built-in key and mouse bindings were left active beneath the on-screen controls,
+  so a key the controls weren't capturing — or keyboard/mouse landing on the video
+  window directly — could pan the picture (it shifted ~10–15% while the subtitles
+  stayed put), zoom, rotate, or shift gamma / subtitle position / audio delay /
+  playback speed. mpv now runs with its default bindings disabled, so only the
+  intended keys act: quit, pause, seek, the on-screen controls' own navigation, and
+  the media keys.
+
 ## [0.8.0] - 2026-08-01
 
 ### Added
