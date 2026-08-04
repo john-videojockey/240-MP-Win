@@ -25,12 +25,23 @@ MpvController::MpvController(const QString &appRoot, AppCore *appCore, QObject *
     , m_logFilePath(QDir::tempPath() + "/240mp-mpv.log")
     , m_subInfoPath(QDir::tempPath() + "/240mp-mpv-subinfo.json")
 {
+    // mpv launches with --input-default-bindings=no (see loadAndPlay), so none of
+    // mpv's ~200 built-in key/mouse bindings are active — a stray key can no longer
+    // pan/zoom/rotate the video, shift gamma, move subtitles, change speed, etc.
+    // This conf is therefore the complete allow-list of what mpv acts on directly;
+    // the OSC's navigation and the media keys come from the Lua scripts' *forced*
+    // bindings, which are independent of the default-bindings switch.
     QFile f(m_inputConfPath);
     if (f.open(QFile::WriteOnly | QFile::Text)) {
         f.write("ESC quit\n");
         f.write("BS quit\n");
-        // ENTER opens the OSC (bound in mpv-osc.lua); SPACE remains the quick
-        // pause toggle, so ENTER is deliberately NOT mapped to pause here.
+        // SPACE stays the quick pause toggle. (ENTER opens the OSC instead — bound in
+        // mpv-osc.lua — so ENTER is deliberately not mapped to pause.)
+        f.write("SPACE cycle pause\n");
+        // Arrow seek only while the OSC is hidden; when it's shown the OSC's forced
+        // arrow bindings take over (button nav / seek bar) and override these.
+        f.write("LEFT  seek -5\n");
+        f.write("RIGHT seek 5\n");
         f.close();
     }
 
@@ -341,6 +352,10 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     env.insert("APP_ROOT", m_appRoot);
     m_process->setProcessEnvironment(env);
     args << QString("--input-conf=%1").arg(m_inputConfPath)
+         // Disable mpv's built-in key/mouse bindings so only our input.conf allow-list
+         // and the scripts' forced bindings can act — no stray key can pan/zoom/rotate
+         // the video, shift gamma/subtitles, change speed, screenshot, etc.
+         << "--input-default-bindings=no"
          << "--video-sync=audio"
          << "--fullscreen";
     appendVideoArgs(args);
