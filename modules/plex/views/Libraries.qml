@@ -13,6 +13,7 @@ FocusScope {
     signal goBack()
 
     property var libraries: []
+    property bool librariesReady: false   // first (possibly cached) list has painted
     property string serverName: ""
     property string userName: ""
     // Servers the active user can switch to from the main menu. More than one
@@ -26,10 +27,27 @@ FocusScope {
         function onLibrariesLoaded(items) {
             // Pin a HOME entry on top so the dashboard stays reachable after
             // backing out of it into this list.
-            browseRoot.libraries = [{ title: "HOME", key: "home" }].concat(items)
-            var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
-            libraryList.currentIndex = Math.min(restore, browseRoot.libraries.length - 1)
-            libraryList.positionViewAtIndex(libraryList.currentIndex, ListView.Contain)
+            var next = [{ title: "HOME", key: "home" }].concat(items)
+            // load_libraries() emits twice: first the instant session cache, then
+            // the background refresh. If the refresh is identical (the usual case —
+            // this list rarely changes), leave the view untouched so the user's
+            // position and any running marquee aren't disturbed.
+            if (browseRoot.librariesReady
+                    && JSON.stringify(next) === JSON.stringify(browseRoot.libraries))
+                return
+            var prevIndex = libraryList.currentIndex
+            browseRoot.libraries = next
+            if (!browseRoot.librariesReady) {
+                // First paint — restore the saved list position.
+                var restore = (navListState.currentIndex !== undefined) ? navListState.currentIndex : 0
+                libraryList.currentIndex = Math.min(restore, browseRoot.libraries.length - 1)
+                libraryList.positionViewAtIndex(libraryList.currentIndex, ListView.Contain)
+                browseRoot.librariesReady = true
+            } else {
+                // Background refresh genuinely changed the list — keep the user
+                // roughly where they were rather than snapping back to the top.
+                libraryList.currentIndex = Math.min(prevIndex, browseRoot.libraries.length - 1)
+            }
         }
 
         function onErrorOccurred(msg) {
@@ -104,6 +122,10 @@ FocusScope {
                 browseRoot.navigateTo("Items.qml", {
                     listType: "watchlist",
                     title: "WATCHLIST",
+                    libraryName: lib.title
+                }, { currentIndex: libraryList.currentIndex })
+            } else if (lib.key === "search") {
+                browseRoot.navigateTo("Search.qml", {
                     libraryName: lib.title
                 }, { currentIndex: libraryList.currentIndex })
             } else if (lib.key === "live_tv") {

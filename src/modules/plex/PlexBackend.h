@@ -55,6 +55,10 @@ public:
     Q_INVOKABLE void load_section_hubs(const QString &sectionId);
     Q_INVOKABLE void load_items_for_hub(const QString &hubKey);
     Q_INVOKABLE void load_library_all(const QString &sectionId);
+    // Server-wide content search (/hubs/search). Results arrive via searchResultsReady.
+    Q_INVOKABLE void search(const QString &query);
+    // Merge an actor's per-library filmography keys into one item list (via itemsLoaded).
+    Q_INVOKABLE void load_actor_titles(const QStringList &keys);
     Q_INVOKABLE void load_collections(const QString &sectionId);
     Q_INVOKABLE void load_collection_items(const QString &ratingKey);
     Q_INVOKABLE void load_playlists(const QString &sectionId);
@@ -109,6 +113,11 @@ public:
     Q_INVOKABLE void mark_watched(const QString &ratingKey);
     Q_INVOKABLE void mark_unwatched(const QString &ratingKey);
     Q_INVOKABLE void remove_from_continue_watching(const QString &ratingKey);
+    // Ask the server to re-run its metadata agents for one item — the API behind
+    // the web UI's "Refresh Metadata". Used to recover a poster Plex has dropped;
+    // fire-and-forget (the art reappears on a later load, not this frame). title
+    // is carried only so the log line names which item was refreshed.
+    Q_INVOKABLE void refresh_metadata(const QString &ratingKey, const QString &title = QString());
 
     // Show theme music: play the item's theme song (a server-relative path from
     // the detail's "theme" field) as looping background audio via a headless mpv
@@ -159,6 +168,8 @@ signals:
     void watchlistStateReady(const QString &guid, bool onWatchlist);
     void hubsLoaded(const QVariant &hubs);
     void itemsLoaded(const QVariant &items);
+    // query echoed back so a live search can drop a stale (superseded) response.
+    void searchResultsReady(const QString &query, const QVariant &items);
     void collectionsLoaded(const QVariant &collections);
     void playlistsLoaded(const QVariant &playlists);
     void categoriesLoaded(const QVariant &categories);
@@ -247,6 +258,11 @@ private:
 
     // Browse implementation (separated so startup check can wrap it)
     void load_libraries_impl();
+    // Session-only (RAM, never persisted) cache of the last library list so
+    // navigating to the Plex root paints instantly; keyed by server+user so a
+    // switch never shows the wrong server's list. load_libraries() emits this
+    // immediately when the key matches, then refreshes in the background.
+    QString librariesCacheKey() const;
 
     // User activation — single path for all three switch callers
     bool isAccountOwner(const QString &userId) const;
@@ -292,6 +308,8 @@ private:
     QString m_clientId;          // cached after first load
     bool    m_refreshInFlight  = false;
     bool    m_deviceVerified   = false; // set after first successful plex.tv check per session
+    QVariantList m_librariesCache;      // last library list (in-memory, this session only)
+    QString      m_librariesCacheKey;   // server+user the cache belongs to
 
     // Live TV session state. m_liveDvrId is cached from the last load_live_channels.
     // The rest are set by tune_channel and drive the timeline keep-alive that stops

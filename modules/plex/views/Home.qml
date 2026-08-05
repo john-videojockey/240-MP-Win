@@ -37,12 +37,25 @@ FocusScope {
     property real infoBgOpacity: 0.3
     property bool showThemes: false
     property int  themeVolume: 50
+    // Opt-in recovery for Plex's dropped posters, same as the browse grid: when
+    // the cursor lands on a poster with no/broken art, ask the server to refresh
+    // that item. Deduped per session.
+    property bool autoRefreshCovers: false
+    property var  refreshedCovers: ({})
 
     function currentHub() { return hubs[rowIndex] || null }
     function itemsFor(h) { return h ? (h.items || []) : [] }
     function currentItems() { return itemsFor(currentHub()) }
     // The poster currently under the cursor, or null when a row title is focused.
     function hoveredItem() { return colIndex <= 0 ? null : (currentItems()[colIndex - 1] || null) }
+
+    // Ask the server to recover a cover-less item's art (opt-in), once per item.
+    function maybeRefreshCover(it) {
+        if (!autoRefreshCovers || !it || !it.ratingKey) return
+        if (refreshedCovers[it.ratingKey]) return
+        refreshedCovers[it.ratingKey] = true
+        plexBackend.refresh_metadata(it.ratingKey, it.title || "")
+    }
 
     // Cursor position to restore to on return.
     function navState() { return { rowIndex: rowIndex, colIndex: colIndex } }
@@ -85,7 +98,7 @@ FocusScope {
             colIndex = Math.max(0, Math.min(_restoreCol, items.length))
         else
             colIndex = textMode ? 0 : (items.length > 0 ? 1 : 0)   // text: land on the hub pane
-        if (infoBg || showThemes) hoverArtDebounce.restart()
+        if (infoBg || showThemes || autoRefreshCovers) hoverArtDebounce.restart()
     }
 
     Component.onCompleted: {
@@ -97,6 +110,8 @@ FocusScope {
         showThemes = (stv === true || stv === "ON")
         var tv = parseInt(appCore.get_setting(moduleRoot.moduleId, "theme_volume"))
         if (tv > 0) themeVolume = tv
+        var arc = appCore.get_setting(moduleRoot.moduleId, "auto_refresh_covers")
+        autoRefreshCovers = (arc === true || arc === "ON")
         plexBackend.load_home_hubs()
     }
     // Deferred stop on leave: entering an item's info screen (which starts the
@@ -122,8 +137,8 @@ FocusScope {
     }
 
     // Re-arm the hover fanart/theme whenever the cursor moves to a new poster.
-    onRowIndexChanged: if (infoBg || showThemes) hoverArtDebounce.restart()
-    onColIndexChanged: if (infoBg || showThemes) hoverArtDebounce.restart()
+    onRowIndexChanged: if (infoBg || showThemes || autoRefreshCovers) hoverArtDebounce.restart()
+    onColIndexChanged: if (infoBg || showThemes || autoRefreshCovers) hoverArtDebounce.restart()
 
     // Hover fanart: the highlighted poster's background art, debounced so
     // scrolling doesn't fire a request per step. Opaque base beneath it so it
@@ -141,6 +156,14 @@ FocusScope {
                 plexBackend.play_theme(it.theme, homeRoot.themeVolume)
             else
                 plexBackend.stop_theme()
+            // Recover a dropped cover on the hovered poster (opt-in). The current
+            // row exposes its hovered poster delegate, which knows whether its art
+            // is genuinely missing (no path or failed load) vs. still loading.
+            if (homeRoot.autoRefreshCovers && !homeRoot.textMode && it) {
+                var row = rowList.currentItem
+                var pd  = row ? row.currentPoster : null
+                if (pd && pd.coverMissing) homeRoot.maybeRefreshCover(it)
+            }
         }
     }
     Rectangle {
@@ -268,6 +291,8 @@ FocusScope {
             height: rowTitle.height + root.sh * 0.0083333 + boxart.height
             property int rowIdx: index
             property bool isCurrentRow: index === homeRoot.rowIndex
+            // The hovered poster delegate in this row (read by the hover-refresh).
+            property Item currentPoster: boxart.currentItem
 
             Text {
                 id: rowTitle
@@ -301,6 +326,9 @@ FocusScope {
                     height: boxart.height
                     width: height * (2 / 3)   // portrait poster
                     property bool sel: hubRow.isCurrentRow && homeRoot.colIndex === index + 1
+                    // Genuinely missing art (no path or failed load) — not merely
+                    // still loading; the hover-refresh reads this off the current cell.
+                    property bool coverMissing: !modelData.poster || pImg.status === Image.Error
 
                     Rectangle {
                         id: pBox
@@ -310,6 +338,7 @@ FocusScope {
                         border.width: sel ? Math.max(2, Math.floor(root.sh * 0.00625)) : 1
 
                         Image {
+                            id: pImg
                             anchors.fill: parent
                             anchors.margins: pBox.border.width
                             fillMode: Image.PreserveAspectCrop

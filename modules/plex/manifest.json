@@ -78,6 +78,14 @@
       "default": "Title"
     },
     {
+      "key": "auto_refresh_covers",
+      "label": "Auto-Refresh Missing Covers",
+      "type": "toggle",
+      "default": "OFF",
+      "requires_auth": true,
+      "description": "In the Cover browse view, when you land on an item whose poster is missing (Plex sometimes drops artwork), ask the server to refresh that item's metadata so the cover comes back. Fires once per item; the recovered art shows on a later visit. Off by default as it writes to your server."
+    },
+    {
       "key": "info_background",
       "label": "Fanart Background",
       "type": "toggle",

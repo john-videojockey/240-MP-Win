@@ -18,6 +18,7 @@ FocusScope {
     property string ratingKey: navParams.ratingKey || ""
     property string categoryKey: navParams.categoryKey || ""
     property string libraryName: navParams.libraryName || ""
+    property var actorKeys: navParams.actorKeys || []   // listType "actor_titles"
 
     property var items: []
     property bool isLoading: false
@@ -52,6 +53,12 @@ FocusScope {
     // Theme music on hover (same settings as the info screen).
     property bool showThemes: false
     property int  themeVolume: 50
+    // Opt-in recovery for Plex's randomly-dropped posters: when the Cover view's
+    // highlight lands on an item that has no artwork, ask the server to refresh
+    // that item's metadata. Deduped per session so a cover-less item is only ever
+    // asked once, no matter how often it's re-hovered.
+    property bool autoRefreshCovers: false
+    property var  refreshedCovers: ({})
 
     function itemsAreCovers(arr) {
         for (var i = 0; i < arr.length; i++) {
@@ -80,6 +87,16 @@ FocusScope {
         return items[coverMode ? coverGrid.currentIndex : itemList.currentIndex]
     }
 
+    // Ask the server to recover a cover-less item's artwork (opt-in), at most
+    // once per item per session. The caller guards on the cell's coverMissing so
+    // this only fires on genuinely absent art — never a cover still loading.
+    function maybeRefreshCover(it) {
+        if (!autoRefreshCovers || !it || !it.ratingKey) return
+        if (refreshedCovers[it.ratingKey]) return
+        refreshedCovers[it.ratingKey] = true
+        plexBackend.refresh_metadata(it.ratingKey, it.title || "")
+    }
+
     // Shared post-load bookkeeping: both views track the same current index so
     // the saved list position round-trips regardless of the browse view.
     function applyLoadedItems(loadedItems) {
@@ -95,7 +112,7 @@ FocusScope {
             coverGrid.currentIndex = idx
             coverGrid.positionViewAtIndex(idx, GridView.Contain)
         }
-        if (infoBg || showThemes) hoverArtDebounce.restart()
+        if (infoBg || showThemes || autoRefreshCovers) hoverArtDebounce.restart()
     }
 
     function sortKey(title) {
@@ -135,7 +152,8 @@ FocusScope {
 
         function onItemsLoaded(loadedItems) {
             var consuming = ["library_all", "hub_items", "collection_items",
-                             "playlist_items", "category_items", "continue_watching"]
+                             "playlist_items", "category_items", "continue_watching",
+                             "actor_titles"]
             if (consuming.indexOf(itemListRoot.listType) >= 0)
                 itemListRoot.applyLoadedItems(loadedItems)
         }
@@ -167,7 +185,7 @@ FocusScope {
             coverGrid.currentIndex = idx
             coverGrid.positionViewAtIndex(idx, GridView.Contain)
             itemList.currentIndex = idx
-            if (itemListRoot.infoBg || itemListRoot.showThemes) hoverArtDebounce.restart()
+            if (itemListRoot.infoBg || itemListRoot.showThemes || itemListRoot.autoRefreshCovers) hoverArtDebounce.restart()
         }
 
         function onHubsLoaded(loadedHubs) {
@@ -300,6 +318,8 @@ FocusScope {
         showThemes = (stv === true || stv === "ON")
         var tv = parseInt(appCore.get_setting(moduleRoot.moduleId, "theme_volume"))
         if (tv > 0) themeVolume = tv
+        var arc = appCore.get_setting(moduleRoot.moduleId, "auto_refresh_covers")
+        autoRefreshCovers = (arc === true || arc === "ON")
 
         isLoading = true
         errorMessage = ""
@@ -325,6 +345,8 @@ FocusScope {
             plexBackend.load_continue_watching()
         else if (listType === "watchlist")
             plexBackend.load_watchlist(0)
+        else if (listType === "actor_titles")
+            plexBackend.load_actor_titles(actorKeys)
     }
 
     focus: true
@@ -357,6 +379,11 @@ FocusScope {
                 plexBackend.play_theme(it.theme, itemListRoot.themeVolume)
             else
                 plexBackend.stop_theme()
+            // Recover a dropped poster on the hovered cover (opt-in). The current
+            // grid delegate reports whether its art is genuinely missing (not just
+            // mid-load), so a cover that's present is never refreshed.
+            if (itemListRoot.coverMode && coverGrid.currentItem && coverGrid.currentItem.coverMissing)
+                itemListRoot.maybeRefreshCover(it)
         }
     }
     // Restart the debounce whenever the highlight moves in either view — needed
@@ -364,13 +391,13 @@ FocusScope {
     Connections {
         target: itemList
         function onCurrentIndexChanged() {
-            if (itemListRoot.infoBg || itemListRoot.showThemes) hoverArtDebounce.restart()
+            if (itemListRoot.infoBg || itemListRoot.showThemes || itemListRoot.autoRefreshCovers) hoverArtDebounce.restart()
         }
     }
     Connections {
         target: coverGrid
         function onCurrentIndexChanged() {
-            if (itemListRoot.infoBg || itemListRoot.showThemes) hoverArtDebounce.restart()
+            if (itemListRoot.infoBg || itemListRoot.showThemes || itemListRoot.autoRefreshCovers) hoverArtDebounce.restart()
         }
     }
     // Deferred stop on leave: entering an item's info screen (which starts the
@@ -503,6 +530,13 @@ FocusScope {
         delegate: Item {
             width: coverGrid.cellWidth
             height: coverGrid.cellHeight
+
+            // True when this cell's artwork is genuinely absent — no art path, or
+            // the image failed to load — but NOT while it is still loading. The
+            // hover handler reads this off the current cell to decide whether to
+            // ask the server to refresh a dropped poster.
+            property bool coverMissing: !modelData.loadMore
+                    && (!posterBox.artPath || posterImage.status === Image.Error)
 
             // Touch: first tap highlights the poster, tapping the highlighted
             // poster activates it (same two-tap pattern as the lists).

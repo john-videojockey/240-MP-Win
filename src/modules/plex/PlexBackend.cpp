@@ -11,6 +11,9 @@
 #include <QSysInfo>
 #include <QUuid>
 #include <QSet>
+#include <QHash>
+#include <QSharedPointer>
+#include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
 #include <QDebug>
@@ -1205,7 +1208,33 @@ void PlexBackend::deleteDeviceThenAuth(const QString &token, std::function<void(
 // Browse
 // ---------------------------------------------------------------------------
 
+QString PlexBackend::librariesCacheKey() const {
+    QJsonObject auth = loadAuth();
+    return auth["active_server_machine_id"].toString() + "|"
+         + auth["active_user_id"].toString();
+}
+
 void PlexBackend::load_libraries() {
+    const QString key = librariesCacheKey();
+    // Warm the in-memory cache from the on-disk copy (persisted last session) once
+    // per session, so even the first open of the app — the most common visit —
+    // paints instantly instead of spinning through the network round-trip.
+    if (m_librariesCache.isEmpty()) {
+        QFile f(m_dataRoot + "/plex_libraries.json");
+        if (f.open(QIODevice::ReadOnly)) {
+            const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+            if (o["key"].toString() == key) {
+                m_librariesCache    = o["items"].toArray().toVariantList();
+                m_librariesCacheKey = key;
+            }
+        }
+    }
+    // Paint the last-known list instantly (no spinner) when it belongs to the
+    // current server+user; the background refresh below re-emits and the view
+    // updates only if anything actually changed.
+    if (!m_librariesCache.isEmpty() && m_librariesCacheKey == key)
+        emit librariesLoaded(m_librariesCache);
+
     checkAndRefreshOnStartup([this]() {
         load_libraries_impl();
     });
@@ -1245,8 +1274,10 @@ void PlexBackend::load_libraries_impl() {
                                  ["com.240mp.plex"].toObject()["libraries"].toObject();
 
         QVariantList items;
-        // Watchlist, pinned first — selecting it opens the resolved watchlist list.
+        // Watchlist then Search — pinned shortcuts, before the libraries.
         items.append(QVariantMap{{"key","watchlist"},{"title","WATCHLIST"},
+                                 {"sectionId",QVariant()},{"sectionType",QVariant()}});
+        items.append(QVariantMap{{"key","search"},{"title","SEARCH"},
                                  {"sectionId",QVariant()},{"sectionType",QVariant()}});
 
         for (const auto &sv : sections) {
@@ -1286,8 +1317,8 @@ void PlexBackend::load_libraries_impl() {
         }
 
         // Probe for a live-TV DVR. When present, inject a synthetic "LIVE TV" row
-        // right after the Watchlist shortcut. The emit is deferred into this
-        // callback so the row's position is stable.
+        // right after the Watchlist and Search shortcuts. The emit is deferred into
+        // this callback so the row's position is stable.
         QString uri = serverUrl(), token = serverToken();
         auto *dvrReply = plexGet(QUrl(uri + "/livetv/dvrs"), token);
         connect(dvrReply, &QNetworkReply::finished, this,
@@ -1301,10 +1332,21 @@ void PlexBackend::load_libraries_impl() {
                     if (!dv.toObject()["lineup"].toString().isEmpty()) { hasLive = true; break; }
             }
             if (hasLive) {
-                items.insert(1, QVariantMap{
+                items.insert(2, QVariantMap{   // after the Watchlist + Search shortcuts
                     {"key","live_tv"},{"title","LIVE TV"},
                     {"sectionId",QVariant()},{"sectionType",QVariant()}});
             }
+            // Refresh the session cache with the freshly-loaded list so the next
+            // visit paints instantly, and persist it (library names/ids/types
+            // only — no tokens, no server addresses) so the next app open does too.
+            m_librariesCache    = items;
+            m_librariesCacheKey = librariesCacheKey();
+            QJsonObject cache;
+            cache["key"]   = m_librariesCacheKey;
+            cache["items"] = QJsonArray::fromVariantList(items);
+            QFile cf(m_dataRoot + "/plex_libraries.json");
+            if (cf.open(QIODevice::WriteOnly | QIODevice::Truncate))
+                cf.write(QJsonDocument(cache).toJson(QJsonDocument::Compact));
             emit librariesLoaded(items);
         });
     });
@@ -1539,23 +1581,60 @@ void PlexBackend::load_home_hubs() {
             done();
         });
 
-        // Recently added per library.
+        // Recently added per library — Plex's recentlyAdded feed (newest first).
+        // For TV this returns individual episodes; we collapse them to one card
+        // per show (show poster, opens the show) so a show that gets new episodes
+        // surfaces here even though its own addedAt is old. The old
+        // /all?sort=addedAt:desc sorted shows by their original add date, so new
+        // episodes on existing shows never showed up. Movies come back as movies
+        // and pass through unchanged.
         for (int i = 0; i < libs.size(); ++i) {
             const int slot = i + 1;
-            QUrl url(uri + "/library/sections/" + libs[i].key + "/all");
+            // Shows collapse many episodes into a handful of show cards, so a small
+            // page can under-fill a row (e.g. 40 recent episodes that are all the
+            // same 2 shows). Fetch the full recentlyAdded window — the server caps
+            // it at 100 — so every show with a recent episode is represented.
+            // Movies map 1:1, so a small page over the 20-card display cap suffices.
+            const int fetchSize = (libs[i].type == "show") ? 100 : 24;
+            QUrl url(uri + "/library/sections/" + libs[i].key + "/recentlyAdded");
             QUrlQuery q;
-            q.addQueryItem("sort", "addedAt:desc");
             q.addQueryItem("X-Plex-Container-Start", "0");
-            q.addQueryItem("X-Plex-Container-Size", "20");
+            q.addQueryItem("X-Plex-Container-Size", QString::number(fetchSize));
             url.setQuery(q);
             auto *r = plexGet(url, token);
             connect(r, &QNetworkReply::finished, this, [this, r, fill, done, slot]() {
                 r->deleteLater();
                 QVariantList items;
-                if (r->error() == QNetworkReply::NoError)
-                    for (const auto &mv : QJsonDocument::fromJson(r->readAll())
-                             .object()["MediaContainer"].toObject()["Metadata"].toArray())
-                        items.append(formatItem(mv.toObject()));
+                QSet<QString> seen;   // final card keys, so a show appears once
+                if (r->error() == QNetworkReply::NoError) {
+                    const QJsonArray meta = QJsonDocument::fromJson(r->readAll())
+                             .object()["MediaContainer"].toObject()["Metadata"].toArray();
+                    for (const auto &mv : meta) {
+                        QVariantMap it = formatItem(mv.toObject());
+                        const QString type = it["type"].toString();
+                        // Collapse an episode/season onto its parent show so the
+                        // card shows the show poster, opens the show, and one show
+                        // appears once no matter how many new episodes it got.
+                        if (type == "episode" || type == "season") {
+                            const QString showKey = (type == "episode")
+                                    ? it["grandparentRatingKey"].toString()
+                                    : it["parentRatingKey"].toString();
+                            const QString showTitle = (type == "episode")
+                                    ? it["grandparentTitle"].toString()
+                                    : it["parentTitle"].toString();
+                            if (!showKey.isEmpty()) {
+                                it["ratingKey"] = showKey;                 // card targets the show
+                                it["title"]     = showTitle.toUpper();
+                                it["type"]      = "show";
+                            }
+                        }
+                        const QString key = it["ratingKey"].toString();
+                        if (key.isEmpty() || seen.contains(key)) continue; // dedup movies/shows too
+                        seen.insert(key);
+                        items.append(it);
+                        if (items.size() >= 20) break;
+                    }
+                }
                 fill(slot, items);
                 done();
             });
@@ -1611,6 +1690,121 @@ void PlexBackend::load_items_for_hub(const QString &hubKey) {
         for (const auto &mv : metadata) items.append(formatItem(mv.toObject()));
         flattenSeasons(items, [this](const QVariantList &flat) { emit itemsLoaded(flat); });
     });
+}
+
+// Server-wide content search via /hubs/search. Flattens the type-grouped hubs into a
+// single item list (movies, shows, episodes formatted like every other browse list, plus
+// cast/actor entries), so the results view and detail navigation work unchanged.
+void PlexBackend::search(const QString &query) {
+    const QString q = query.trimmed();
+    if (q.isEmpty()) { emit searchResultsReady(q, QVariantList{}); return; }
+    QString uri = serverUrl(), token = serverToken();
+    QUrl url(uri + "/hubs/search");
+    QUrlQuery qq;
+    qq.addQueryItem("query", q);
+    qq.addQueryItem("limit", "30");
+    url.setQuery(qq);
+    auto *reply = plexGet(url, token);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, q]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 498) {
+                handle498([this, q]{ search(q); }); return;
+            }
+            emit errorOccurred("SEARCH FAILED: " + reply->errorString()); return;
+        }
+        const QJsonArray hubs = QJsonDocument::fromJson(reply->readAll())
+                                .object()["MediaContainer"].toObject()["Hub"].toArray();
+        // ALL is ordered movies/shows, then episodes, then cast — so episodes sit
+        // second-last and cast last. The tabs filter by type, so order is irrelevant
+        // to them.
+        QVariantList media, episodes, cast;
+        QHash<QString, int> actorIdx;   // global tagKey -> index in `cast`
+        for (const auto &hv : hubs) {
+            const QJsonObject hub = hv.toObject();
+            const QString type = hub["type"].toString();
+            const bool isCast = (type == "actor");
+            // Browsable content types plus cast; skip directors/genres/tags/collections/…
+            if (!isCast && type != "movie" && type != "show" && type != "episode") continue;
+            // Media hubs list items under Metadata[]; cast (actor) hubs list them under
+            // Directory[]; some servers wrap them as SearchResult[].Metadata.
+            QJsonArray md = hub["Metadata"].toArray();
+            if (md.isEmpty()) md = hub["Directory"].toArray();
+            if (md.isEmpty()) {
+                const QJsonArray srs = hub["SearchResult"].toArray();
+                for (const auto &sv : srs) {
+                    const QJsonValue mv = sv.toObject()["Metadata"];
+                    if (mv.isObject()) md.append(mv);
+                }
+            }
+            for (const auto &mv : md) {
+                const QJsonObject m = mv.toObject();
+                if (isCast) {
+                    // One entry per actor, deduped by their global tagKey — Plex returns
+                    // an actor once per library they have credits in. Gather every
+                    // per-library filter key so their filmography can span all libraries.
+                    QString name = m["tag"].toString();
+                    if (name.isEmpty()) name = m["title"].toString();
+                    QString tk = m["tagKey"].toString();
+                    if (tk.isEmpty()) tk = name;
+                    const QString key = m["key"].toString();
+                    if (actorIdx.contains(tk)) {
+                        QVariantMap a = cast[actorIdx[tk]].toMap();
+                        QStringList ks = a["keys"].toStringList();
+                        if (!key.isEmpty() && !ks.contains(key)) ks << key;
+                        a["keys"] = ks;
+                        cast[actorIdx[tk]] = a;
+                    } else {
+                        actorIdx.insert(tk, cast.size());
+                        cast.append(QVariantMap{
+                            {"type",  QStringLiteral("actor")},
+                            {"title", name},
+                            {"thumb", m["thumb"].toString()},
+                            {"keys",  key.isEmpty() ? QStringList{} : QStringList{key}},
+                        });
+                    }
+                } else {
+                    QVariantMap it = formatItem(m);
+                    if (it.value("type").toString() == QStringLiteral("episode")) episodes.append(it);
+                    else media.append(it);
+                }
+            }
+        }
+        emit searchResultsReady(q, media + episodes + cast);
+    });
+}
+
+// Merge an actor's filmography across libraries: each key is a per-library
+// /library/sections/N/all?actor=<id>. Fetch them all, dedup the same title appearing in
+// multiple libraries (by guid, else ratingKey), and deliver via itemsLoaded.
+void PlexBackend::load_actor_titles(const QStringList &keys) {
+    if (keys.isEmpty()) { emit itemsLoaded(QVariantList{}); return; }
+    const QString uri = serverUrl(), token = serverToken();
+    auto acc       = QSharedPointer<QVariantList>::create();
+    auto seen      = QSharedPointer<QSet<QString>>::create();
+    auto remaining = QSharedPointer<int>::create(keys.size());
+    for (const QString &key : keys) {
+        QUrl url = key.startsWith(QLatin1String("http")) ? QUrl(key) : QUrl(uri + key);
+        auto *reply = plexGet(url, token);
+        connect(reply, &QNetworkReply::finished, this, [this, reply, acc, seen, remaining]() {
+            reply->deleteLater();
+            if (reply->error() == QNetworkReply::NoError) {
+                const QJsonArray md = QJsonDocument::fromJson(reply->readAll())
+                                      .object()["MediaContainer"].toObject()["Metadata"].toArray();
+                for (const auto &mv : md) {
+                    QVariantMap it = formatItem(mv.toObject());
+                    QString id = it.value("guid").toString();
+                    if (id.isEmpty()) id = it.value("ratingKey").toString();
+                    if (!id.isEmpty()) {
+                        if (seen->contains(id)) continue;
+                        seen->insert(id);
+                    }
+                    acc->append(it);
+                }
+            }
+            if (--(*remaining) == 0) emit itemsLoaded(*acc);
+        });
+    }
 }
 
 void PlexBackend::load_library_all(const QString &sectionId) {
@@ -2709,6 +2903,22 @@ void PlexBackend::remove_from_continue_watching(const QString &ratingKey) {
     QUrlQuery q;
     q.addQueryItem("ratingKey", ratingKey);
     url.setQuery(q);
+    auto *reply = plexPut(url, token);
+    connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
+}
+
+// Re-run the server's metadata agents for one item (PUT .../refresh) — the
+// endpoint behind the web UI's "Refresh Metadata". We use it to recover a
+// poster Plex has randomly dropped. Fire-and-forget: the refresh runs
+// server-side and the art reappears on a later load, not on the current frame.
+// The qInfo line (file log, unlike qDebug) names each item so a browse session
+// can be audited to confirm only cover-less items were ever refreshed.
+void PlexBackend::refresh_metadata(const QString &ratingKey, const QString &title) {
+    if (ratingKey.isEmpty()) return;
+    QString uri = serverUrl(), token = serverToken();
+    if (uri.isEmpty() || token.isEmpty()) return;
+    qInfo() << "[Plex] Refresh Metadata requested for" << title << "(ratingKey" << ratingKey << ")";
+    QUrl url(uri + "/library/metadata/" + ratingKey + "/refresh");
     auto *reply = plexPut(url, token);
     connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
 }
