@@ -8,8 +8,16 @@
 // calm-biased BURST level gates the amplitude — mostly at rest, swelling into
 // occasional dropouts that also nudge the chroma bleed and grain up, so a wobble
 // reads as a momentary loss of signal.
-#define BLEED  0.0008  // base chroma horizontal offset (fraction of width — a fringe)
-#define SMEAR  0.06    // faint tape softness
+#define BLEED  0.0004  // R/B chromatic-aberration fringe (halved — kept light)
+#define SMEAR  0.06    // faint tape softness (luma)
+#define CHROMA_SHIFT 0.0010  // colour carried slightly off from luma (trails right)
+#define CHROMA_SMEAR 0.0014  // base chroma horizontal softening (low chroma bandwidth)
+#define CHROMA_AMT   0.9     // how much shifted/smeared chroma to use
+#define CHROMA_JUMP  0.0008  // per-field jump added to the chroma shift
+#define CHROMA_TAPS  8       // left-scan steps that accumulate a warm colour's "charge"
+#define CHROMA_STEP  0.0016  // distance per scan step (TAPS*STEP ~= max streak reach)
+#define CHROMA_BAND  2.0     // longer/stronger warm streak across the tracking band
+#define CHROMA_SPILL 2.0     // how strongly an accumulated warm colour spills over darks
 #define GRAIN  0.05    // base tape grain (subtle; bursts kick it up)
 #define WOBBLE 0.0016  // peak horizontal instability amplitude (fraction of width)
 #define BAND_H      0.30   // traveling tracking-bar height (fraction of screen)
@@ -61,7 +69,19 @@ vec4 hook() {
     float bleed = BLEED * (1.0 + 1.5 * burst);
     float grain = GRAIN * (1.0 + 1.8 * burst);
 
-    // Chroma bleed: pull red left and blue right of the luma.
+    // Traveling tracking-bar factor (a "tape crease" / slow brightness beat): a tall,
+    // soft band scrolling slowly up the frame — sharp-ish onset at its bottom edge, a
+    // gradual fade upward, a quick fade over the top 20%. Computed here so it can also
+    // drive extra chroma degradation across the band; the brightness/wash are applied
+    // after grain, below. (Flip the sign on `edge` to travel downward.)
+    float tb   = mod(float(frame), BAND_PERIOD);         // one loop per pass = seamless wrap
+    float edge = fract(-tb / BAND_PERIOD);               // bottom edge, travels upward (~9s/pass)
+    float bf   = fract(edge - p.y) / BAND_H;             // 0 at the sharp bottom edge .. 1 at top
+    float band = smoothstep(0.0, 0.15, bf)               // soft, diffused bottom edge
+               * mix(1.0, 0.35, clamp(bf / 0.8, 0.0, 1.0))  // gradual fade over the lower 80%
+               * (1.0 - smoothstep(0.8, 1.0, bf));       // quick fade over the top 20%
+
+    // Chroma bleed: pull red left and blue right of the luma (light R/B aberration).
     vec3 col;
     col.r = HOOKED_tex(vec2(p.x - bleed, p.y)).r;
     col.g = HOOKED_tex(p).g;
@@ -72,21 +92,59 @@ vec4 hook() {
                 + HOOKED_tex(vec2(p.x + HOOKED_pt.x, p.y)).rgb) * 0.5;
     col = mix(col, smear, SMEAR);
 
+    // Chroma smear + shift. Base: sharp luma + a softened, shifted, per-field-jumped
+    // chroma (the general tape colour softness). On warm/saturated colour it does much
+    // more: VHS chroma overloads on a sustained saturated signal, so the smear length
+    // scales with how much warm colour runs to the LEFT — a full orange sky streaks
+    // dozens of pixels over the black silhouettes in front of it, while a small intense
+    // spot spills only a little. Weighted on the source colour (not this pixel) so it
+    // shows over blacks, blotchy rather than an even shade, and worse on the band.
+    float cjump  = (hash12(vec2(t, 7.0)) - 0.5) * 2.0 * CHROMA_JUMP;   // per-field offset jump
+    float cx     = p.x - CHROMA_SHIFT - cjump;
+    float ylum   = dot(col, vec3(0.299, 0.587, 0.114));
+
+    // Base general chroma smear/shift (luma kept sharp).
+    vec3  csrc   = (HOOKED_tex(vec2(cx - CHROMA_SMEAR, p.y)).rgb
+                 +  HOOKED_tex(vec2(cx,                p.y)).rgb
+                 +  HOOKED_tex(vec2(cx + CHROMA_SMEAR, p.y)).rgb) / 3.0;
+    vec3  target = vec3(ylum) + (csrc - vec3(dot(csrc, vec3(0.299, 0.587, 0.114))));
+
+    // March left, accumulating warm colour and a blotchy "charge". A long run of
+    // saturation builds a large charge that streaks far; an isolated spot barely charges.
+    float reach   = CHROMA_STEP * (1.0 + CHROMA_BAND * band);   // longer smear across the band
+    vec3  warmCol = vec3(0.0);
+    float wsum    = 0.0;
+    float charge  = 0.0;
+    for (int i = 1; i <= CHROMA_TAPS; i++) {
+        float d = float(i) * reach;
+        vec3  s = HOOKED_tex(vec2(cx - d, p.y)).rgb;
+        // Weight saturated reds/oranges only: R - max(G,B) drops yellows (high G) and
+        // magentas (high B), and the threshold drops skin / desaturated warm tones — so
+        // those don't smear, only deep reds and oranges do.
+        float w = smoothstep(0.2, 0.6, s.r - max(s.g, s.b));
+        // Smooth (value-noise) streak modulation, offset per y-band and drifting slowly,
+        // so the spill breaks into soft diffused streaks rather than hard blocky blotches.
+        float streak = 0.4 + 0.6 * (vnoise((p.x - d) * 30.0 + floor(p.y * 24.0) * 7.0 + t * 0.4) + 0.5);
+        warmCol += s * w;
+        wsum    += w;
+        charge  += w * streak;
+    }
+    warmCol = wsum > 0.0 ? warmCol / wsum : target;
+    charge  = clamp(charge / (float(CHROMA_TAPS) * 0.6), 0.0, 1.0);
+
+    // The accumulated warm colour spills its own colour onto darker pixels, so it shows
+    // over the blacks; strength scales with the charge (region size) and the brightness gap.
+    float srcY  = dot(warmCol, vec3(0.299, 0.587, 0.114));
+    float spill = clamp(charge * CHROMA_SPILL * clamp(srcY - ylum + 0.05, 0.0, 1.0), 0.0, 1.0);
+    target = mix(target, warmCol, spill);
+
+    col = mix(col, target, CHROMA_AMT);
+
     // Tape grain — genuinely per-pixel and animated, no structured moiré.
     float n = hash12(floor(p * HOOKED_size) + vec2(t, t * 1.7));
     col += (n - 0.5) * grain;
 
-    // Traveling tracking bar (a "tape crease" / slow brightness beat): a tall, soft
-    // band that scrolls slowly up the frame. Sharp-ish onset at its bottom edge, a
-    // gradual fade upward, then a quick fade-out over the top 20% — matching how the
-    // real artefact looks. Very subtle. (Flip the sign on `edge` to travel downward.)
-    float tb   = mod(float(frame), BAND_PERIOD);         // one loop per pass = seamless wrap
-    float edge = fract(-tb / BAND_PERIOD);               // bottom edge, travels upward (~9s/pass)
-    float f    = fract(edge - p.y) / BAND_H;             // 0 at the sharp bottom edge .. 1 at top
-    float onset = smoothstep(0.0, 0.15, f);              // soft, diffused bottom edge
-    float fade  = mix(1.0, 0.35, clamp(f / 0.8, 0.0, 1.0)); // gradual fade over the lower 80%
-    float tail  = 1.0 - smoothstep(0.8, 1.0, f);         // quick fade over the top 20%
-    float band  = onset * fade * tail;                   // 0 everywhere outside the band
+    // Tracking bar applied: a subtle brightness lift plus a wash-out over the band.
     col *= 1.0 + BAND_AMT * band;                        // brightness lift
     col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))), 0.14 * band);  // wash-out
 

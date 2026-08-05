@@ -10,7 +10,7 @@
 #define SCAN_DEPTH 0.30   // lighter scanline (was 0.40) — lean on the other effects
 #define BLEED 0.30        // horizontal softening/blend
 #define GLOW 0.34         // strong bloom
-#define VIGNETTE 0.48     // deep tube vignette
+#define VIGNETTE 0.60     // deep tube vignette
 #define GRAIN 0.035       // subtle phosphor grain
 #define CA 0.004          // radial chromatic aberration (R/B split, grows to the edges)
 #define BRIGHTNESS 0.92   // overall level trimmed a notch
