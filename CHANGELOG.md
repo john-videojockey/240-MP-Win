@@ -5,6 +5,40 @@ All notable changes to 240-MP for Windows are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-08-05
+
+### Added
+- **Plex Search.** A new **SEARCH** entry in the Plex root (below Watchlist) opens a
+  live two-pane search: an on-screen keyboard on the left and results on the right
+  that update as you type, each row led by its cover. Tabs filter by
+  **All / Movies / Shows / Episodes / Cast**. Searching a **cast** member lists that
+  actor's titles gathered across every library they appear in.
+- **Auto-Refresh Missing Covers (Plex, opt-in).** Plex occasionally drops an item's
+  poster. With this setting on, landing on a cover-less item — in the Cover browse
+  grid or on the Home dashboard — asks the server to refresh that item's metadata so
+  the artwork returns on a later load. Off by default, as it writes to your server.
+
+### Changed
+- **The Plex root opens instantly.** The library list is cached (in memory and on
+  disk) and shown immediately, then refreshed in the background, so returning to — or
+  reopening — the Plex home no longer waits on the network. The cache holds only
+  library names and ids, never tokens.
+- **Setting descriptions read better.** The help text under a setting now fits two
+  lines without scrolling; longer descriptions scroll, and that scroll — along with
+  the Cast card's name/character scroll — runs at half the previous speed.
+- **VHS retro filter — smoother chroma streaks.** The warm-colour smear now breaks
+  into soft, natural bands (2-D value noise) instead of hard blocky steps over solid
+  colours, and the overall chroma amount is eased back slightly.
+
+### Fixed
+- **Plex Home "Recently Added" surfaces new episodes again.** It had been sorting
+  shows by their original add date, so a show that only got new *episodes* never
+  resurfaced; it now uses the server's recently-added feed, collapsed to one card per
+  show (show poster, opens the show).
+- **Local Files: finishing an episode queues up the next one.** When an episode ends,
+  the following episode is now placed in Continue Watching, matching how the info
+  screen already advanced to it.
+
 ## [0.8.2] - 2026-08-05
 
 ### Security
