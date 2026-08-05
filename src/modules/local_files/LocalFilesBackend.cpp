@@ -169,6 +169,7 @@ void LocalFilesBackend::set_watched(const QString &filePath, bool watched) {
     if (watched) {
         entry.remove("pos");
         entry.remove("plPos");
+        entry.remove("nextUp");   // finished — no longer queued up next
         entry["watched"] = true;
         entry["ts"] = QDateTime::currentMSecsSinceEpoch();
     } else {
@@ -195,11 +196,28 @@ void LocalFilesBackend::set_tracked(const QString &filePath, bool tracked) {
     saveHistory(history);
 }
 
+// Queue the next episode "up next" in Continue Watching after the previous one finished.
+// The entry has no resume position (it resumes from the start) but is flagged so the show
+// stays in the row. Skipped if the file already has progress or is watched, so it never
+// overrides a real resume point or resurrects a finished episode.
+void LocalFilesBackend::set_next_up(const QString &filePath) {
+    QVariantMap history = loadHistory();
+    QVariantMap entry = history.value(normKey(filePath)).toMap();
+    if (entry.value("pos").toInt() > 0 || entry.value("watched").toBool())
+        return;
+    entry["nextUp"]  = true;
+    entry["tracked"] = true;
+    entry["ts"]      = QDateTime::currentMSecsSinceEpoch();
+    history[normKey(filePath)] = entry;
+    saveHistory(history);
+}
+
 bool LocalFilesBackend::has_continue_watching() {
     const QVariantMap history = loadHistory();
     for (auto it = history.constBegin(); it != history.constEnd(); ++it) {
         const QVariantMap e = it.value().toMap();
-        if (e.value("pos").toInt() <= 0) continue;
+        if (e.value("watched").toBool()) continue;
+        if (e.value("pos").toInt() <= 0 && !e.value("nextUp").toBool()) continue;
         if (e.contains("tracked") && !e.value("tracked").toBool()) continue;
         if (isImage(it.key()) || isPlaylist(it.key())) continue;
         if (QFileInfo::exists(it.key())) return true;
@@ -217,7 +235,8 @@ QVariantList LocalFilesBackend::get_continue_watching() {
     for (auto it = history.constBegin(); it != history.constEnd(); ++it) {
         const QVariantMap e = it.value().toMap();
         const int pos = e.value("pos").toInt();
-        if (pos <= 0) continue;                       // nothing to resume
+        if (e.value("watched").toBool()) continue;    // finished — not in CW
+        if (pos <= 0 && !e.value("nextUp").toBool()) continue;  // nothing to resume, not queued next
         if (e.contains("tracked") && !e.value("tracked").toBool()) continue;  // removed from CW
         if (isImage(it.key()) || isPlaylist(it.key())) continue;
         if (!QFileInfo::exists(it.key())) continue;   // moved/deleted

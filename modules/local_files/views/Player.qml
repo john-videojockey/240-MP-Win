@@ -205,6 +205,9 @@ FocusScope {
                 && dur > 0 && pos >= dur * 0.95
                 && siblingIndex >= 0 && (siblingIndex + 1) < siblings.length) {
                 var nx = siblings[siblingIndex + 1]
+                // Keep the show in Continue Watching, now pointing at the next episode
+                // (resumable from the start), so finishing one queues up the next.
+                localFilesBackend.set_next_up(nx.path)
                 updateBackItem({ items: [{ path: nx.path, name: nx.name, isFolder: false }], index: 0 })
             }
             goBack()

@@ -41,6 +41,10 @@ public:
     // Detail-view Tracked button: remove from / restore to Continue Watching
     // without changing the resume position.
     Q_INVOKABLE void        set_tracked(const QString &filePath, bool tracked);
+    // Queue the next episode "up next" in Continue Watching after the previous one
+    // finishes: an entry with no resume position but flagged so the show stays in the
+    // row, resumable from the start. No-op if the file is already watched or in progress.
+    Q_INVOKABLE void        set_next_up(const QString &filePath);
     // In-progress items (partially watched, not near-complete), newest first,
     // enriched with artwork/nfo for the Continue Watching grid.
     Q_INVOKABLE QVariantList get_continue_watching();
