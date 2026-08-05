@@ -12,7 +12,7 @@
 #define SMEAR  0.06    // faint tape softness (luma)
 #define CHROMA_SHIFT 0.0010  // colour carried slightly off from luma (trails right)
 #define CHROMA_SMEAR 0.0014  // base chroma horizontal softening (low chroma bandwidth)
-#define CHROMA_AMT   0.9     // how much shifted/smeared chroma to use
+#define CHROMA_AMT   0.7     // how much shifted/smeared chroma to use
 #define CHROMA_JUMP  0.0008  // per-field jump added to the chroma shift
 #define CHROMA_TAPS  8       // left-scan steps that accumulate a warm colour's "charge"
 #define CHROMA_STEP  0.0016  // distance per scan step (TAPS*STEP ~= max streak reach)
@@ -46,6 +46,19 @@ float hash12(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
+}
+
+// Smooth 2D value noise (bilinear-interpolated hash12) in [0,1] — for soft, natural
+// streaks with no hard cell edges.
+float vnoise2(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash12(i);
+    float b = hash12(i + vec2(1.0, 0.0));
+    float c = hash12(i + vec2(0.0, 1.0));
+    float d = hash12(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
 vec4 hook() {
@@ -122,9 +135,9 @@ vec4 hook() {
         // magentas (high B), and the threshold drops skin / desaturated warm tones — so
         // those don't smear, only deep reds and oranges do.
         float w = smoothstep(0.2, 0.6, s.r - max(s.g, s.b));
-        // Smooth (value-noise) streak modulation, offset per y-band and drifting slowly,
-        // so the spill breaks into soft diffused streaks rather than hard blocky blotches.
-        float streak = 0.4 + 0.6 * (vnoise((p.x - d) * 30.0 + floor(p.y * 24.0) * 7.0 + t * 0.4) + 0.5);
+        // Smooth 2D-noise streak modulation (soft horizontal-ish bands drifting slowly),
+        // so the spill breaks into natural diffused streaks — no hard blocks or bands.
+        float streak = 0.4 + 0.6 * vnoise2(vec2((p.x - d) * 8.0 + t * 0.4, p.y * 12.0));
         warmCol += s * w;
         wsum    += w;
         charge  += w * streak;
