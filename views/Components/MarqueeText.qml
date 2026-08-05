@@ -33,11 +33,11 @@ Item {
             PauseAnimation { duration: 700 }
             NumberAnimation {
                 to: Math.min(0, control.width - label.implicitWidth)
-                duration: Math.max(600, (label.implicitWidth - control.width) * 12)
+                duration: Math.max(1200, (label.implicitWidth - control.width) * 24)
                 easing.type: Easing.InOutQuad
             }
             PauseAnimation { duration: 900 }
-            NumberAnimation { to: 0; duration: 450; easing.type: Easing.InOutQuad }
+            NumberAnimation { to: 0; duration: 900; easing.type: Easing.InOutQuad }
         }
     }
 

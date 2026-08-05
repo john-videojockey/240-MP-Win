@@ -383,22 +383,56 @@ FocusScope {
         color: Qt.rgba(baseColor.r, baseColor.g, baseColor.b, 0.2)
         anchors.bottom: parent.bottom
         anchors.left: parent.left
-        anchors.bottomMargin: root.sh * 0.1583333 //76
+        // Sized to hold two lines without scrolling (it fills most of the gap
+        // between the list and the footer); only 3+ line descriptions scroll.
+        anchors.bottomMargin: root.sh * 0.149 //~72
         anchors.leftMargin: root.sw * 0.125 //80
         width: root.sw * 0.75 //480
-        height: root.sh * 0.0583333 //28
+        height: root.sh * 0.073 //~35
         clip: true
         Text {
             id: rowHelp
             text: (rowHelpBackground.currentRow && rowHelpBackground.currentRow.description) || ""
             color: root.primaryColor
             font.family: root.globalFont
-            font.pixelSize: root.sh * 0.0291667 //14
+            font.pixelSize: root.sh * 0.025 //12 — small enough that two lines clear the box
             wrapMode: Text.WordWrap
-            anchors.fill: parent
-            anchors.margins: root.sw * 0.0125 //6
             horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
+            x: root.sw * 0.0125 //6
+            width: parent.width - root.sw * 0.025 //12
+            // Vertical position is driven two ways: the Binding centres a
+            // description that fits; when one is too tall for the box the marquee
+            // below takes over and scrolls it. topY is the resting offset and the
+            // scroll's start point.
+            property real topY: root.sh * 0.003125 //~1.5
+            property bool fits: implicitHeight <= parent.height - 2 * topY
+            // A change in height means a different row was focused — start at the top.
+            onImplicitHeightChanged: if (!fits) y = topY
+        }
+        // Centre a short description; goes inactive (letting the marquee own y)
+        // the moment the text is too tall and must scroll instead.
+        Binding {
+            target: rowHelp
+            property: "y"
+            value: (rowHelpBackground.height - rowHelp.implicitHeight) / 2
+            when: rowHelp.fits
+            restoreMode: Binding.RestoreNone
+        }
+        // Description too tall for the box: auto-scroll it vertically (pause at the
+        // top, glide down to reveal the rest, pause, snap back), the vertical twin
+        // of the title marquees elsewhere. Runs only while the text overflows.
+        SequentialAnimation {
+            running: rowHelpBackground.visible && !rowHelp.fits
+            loops: Animation.Infinite
+            PauseAnimation { duration: 1800 }
+            NumberAnimation {
+                target: rowHelp; property: "y"
+                from: rowHelp.topY
+                to: rowHelpBackground.height - rowHelp.topY - rowHelp.implicitHeight
+                duration: Math.max(1, rowHelp.implicitHeight - (rowHelpBackground.height - 2 * rowHelp.topY)) * 32
+            }
+            PauseAnimation { duration: 2200 }
+            PropertyAction { target: rowHelp; property: "y"; value: rowHelp.topY }
         }
     }
 
