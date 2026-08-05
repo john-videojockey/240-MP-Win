@@ -166,6 +166,11 @@ private:
     QString       m_logFilePath;
     QString       m_subInfoPath;       // JSON map: external sub URL -> friendly name (for the OSC)
     QString       m_lastEndFileReason;  // mpv end-file "reason" for the current session
+    // Auth token is written to a private mpv config file (passed via --include) instead
+    // of a command-line arg, so it isn't visible in the process args / Task Manager, and
+    // mpv doesn't log it in its command line. Rewritten per play, removed when playback
+    // ends. Lives in the per-user %TEMP%.
+    QString       m_headerConfPath;
     int           m_position     = 0;
     int           m_duration     = 0;
     int           m_playlistPos  = -1;

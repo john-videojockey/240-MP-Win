@@ -7,6 +7,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QMutex>
+#include <QRegularExpression>
 #include <QStandardPaths>
 
 #include <QtConcurrent>
@@ -36,6 +37,22 @@ bool    g_haveConsole = false;
 
 constexpr qint64 kLogRotateBytes = 1 * 1024 * 1024;
 
+// Scrub auth tokens before anything is written to the log. They otherwise leak in via
+// image/playback URLs (query params) and request headers — Qt QML Image errors log the
+// failing URL, and mpv's mirrored stdout/stderr can log URLs/headers. The value is
+// dropped; the key is kept for context. Covers Plex (X-Plex-Token) and Jellyfin/Emby
+// (api_key, X-Emby-Token/X-MediaBrowser-Token, and the quoted MediaBrowser Token="…").
+QString redactSecrets(QString s) {
+    static const QRegularExpression kv(
+        QStringLiteral("((?:X-Plex-Token|X-Emby-Token|X-MediaBrowser-Token|api_key)\\s*[=:]\\s*)[^\\s&\"';]+"),
+        QRegularExpression::CaseInsensitiveOption);
+    s.replace(kv, QStringLiteral("\\1<redacted>"));
+    static const QRegularExpression quoted(
+        QStringLiteral("(Token=\")[^\"]*"), QRegularExpression::CaseInsensitiveOption);
+    s.replace(quoted, QStringLiteral("\\1<redacted>"));
+    return s;
+}
+
 void messageHandler(QtMsgType type, const QMessageLogContext &, const QString &msg) {
     const char *level =
           type == QtDebugMsg    ? "D"
@@ -44,7 +61,7 @@ void messageHandler(QtMsgType type, const QMessageLogContext &, const QString &m
         : type == QtCriticalMsg ? "C" : "F";
     const QString line = QStringLiteral("%1 [%2] %3\n")
         .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz")),
-             QLatin1String(level), msg);
+             QLatin1String(level), redactSecrets(msg));
     const QByteArray utf8 = line.toUtf8();
 
     QMutexLocker lock(&g_logMutex);

@@ -24,6 +24,7 @@ MpvController::MpvController(const QString &appRoot, AppCore *appCore, QObject *
     , m_inputConfPath(QDir::tempPath() + "/240mp-input.conf")
     , m_logFilePath(QDir::tempPath() + "/240mp-mpv.log")
     , m_subInfoPath(QDir::tempPath() + "/240mp-mpv-subinfo.json")
+    , m_headerConfPath(QDir::tempPath() + "/240mp-headers.conf")
 {
     // mpv launches with --input-default-bindings=no (see loadAndPlay), so none of
     // mpv's ~200 built-in key/mouse bindings are active — a stray key can no longer
@@ -163,10 +164,15 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     const bool hasOscScript = (oscMode == "ambient") ? m_hasAmbientOscScript : m_hasMpvOscScript;
     const QString oscScript = m_appRoot + "/scripts/" + ((oscMode == "ambient") ? "ambient-osc.lua" : "mpv-osc.lua");
 
-    // Stamp the log file so each session is identifiable. mpv logs its command
-    // line (incl. auth headers) at verbose level into --log-file; the file lives
-    // in the per-user %TEMP%, which is not readable by other users on Windows.
-    {
+    // mpv's verbose --log-file records mpv's own command line, which includes the auth
+    // header (X-Plex-Token / Jellyfin token) — and the app can't scrub mpv's direct file
+    // writes. So the mpv log is opt-in for debugging (MP240_CONSOLE): off by default, so
+    // no token ever lands in a file a user might share in a bug report. When on, it lives
+    // in the per-user %TEMP%, not readable by other users. (The app log,
+    // %APPDATA%\...\240mp.log, is always kept and is token-scrubbed at the sink — see
+    // win_utils redactSecrets.)
+    const bool mpvDebugLog = qEnvironmentVariableIntValue("MP240_CONSOLE") > 0;
+    if (mpvDebugLog) {
         QFile lf(m_logFilePath);
         if (lf.open(QFile::Append | QFile::Text)) {
             QString safeUrl = url;
@@ -183,7 +189,6 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     QStringList args;
     args << url
          << QString("--input-ipc-server=%1").arg(m_pipePath)
-         << QString("--log-file=%1").arg(m_logFilePath)
          << (hasOscScript ? "--osc=no" : "--osc=yes")
          << "--osd-level=0"
          // A tap/click on the video otherwise starts a window drag, and on Windows
@@ -194,9 +199,14 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
          // Silence mpv's periodic terminal status line ("AV: .. A-V: .."). We
          // capture mpv's stdout/stderr to mirror real messages into the app log,
          // but that status line prints many times a second and would flood both
-         // the log and any console the app is attached to. Full detail still goes
-         // to --log-file. (logMpvOutput also filters any that slip through.)
+         // the log and any console the app is attached to. (logMpvOutput also filters
+         // any that slip through.)
          << "--term-status-msg=";
+
+    // Verbose per-session mpv log — opt-in (see mpvDebugLog above): mpv writes its
+    // auth-header-bearing command line into it, and the app can't scrub mpv's own writes.
+    if (mpvDebugLog)
+        args << QString("--log-file=%1").arg(m_logFilePath);
 
     if (hasOscScript)
         args << QString("--script=%1").arg(oscScript);
@@ -317,11 +327,26 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     if (!ytdlOverridden)
         args << QStringLiteral("--ytdl=no");
     args << extraArgs;
-    if (!plexToken.isEmpty()) {
-        args << QString("--http-header-fields=X-Plex-Token:%1").arg(plexToken);
-    }
-    if (!jellyfinToken.isEmpty()) {
-        args << QString("--http-header-fields=Authorization:MediaBrowser Token=\"%1\"").arg(jellyfinToken);
+    // Keep the auth token off mpv's command line (where it shows in the process args /
+    // Task Manager and is logged by mpv). Write it to a private mpv config file and pass
+    // --include; the URL and everything else stay on the command line, so the load path
+    // is unchanged and robust. The file lives in per-user %TEMP%, is rewritten each play,
+    // and is removed when playback ends (onProcessFinished).
+    QFile::remove(m_headerConfPath);
+    QString headerField;
+    if (!plexToken.isEmpty())
+        headerField = QStringLiteral("X-Plex-Token: %1").arg(plexToken);
+    else if (!jellyfinToken.isEmpty())
+        headerField = QStringLiteral("Authorization: MediaBrowser Token=\"%1\"").arg(jellyfinToken);
+    if (!headerField.isEmpty()) {
+        QFile hf(m_headerConfPath);
+        if (hf.open(QFile::WriteOnly | QFile::Truncate | QFile::Text)) {
+            // %<len>% length-prefix form, so any spaces/quotes in the value are literal.
+            const QByteArray v = headerField.toUtf8();
+            hf.write("http-header-fields=%" + QByteArray::number(v.size()) + "%" + v + "\n");
+            hf.close();
+            args << QString("--include=%1").arg(m_headerConfPath);
+        }
     }
 
     // plex.direct certs are Let's Encrypt-signed but ffmpeg's bundled CA bundle
@@ -602,6 +627,7 @@ void MpvController::onProcessFinished() {
     if (m_ipc->state() == QLocalSocket::ConnectedState)
         onIpcReadyRead();
     m_ipc->abort();
+    QFile::remove(m_headerConfPath);   // don't leave the auth token on disk after playback
     const int pos = m_position;
     const int dur = m_duration;
     m_position = 0;
@@ -753,7 +779,10 @@ void MpvController::appendRetroArgs(QStringList &args) const {
     else if (base == "ntsc")    { shaders << "ntsc.glsl";      heavy = true; }
     else if (base == "heavycrt"){ shaders << "heavy-crt.glsl"; heavy = true; }
     else return;
-    if (curved) shaders << "curvature.glsl";   // last, so it warps the shaded image
+    // Curvature is appended last, so it warps the already-shaded image. Heavy CRT gets
+    // a double-strength warp (curvature-heavy.glsl); the other looks share the gentle one.
+    if (curved)
+        shaders << (base == "heavycrt" ? "curvature-heavy.glsl" : "curvature.glsl");
 
     // Share the Vulkan decision with the upscaler: set it once if either is heavy.
     if (heavy && !args.contains(QStringLiteral("--gpu-api=vulkan")))
