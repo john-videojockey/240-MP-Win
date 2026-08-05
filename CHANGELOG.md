@@ -5,6 +5,25 @@ All notable changes to 240-MP for Windows are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2026-08-05
+
+### Security
+- **Plex/Jellyfin auth tokens are kept out of logs and the command line.** The app log
+  now scrubs `X-Plex-Token` / Jellyfin tokens from every line (they previously leaked
+  via image-thumbnail URLs and mirrored mpv output). mpv's own verbose log — which
+  records its full command line, including the auth header — is now opt-in (only with
+  `MP240_CONSOLE`), so a normal run never writes a token to a shareable file. And the
+  token is handed to mpv through a private, transient config file instead of a
+  command-line argument, so it no longer appears in the process arguments.
+
+### Changed
+- **VHS retro filter — richer chroma.** The look now keeps luma sharp while the colour
+  smears, shifts and jitters like real tape. Saturated reds and oranges bleed the most
+  (a deep-orange sky streaks over the black silhouettes in front of it) while yellows
+  and skin tones stay put, and the bleed worsens across the tracking band.
+- **Heavy CRT retro filter** — a stronger tube vignette, and its **(Curved)** variant
+  now uses a doubled barrel curve.
+
 ## [0.8.1] - 2026-08-04
 
 ### Fixed
