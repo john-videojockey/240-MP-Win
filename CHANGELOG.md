@@ -5,6 +5,37 @@ All notable changes to 240-MP for Windows are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-08-08
+
+### Added
+- **VHS tape audio.** Two new looks — **VHS (Audio)** and **VHS (C+A)** — pair the VHS
+  picture with a matching tape-sound filter: band-limited (204 Hz high-pass, 7.57 kHz
+  low-pass) with a mid presence bump at 1.25 kHz. Plain **VHS** / **VHS (Curved)** stay
+  untouched; **(Audio)** adds the sound, **(C+A)** adds curve *and* sound.
+- **4:3 crop.** Auto Crop now offers **Off / On / 4:3**, and the on-screen **CROP**
+  button cycles **off → fill → 4:3** live during playback. 4:3 centre-crops widescreen
+  to a 4:3 frame (pillarboxed) with a renderer-level crop that's safe with hardware
+  decoding.
+- **Local Files cover cache.** Cover art is cached locally (downscaled) so browsing —
+  especially from an external or network drive — doesn't reload artwork every time.
+  New **Cache Covers** toggle and **Cover Cache Limit** (least-recently-used eviction);
+  **Clear Cache** now also clears the cached covers and generated thumbnails.
+
+### Changed
+- **VHS retro look — a fuller tape pass.** Softer, slightly more desaturated picture; a
+  calmer baseline warp that still swells into dropouts; a touch more chroma fringe; and
+  occasional black-and-white tape static — coarse 240p snow with short "needle" streaks,
+  in brief bursts, concentrated toward the middle and edges.
+- **On-screen controls fit the 4:3 frame.** The control strip is a little narrower so it
+  stays inside the picture when 4:3 crop is on.
+
+### Fixed
+- **Curved shaders no longer show faint curved lines.** Warping the base look's fine
+  detail beat into moiré; the curvature pass now supersamples, removing it.
+- **The player no longer blacks out when the crop changes.** A live video reconfigure
+  could drop mpv's fullscreen window behind the app; it now stays on top through
+  reconfigures.
+
 ## [0.9.0] - 2026-08-05
 
 ### Added
