@@ -8,17 +8,17 @@
 // calm-biased BURST level gates the amplitude — mostly at rest, swelling into
 // occasional dropouts that also nudge the chroma bleed and grain up, so a wobble
 // reads as a momentary loss of signal.
-#define BLEED  0.0004  // R/B chromatic-aberration fringe (halved — kept light)
+#define BLEED  0.0006  // R/B chromatic-aberration fringe
 #define SMEAR  0.06    // faint tape softness (luma)
 #define CHROMA_SHIFT 0.0010  // colour carried slightly off from luma (trails right)
 #define CHROMA_SMEAR 0.0014  // base chroma horizontal softening (low chroma bandwidth)
-#define CHROMA_AMT   0.7     // how much shifted/smeared chroma to use
+#define CHROMA_AMT   0.6     // how much shifted/smeared chroma to use
 #define CHROMA_JUMP  0.0008  // per-field jump added to the chroma shift
 #define CHROMA_TAPS  8       // left-scan steps that accumulate a warm colour's "charge"
 #define CHROMA_STEP  0.0016  // distance per scan step (TAPS*STEP ~= max streak reach)
 #define CHROMA_BAND  2.0     // longer/stronger warm streak across the tracking band
 #define CHROMA_SPILL 2.0     // how strongly an accumulated warm colour spills over darks
-#define GRAIN  0.05    // base tape grain (subtle; bursts kick it up)
+#define GRAIN  0.07    // base tape grain (subtle; bursts kick it up)
 #define WOBBLE 0.0016  // peak horizontal instability amplitude (fraction of width)
 #define BAND_H      0.30   // traveling tracking-bar height (fraction of screen)
 #define BAND_AMT    0.06   // tracking-bar brightness lift (subtle)
@@ -28,6 +28,19 @@
 #define HS_CHUNK  16.0     // horizontal colour-chunk blocks across the width
 #define HS_DRIFT  0.05     // consistent sideways offset of the strip (~5%; +right / -left)
 #define HS_JITTER 0.02     // small per-frame jump around the drift (~+/-2%)
+#define DESAT      0.08    // extra overall desaturation (tape colour never fully saturates)
+#define SOFTEN     0.12    // extra overall softening (a small 4-tap cross blur)
+#define STATIC_AMT  0.60   // max static strength inside an island (varies down per tick)
+#define STATIC_AMT_MIN 0.25 // min static strength
+#define STATIC_WIN  15.0   // frames per 1/4-second tick (~4/sec @60fps)
+#define STATIC_DUTY 0.25   // fraction of each tick the static is on screen (a brief flash)
+#define STATIC_START 0.05  // chance a static burst starts on an idle tick
+#define STATIC_SUSTAIN 0.50 // chance it sustains once going (short, bursty)
+#define STATIC_LINES 1     // thin tracking lines drawn per burst
+#define STATIC_THK  0.001  // tracking-line thickness (fraction of screen height)
+#define STATIC_ISLE 0.58   // max island threshold — sparsest (varies down per tick)
+#define STATIC_ISLE_MIN 0.42 // min island threshold — densest islands
+#define GRAINBAND  0.04    // extra grain concentrated in the trouble zones
 
 // 1D value noise in [-0.5, 0.5]: smoothstep-interpolated hash for the wobble.
 float vnoise(float x) {
@@ -74,7 +87,7 @@ vec4 hook() {
     // decorrelated from the waver so dropouts land on their own rhythm.
     float burst = vnoise(t * 0.025 + 100.0) + 0.5;   // 0..1
     burst = burst * burst;                           // bias toward calm
-    float gate = 0.16 + 1.2 * burst;                 // gentle rest, swells on a burst
+    float gate = 0.08 + 1.28 * burst;                // calmer at rest, same peak on a burst
 
     p.x += w * WOBBLE * gate;
 
@@ -104,6 +117,14 @@ vec4 hook() {
     vec3 smear = (HOOKED_tex(vec2(p.x - HOOKED_pt.x, p.y)).rgb
                 + HOOKED_tex(vec2(p.x + HOOKED_pt.x, p.y)).rgb) * 0.5;
     col = mix(col, smear, SMEAR);
+
+    // A little overall softening (tape resolution loss): blend a small 4-tap cross
+    // blur so fine detail loses its edge without the picture going muddy.
+    vec3 softb = (HOOKED_tex(vec2(p.x - HOOKED_pt.x, p.y)).rgb
+                + HOOKED_tex(vec2(p.x + HOOKED_pt.x, p.y)).rgb
+                + HOOKED_tex(vec2(p.x, p.y - HOOKED_pt.y)).rgb
+                + HOOKED_tex(vec2(p.x, p.y + HOOKED_pt.y)).rgb) * 0.25;
+    col = mix(col, softb, SOFTEN);
 
     // Chroma smear + shift. Base: sharp luma + a softened, shifted, per-field-jumped
     // chroma (the general tape colour softness). On warm/saturated colour it does much
@@ -153,6 +174,15 @@ vec4 hook() {
 
     col = mix(col, target, CHROMA_AMT);
 
+    // Tape trouble concentrates in two zones: a broad mid / mid-high hump and the
+    // bottom edge. Grain rises across the whole frame but heaviest here — the same
+    // areas where the static needles (below) pop up.
+    float dz      = (p.y - 0.45) / 0.16;
+    float midZone = exp(-dz * dz);                       // soft hump, mid..mid-high
+    float botZone = smoothstep(0.95, 1.0, p.y);          // bottom ~5%
+    float zone    = clamp(0.6 * midZone + botZone, 0.0, 1.0);
+    grain += GRAINBAND * zone;                           // grainier in the trouble zones
+
     // Tape grain — genuinely per-pixel and animated, no structured moiré.
     float n = hash12(floor(p * HOOKED_size) + vec2(t, t * 1.7));
     col += (n - 0.5) * grain;
@@ -160,6 +190,49 @@ vec4 hook() {
     // Tracking bar applied: a subtle brightness lift plus a wash-out over the band.
     col *= 1.0 + BAND_AMT * band;                        // brightness lift
     col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))), 0.14 * band);  // wash-out
+
+    // Static burst timing: a two-state chain per ~1/4-second tick — a STATIC_START
+    // chance to begin when idle, building to STATIC_SUSTAIN to hold once going — so
+    // static arrives in short bursts. mpv shaders can't keep cross-frame state, so
+    // the current state is reconstructed statelessly by replaying the chain over the
+    // last several ticks (bursts are short, so a bounded lookback catches where the
+    // current one began). Rolled off `frame` so the pattern never repeats on a cycle.
+    float seg = floor(float(frame) / STATIC_WIN);
+    float ph  = fract(float(frame) / STATIC_WIN);   // position within the current tick
+    float stOn = 0.0;
+    for (int k = 8; k >= 0; k--)
+        stOn = step(hash12(vec2(seg - float(k), 3.0)), mix(STATIC_START, STATIC_SUSTAIN, stOn));
+
+    // Flash only for the first STATIC_DUTY of each tick, so an active tick shows the
+    // static as a brief pop rather than holding it for the whole quarter-second.
+    if (stOn > 0.5 && ph < STATIC_DUTY) {
+        // A few thin, gently-wavy tracking lines, each carrying irregular bright
+        // islands of coarse static (VHS dropout on the tracking line). Line heights
+        // are biased toward the bottom (head-switch), then the middle, then the top.
+        vec2 res = vec2(HS_LINES * HOOKED_size.x / HOOKED_size.y, HS_LINES);
+        for (int s = 0; s < STATIC_LINES; s++) {
+            float id     = seg * 7.0 + float(s) * 13.0;
+            float zpick  = hash12(vec2(id, 8.0));
+            float jitter = hash12(vec2(id, 5.0));
+            float lineY  = zpick < 0.45 ? (0.86 + 0.12 * jitter)   // bottom (favoured)
+                         : zpick < 0.75 ? (0.42 + 0.16 * jitter)   // middle
+                                        : (0.03 + 0.10 * jitter);  // top
+            lineY += 0.008 * vnoise(p.x * 3.0 + id);               // gentle wave
+            float lb = 1.0 - smoothstep(0.0, STATIC_THK, abs(p.y - lineY));
+            if (lb <= 0.0) continue;
+            // Per-tick strength and island density (each up to its #define ceiling),
+            // so no two flashes read the same.
+            float amt  = mix(STATIC_AMT_MIN,  STATIC_AMT,  hash12(vec2(id, 71.0)));
+            float isle = mix(STATIC_ISLE_MIN, STATIC_ISLE, hash12(vec2(id, 83.0)));
+            // Irregular islands: smooth noise along the line gates sparse clumps of
+            // varying width; only its peaks turn to static, so the line breaks into
+            // organic islands rather than one continuous streak.
+            float isl = smoothstep(isle, isle + 0.14, vnoise2(vec2(p.x * 20.0, id + floor(t * 0.5))));
+            // Coarse 240p bright static inside an island, flickering per frame.
+            float sn = 0.45 + 0.55 * hash12(floor(p * res) + vec2(t, t * 1.7));
+            col = mix(col, vec3(sn), lb * isl * amt);
+        }
+    }
 
     // Head-switching noise: a very thin strip at the very bottom edge (only ~2-3 lines
     // of a 240p frame) where the head leaves the tape. The picture there is pixelated
@@ -187,6 +260,9 @@ vec4 hook() {
         vec3  hsCol = base * mix(vec3(1.0), tint, 0.25);
         col = mix(col, hsCol, hsw);
     }
+
+    // A touch more overall desaturation — tape colour is never fully saturated.
+    col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))), DESAT);
 
     return vec4(col, 1.0);
 }
