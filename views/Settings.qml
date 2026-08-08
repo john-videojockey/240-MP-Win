@@ -106,9 +106,9 @@ FocusScope {
             type: "list_single",
             key: "auto_crop",
             label: "Auto Crop",
-            options: ["Off", "On"],
+            options: ["Off", "On", "4:3"],
             value: appSettings["auto_crop"] || "Off",
-            description: "[ON] Video starts cropped to fill screen\n[OFF] Video starts at its original aspect ratio",
+            description: "[ON] Video starts cropped to fill screen\n[4:3] Widescreen cropped to a 4:3 frame (sides trimmed)\n[OFF] Video starts at its original aspect ratio",
             moduleId: ""
         })
 

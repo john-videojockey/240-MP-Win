@@ -355,11 +355,21 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     if (QUrl(url).host().endsWith(QStringLiteral(".plex.direct")))
         args << QStringLiteral("--tls-verify=no");
 
-    // Auto Crop: start with panscan=1. The Windows decode path always renders
-    // through the scaler, so crop is safe everywhere; the OSC CROP button still
-    // toggles it live.
-    if (autoCropEnabled())
+    // Crop mode (app-level "auto_crop"): "On" fills the screen (panscan=1); "4:3"
+    // centre-crops wider content to a 4:3 frame (pillarboxed on a 16:9 display,
+    // sides trimmed — crop=ih*4/3:ih, i.e. 1920x1080 -> 1440x1080); "Off" leaves the
+    // source aspect alone. The OSC CROP button still toggles panscan live.
+    if (autoCropEnabled()) {
         args << QStringLiteral("--panscan=1");
+    } else if (m_appCore &&
+               m_appCore->get_setting(QString(), "auto_crop").toString()
+                   == QStringLiteral("4:3")) {
+        // The OSC applies 4:3 on file-load via video-crop (a renderer-level crop
+        // that's hwdec-safe). A software crop *filter* reconfigures the chain live
+        // and, on D3D11VA, blacks the picture and drops the mpv window behind the
+        // app — so it must NOT be a vf. Just tell the OSC to start in 4:3.
+        args << QStringLiteral("--script-opts-append=start-crop=43");
+    }
 
     m_process = new QProcess(this);
     m_process->setProcessChannelMode(QProcess::MergedChannels);
@@ -382,6 +392,13 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
          // the video, shift gamma/subtitles, change speed, screenshot, etc.
          << "--input-default-bindings=no"
          << "--video-sync=audio"
+         // Keep mpv's window topmost. It's married as an OWNED window of the app
+         // window, which is itself topmost; without mpv also being topmost, any
+         // video reconfig (e.g. a live 4:3 crop changing the frame size) makes mpv
+         // re-position into the non-topmost band — i.e. behind the topmost app
+         // window — blacking out the picture until it's re-activated. Topmost mpv
+         // re-asserts above the app through reconfigs.
+         << "--ontop=yes"
          << "--fullscreen";
     appendVideoArgs(args);
     appendUpscalerArgs(args);
@@ -767,9 +784,14 @@ void MpvController::appendRetroArgs(QStringList &args) const {
     QString sel = m_appCore->get_setting(QString(), "mpv_retro_active").toString().toLower();
     if (sel.isEmpty() || sel == "off") return;
 
-    // A "_curved" suffix appends the shared curvature warp after the base look.
+    // Optional id suffixes: "_audio" (VHS sound filter) and "_curved" (curvature
+    // warp) — e.g. "vhs_curved_audio". Strip audio first (it trails curved in the
+    // id), then curved, leaving the base look.
+    const bool audio = sel.endsWith(QLatin1String("_audio"));
+    if (audio) sel.chop(6);
     const bool curved = sel.endsWith(QLatin1String("_curved"));
-    const QString base = curved ? sel.left(sel.length() - 7) : sel;
+    if (curved) sel.chop(7);
+    const QString base = sel;
 
     QStringList shaders;
     bool heavy = false;   // needs the Vulkan backend (slow D3D11 HLSL compile)
@@ -791,6 +813,16 @@ void MpvController::appendRetroArgs(QStringList &args) const {
     const QString dir = m_appRoot + "/shaders/retro/";
     for (const QString &s : shaders)
         args << QString("--glsl-shaders-append=%1").arg(dir + s);
+
+    // The VHS look also colours the sound: composite tape ran a narrow audio band
+    // with a mid-forward voice. Band-limit it — high-pass 204 Hz, low-pass 7.57 kHz
+    // — and add a presence bump at 1.25 kHz. (--af-append leaves --volume-gain and
+    // any other audio handling intact.)
+    if (audio && base == "vhs") {
+        args << QStringLiteral("--af-append=highpass=f=204")
+             << QStringLiteral("--af-append=lowpass=f=7570")
+             << QStringLiteral("--af-append=equalizer=f=1250:width_type=q:w=1.2:g=4");
+    }
 }
 
 bool MpvController::autoCropEnabled() const {

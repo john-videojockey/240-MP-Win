@@ -29,6 +29,57 @@ local update_timer = nil
 local idle_timer = nil
 local skip_active = false
 
+-- Crop cycle stepped by the CROP button: 0 = off (source aspect), 1 = fill
+-- (panscan crops any black bars to fill the screen), 2 = 4:3 (centre-crop wide
+-- content to a 4:3 frame via a labelled crop filter, pillarboxed). The initial
+-- state is read on file-load from whatever the app launched with, so the button
+-- stays in sync with the Auto Crop setting.
+local crop_state = 0
+local CROP_NAMES = {[0]="CROP", [1]="FILL", [2]="4:3"}
+
+-- 4:3 is done with video-crop — a renderer-level crop that works with hwdec. A
+-- software crop *filter* (vf) forces a hw->sw download and reconfigures the filter
+-- chain live, which on the D3D11VA path blacks the picture and drops the mpv window
+-- behind the app; video-crop just changes the displayed rectangle, so no reconfig.
+local function set_crop43()
+    local w = mp.get_property_number("width")
+    local h = mp.get_property_number("height")
+    if not (w and h and w > 0 and h > 0) then return end
+    local cw, ch = math.floor(h * 4 / 3 + 0.5), h
+    if cw > w then cw, ch = w, math.floor(w * 3 / 4 + 0.5) end   -- source narrower than 4:3
+    mp.set_property("video-crop",
+        string.format("%dx%d+%d+%d", cw, ch, math.floor((w - cw) / 2), math.floor((h - ch) / 2)))
+end
+
+local function apply_crop()
+    if crop_state == 2 then
+        mp.command("no-osd set panscan 0")
+        set_crop43()
+    else
+        mp.set_property("video-crop", "")   -- clear the 4:3 crop
+        mp.command("no-osd set panscan " .. (crop_state == 1 and "1" or "0"))
+    end
+end
+
+local function cycle_crop()
+    crop_state = (crop_state + 1) % 3
+    apply_crop()
+end
+
+-- Initial mode: the app passes --script-opts start-crop=43 for a 4:3 default;
+-- otherwise fall back to whatever panscan it launched with.
+local function init_crop_state()
+    if mp.get_opt("start-crop") == "43" then
+        crop_state = 2
+    elseif (mp.get_property_number("panscan") or 0) >= 0.5 then
+        crop_state = 1
+    else
+        crop_state = 0
+    end
+    apply_crop()
+end
+mp.register_event("file-loaded", init_crop_state)
+
 -- Seek step for the << / >> buttons and LEFT/RIGHT on the seek bar. The app
 -- passes the user's "seek_seconds" setting via script-opts (default 10).
 local SEEK_SECONDS  = tonumber(mp.get_opt("seek-seconds") or "10") or 10
@@ -170,8 +221,8 @@ local function build_left_btns(has_sub, bar_w)
         btns[#btns + 1] = {label="SUBTITLE", width=math.floor(bar_w * 0.13), sub=true,
                            action=function() mp.command("no-osd cycle sub") end}
     end
-    btns[#btns + 1] = {label="CROP", width=math.floor(bar_w * 0.08),
-                       action=function() mp.command("no-osd cycle-values panscan 0 1") end}
+    btns[#btns + 1] = {label=CROP_NAMES[crop_state], width=math.floor(bar_w * 0.08),
+                       action=cycle_crop}
     return btns
 end
 
@@ -182,8 +233,8 @@ local function layout()
     local g = {}
     g.ww, g.wh = ww, wh
     g.fs      = math.floor(wh * 0.0333333)   -- font size
-    g.lm      = math.floor(ww * 0.12)        -- left margin
-    g.rm      = math.floor(ww * 0.88)        -- right margin
+    g.lm      = math.floor(ww * 0.15)        -- left margin (3% in from 0.12 so the
+    g.rm      = math.floor(ww * 0.85)        -- controls sit inside the 4:3 crop area)
     g.bar_w   = g.rm - g.lm
     g.border  = 2
 
