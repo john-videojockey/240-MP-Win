@@ -181,7 +181,8 @@ FocusScope {
                     anchors.margins: posterBox.border.width
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
-                    source: modelData.poster || modelData.thumb || ""
+                    source: (modelData.poster || modelData.thumb)
+                            ? "image://lfcover/" + encodeURIComponent(modelData.poster || modelData.thumb) : ""
                 }
 
                 Text {

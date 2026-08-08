@@ -198,7 +198,8 @@ FocusScope {
                                 anchors.margins: shotBox.border.width
                                 fillMode: Image.PreserveAspectCrop
                                 asynchronous: true
-                                source: modelData.thumb || modelData.poster || ""
+                                source: (modelData.thumb || modelData.poster)
+                                        ? "image://lfcover/" + encodeURIComponent(modelData.thumb || modelData.poster) : ""
                             }
                             Text {
                                 visible: shot.status !== Image.Ready

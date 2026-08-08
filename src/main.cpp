@@ -12,6 +12,7 @@
 
 #include "AppCore.h"
 #include "modules/local_files/LocalFilesBackend.h"
+#include "modules/local_files/LocalCoverProvider.h"
 #include "modules/plex/PlexBackend.h"
 #include "modules/jellyfin/JellyfinBackend.h"
 #include "modules/ambient_mode/AmbientModeBackend.h"
@@ -130,6 +131,37 @@ int main(int argc, char *argv[]) {
     ctx->setContextProperty("mpvController", &mpvController);
     ctx->setContextProperty("inputManager",  &inputManager);
     ctx->setContextProperty("updateManager", &updateManager);
+
+    // Persistent, downscaled disk cache for local-media cover art (see the header):
+    // local browse views load covers via image://lfcover/<url-encoded file path>.
+    // The Local Files "Cache Covers" toggle and "Cover Cache Limit" drive it, applied
+    // now and whenever they change (the engine owns the provider).
+    auto *coverProvider = new LocalCoverProvider(dataRoot);
+    engine.addImageProvider(QStringLiteral("lfcover"), coverProvider);
+    auto parseCacheLimit = [](const QString &s) -> qint64 {
+        const QString t = s.trimmed().toUpper();
+        double num = t.split(QLatin1Char(' ')).value(0).toDouble();
+        if (num <= 0) num = 250;   // default 250 MB
+        const qint64 mb = t.contains(QStringLiteral("GB")) ? qint64(num * 1024) : qint64(num);
+        return mb * 1024 * 1024;
+    };
+    auto applyCoverCache = [&appCore, coverProvider, parseCacheLimit]() {
+        // Default ON: only an explicit "Off" disables it.
+        coverProvider->setEnabled(
+            appCore.get_setting(QStringLiteral("com.240mp.local_files"),
+                                QStringLiteral("cover_cache")).toString()
+                .compare(QLatin1String("Off"), Qt::CaseInsensitive) != 0);
+        coverProvider->setLimitBytes(parseCacheLimit(
+            appCore.get_setting(QStringLiteral("com.240mp.local_files"),
+                                QStringLiteral("cover_cache_limit")).toString()));
+    };
+    applyCoverCache();
+    QObject::connect(&appCore, &AppCore::moduleSettingChanged, coverProvider,
+        [applyCoverCache](const QString &mid, const QString &key, const QVariant &) {
+            if (mid == QLatin1String("com.240mp.local_files")
+                && (key == QLatin1String("cover_cache") || key == QLatin1String("cover_cache_limit")))
+                applyCoverCache();
+        });
 
     engine.addImportPath(appRoot + "/views");
 

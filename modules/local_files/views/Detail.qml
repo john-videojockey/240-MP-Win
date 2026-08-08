@@ -90,6 +90,8 @@ FocusScope {
         { id: "ntsc_curved",      label: "NTSC (CURVED)" },
         { id: "vhs",              label: "VHS" },
         { id: "vhs_curved",       label: "VHS (CURVED)" },
+        { id: "vhs_audio",        label: "VHS (AUDIO)" },
+        { id: "vhs_curved_audio", label: "VHS (C+A)" },
         { id: "heavycrt",         label: "HEAVY CRT" },
         { id: "heavycrt_curved",  label: "HEAVY CRT (CURVED)" }
     ]
@@ -824,7 +826,8 @@ FocusScope {
                     horizontalAlignment: Image.AlignLeft
                     verticalAlignment: Image.AlignTop
                     asynchronous: true
-                    source: detailRoot.current.thumb || ""
+                    source: detailRoot.current.thumb
+                            ? "image://lfcover/" + encodeURIComponent(detailRoot.current.thumb) : ""
                 }
             }
         }

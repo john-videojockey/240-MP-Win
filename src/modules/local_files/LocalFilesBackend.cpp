@@ -1319,7 +1319,14 @@ void LocalFilesBackend::clear_cache() {
     m_cacheLoaded = true;   // treat as loaded-but-empty so we don't re-read the file
     m_cache.clear();
     QFile::remove(cacheFilePath());
-    qInfo("[LocalFiles] listing cache cleared");
+    // Also wipe the derived image caches: downscaled covers (LocalCoverProvider) and
+    // generated extra-frame thumbnails. They rebuild lazily as folders are browsed.
+    for (const QString &sub : {QStringLiteral("/covers"), QStringLiteral("/thumbs")}) {
+        const QDir d(m_dataRoot + sub);
+        for (const QFileInfo &fi : d.entryInfoList(QDir::Files))
+            QFile::remove(fi.absoluteFilePath());
+    }
+    qInfo("[LocalFiles] listing + image caches cleared");
 }
 
 void LocalFilesBackend::loadItems(const QString &path) {

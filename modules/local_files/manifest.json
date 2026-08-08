@@ -84,11 +84,26 @@
       "description": "How long an image is shown before advancing.\nApplies to images in folders and playlists."
     },
     {
+      "key": "cover_cache",
+      "label": "Cache Covers",
+      "type": "toggle",
+      "default": "ON",
+      "description": "Cache downscaled cover art locally so browsing — especially from an external or network drive — doesn't reload artwork every time."
+    },
+    {
+      "key": "cover_cache_limit",
+      "label": "Cover Cache Limit",
+      "type": "list_single",
+      "options": ["100 MB", "250 MB", "500 MB", "1 GB", "2 GB"],
+      "default": "250 MB",
+      "description": "Maximum size of the cover cache. When it fills, the least-recently-used covers are removed first."
+    },
+    {
       "key": "clear_cache",
       "label": "Clear Cache",
       "type": "action",
       "action_slot": "clear_cache",
-      "description": "Forget saved folder listings and rescan from disk on next browse.\nUse after changing your library layout."
+      "description": "Forget saved folder listings and cached covers, and rescan from disk on next browse.\nUse after changing your library layout."
     }
   ]
 }
