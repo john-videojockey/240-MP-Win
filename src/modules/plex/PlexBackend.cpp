@@ -690,8 +690,10 @@ QVariantMap PlexBackend::formatItem(const QJsonObject &m) const {
         {"durationDisplay",        msToDisplay(m["duration"].toInt())},
         {"grandparentTitle",       m["grandparentTitle"].toString()},
         {"grandparentRatingKey",   m["grandparentRatingKey"].toString()},
+        {"grandparentGuid",        m["grandparentGuid"].toString()},
         {"parentTitle",            m["parentTitle"].toString()},
         {"parentRatingKey",        m["parentRatingKey"].toString()},
+        {"parentGuid",             m["parentGuid"].toString()},
         {"index",                  m["index"].toInt()},
         {"parentIndex",            m["parentIndex"].toInt()},
         {"leafCount",              m["leafCount"].toInt()},
@@ -1626,6 +1628,12 @@ void PlexBackend::load_home_hubs() {
                                 it["ratingKey"] = showKey;                 // card targets the show
                                 it["title"]     = showTitle.toUpper();
                                 it["type"]      = "show";
+                                // Re-key the guid to the SHOW's, so the detail screen's
+                                // Watchlist toggle acts on the show (episodes can't be
+                                // watchlisted — the episode guid made it revert). Empty
+                                // on legacy-agent libraries, which just hides the bookmark.
+                                it["guid"] = (type == "episode") ? it["grandparentGuid"]
+                                                                 : it["parentGuid"];
                             }
                         }
                         const QString key = it["ratingKey"].toString();
