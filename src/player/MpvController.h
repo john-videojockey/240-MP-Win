@@ -17,6 +17,11 @@ class MpvController : public QObject {
     // Mirrors mpv's pause state so a Player view can report the correct timeline
     // state to its server (playing vs paused) instead of always "playing".
     Q_PROPERTY(bool paused     READ paused      NOTIFY pausedChanged)
+    // Crop mode in effect for the current playback: 0 = off (source aspect),
+    // 1 = fill (panscan), 2 = 4:3; -1 before the first launch. Seeded from the
+    // launch args, then kept current by the OSC's crop-state client-messages as
+    // its CROP button cycles.
+    Q_PROPERTY(int cropState   READ cropState   NOTIFY cropStateChanged)
 
 public:
     explicit MpvController(const QString &appRoot, AppCore *appCore = nullptr,
@@ -27,6 +32,7 @@ public:
     int duration()    const { return m_duration;    }
     int playlistPos() const { return m_playlistPos; }
     bool paused()     const { return m_paused;      }
+    int  cropState()  const { return m_cropState;   }
 
     Q_INVOKABLE void loadAndPlay(const QString &url, float startSeconds,
                                   int audioTrack, int subTrack,
@@ -60,6 +66,13 @@ public:
     // is cleared automatically when the next playback starts.
     Q_INVOKABLE void setHoldBackground(bool v) { m_holdBackground = v; }
     Q_INVOKABLE bool holdBackground() const { return m_holdBackground; }
+
+    // One-shot crop mode for the NEXT playback (0 / 1 / 2 as cropState; -1 =
+    // follow the Auto Crop setting, the default). Consumed by loadAndPlay. The
+    // Plex player uses it to carry a mode chosen live with the OSC's CROP button
+    // across the mpv relaunch that resumes a released (idle-paused) stream,
+    // which would otherwise fall back to the setting.
+    Q_INVOKABLE void setStartCrop(int state) { m_startCrop = state; }
 
     // The app's main (menu) window. Used to marry mpv's fullscreen window to it
     // so the two behave as a single window (see win_utils adoptMpvWindow).
@@ -96,6 +109,7 @@ signals:
     void durationChanged(int ms);
     void playlistPosChanged(int pos);
     void pausedChanged(bool paused);
+    void cropStateChanged(int state);
     // Emitted exactly once when mpv exits, with the reason it ended:
     //   "eof"     — file played to its natural end. (What a module does with this
     //               is its own concern.  as an example: Plex may autoplay the next episode)
@@ -145,6 +159,8 @@ private:
     // App-level "auto_crop" setting (default OFF). When ON, playback starts with
     // panscan=1 so video fills a CRT/4:3 screen by default (still toggleable live).
     bool autoCropEnabled() const;
+    // Record the crop mode in effect (launch seed, then OSC reports); emits on change.
+    void setCropState(int state);
 
     AppCore      *m_appCore        = nullptr;
     QProcess     *m_process        = nullptr;
@@ -157,6 +173,8 @@ private:
     int           m_adoptTries     = 0;
     qint64        m_lastIpcEventMs = 0;
     bool          m_paused         = false;  // mirrors mpv's pause property (watchdog exemption)
+    int           m_cropState      = -1;     // see cropState()
+    int           m_startCrop      = -1;     // one-shot override for the next launch (setStartCrop)
     int           m_grabSeq        = 0;      // fresh filename per grabFrame() (cache-bust)
     QString       m_lastGrabPath;            // previous grab, removed when the next is taken
     bool          m_holdBackground = false;  // suppress the raise-on-exit (minimized suspend)

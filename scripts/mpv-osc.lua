@@ -59,6 +59,10 @@ local function apply_crop()
         mp.set_property("video-crop", "")   -- clear the 4:3 crop
         mp.command("no-osd set panscan " .. (crop_state == 1 and "1" or "0"))
     end
+    -- Tell the app which mode is in effect (MpvController mirrors it as
+    -- cropState), so a choice made live here can survive an mpv relaunch --
+    -- e.g. the Plex player restarting a stream it released for an idle pause.
+    mp.commandv("script-message", "crop-state", tostring(crop_state))
 end
 
 local function cycle_crop()

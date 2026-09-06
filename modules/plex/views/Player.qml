@@ -68,6 +68,7 @@ FocusScope {
     property bool   resuming:          false
     property bool   pendingResume:     false
     property int    suspendedOffsetMs: 0
+    property int    suspendedCropState: -1  // mpvController.cropState at release; -1 = unknown
     property string heldFrameUrl:      ""
     property string _pendingShot:      ""   // grab in flight until the file is written
 
@@ -364,6 +365,9 @@ FocusScope {
     function suspendForPause() {
         if (!idleModeEnabled || suspended || mpvController.position <= 0) return
         suspendedOffsetMs = mpvController.position
+        // Hold the crop mode too (the OSC's CROP choice dies with mpv): the held
+        // frame is shown through it, and the relaunch on resume starts from it.
+        suspendedCropState = mpvController.cropState
         _pendingShot = mpvController.grabFrame()   // capture the paused frame (async write)
         suspendKillTimer.restart()
     }
@@ -427,6 +431,7 @@ FocusScope {
                 pendingResume = false
                 playerRoot.streamUrl = url
                 playerRoot.plexToken = plexToken
+                mpvController.setStartCrop(suspendedCropState)   // keep the CROP choice, not the setting
                 doStartPlayback(suspendedOffsetMs)
                 return
             }
@@ -855,12 +860,24 @@ FocusScope {
             && playerRoot.subtitleStreams[playerRoot.subtitleIdx].displayTitle)
             ? playerRoot.subtitleStreams[playerRoot.subtitleIdx].displayTitle : "(NONE)"
 
-        Image {
-            anchors.fill: parent
-            source: playerRoot.heldFrameUrl
-            fillMode: Image.PreserveAspectFit
-            cache: false
-            asynchronous: true
+        // The grab is the decoded frame — mpv's crop/panscan is a display-time
+        // effect it doesn't carry — so reproduce the crop mode held at release:
+        // 0/-1 = source aspect, 1 = fill (panscan crops the bars away), 2 = the
+        // centre 4:3 of the frame, pillarboxed, as the live player showed it.
+        Item {
+            id: heldFrameBox
+            readonly property bool is43: playerRoot.suspendedCropState === 2
+            width:  is43 ? Math.min(parent.width, parent.height * 4 / 3) : parent.width
+            height: is43 ? width * 3 / 4 : parent.height
+            anchors.centerIn: parent
+            Image {
+                anchors.fill: parent
+                source: playerRoot.heldFrameUrl
+                fillMode: (playerRoot.suspendedCropState === 1 || heldFrameBox.is43)
+                          ? Image.PreserveAspectCrop : Image.PreserveAspectFit
+                cache: false
+                asynchronous: true
+            }
         }
         // Light scrim only — the OSC normally sits over undimmed video; a touch of
         // dim keeps the white text legible over a bright held frame.

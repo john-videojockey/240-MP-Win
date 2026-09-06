@@ -355,21 +355,35 @@ void MpvController::loadAndPlay(const QString &url, float startSeconds,
     if (QUrl(url).host().endsWith(QStringLiteral(".plex.direct")))
         args << QStringLiteral("--tls-verify=no");
 
-    // Crop mode (app-level "auto_crop"): "On" fills the screen (panscan=1); "4:3"
-    // centre-crops wider content to a 4:3 frame (pillarboxed on a 16:9 display,
-    // sides trimmed — crop=ih*4/3:ih, i.e. 1920x1080 -> 1440x1080); "Off" leaves the
-    // source aspect alone. The OSC CROP button still toggles panscan live.
-    if (autoCropEnabled()) {
+    // Crop mode. Normally the app-level "auto_crop" setting: "On" fills the screen
+    // (panscan=1); "4:3" centre-crops wider content to a 4:3 frame (pillarboxed on
+    // a 16:9 display, sides trimmed — 1920x1080 -> 1440x1080); "Off" leaves the
+    // source aspect alone. A one-shot setStartCrop() override wins over the
+    // setting, so a mode chosen live with the OSC's CROP button can be carried
+    // across a relaunch (the Plex player resuming an idle-paused, released
+    // stream). Either way the OSC reads the resulting state on file-load, cycles
+    // from there, and reports each change back as a crop-state client-message.
+    int startCrop = m_startCrop;
+    m_startCrop = -1;                                    // one-shot
+    if (startCrop < 0) {
+        if (autoCropEnabled())
+            startCrop = 1;
+        else if (m_appCore && m_appCore->get_setting(QString(), "auto_crop").toString()
+                                  == QStringLiteral("4:3"))
+            startCrop = 2;
+        else
+            startCrop = 0;
+    }
+    if (startCrop == 1) {
         args << QStringLiteral("--panscan=1");
-    } else if (m_appCore &&
-               m_appCore->get_setting(QString(), "auto_crop").toString()
-                   == QStringLiteral("4:3")) {
+    } else if (startCrop == 2) {
         // The OSC applies 4:3 on file-load via video-crop (a renderer-level crop
         // that's hwdec-safe). A software crop *filter* reconfigures the chain live
         // and, on D3D11VA, blacks the picture and drops the mpv window behind the
         // app — so it must NOT be a vf. Just tell the OSC to start in 4:3.
         args << QStringLiteral("--script-opts-append=start-crop=43");
     }
+    setCropState(startCrop);
 
     m_process = new QProcess(this);
     m_process->setProcessChannelMode(QProcess::MergedChannels);
@@ -576,6 +590,8 @@ void MpvController::onIpcReadyRead() {
                         emit skipRequested();
                     else if (msg == "episode-nav" && args.size() > 1)
                         emit episodeNavRequested(args[1].toString());
+                    else if (msg == "crop-state" && args.size() > 1)
+                        setCropState(args[1].toString().toInt());   // OSC CROP cycled
                 }
             }
             continue;
@@ -832,4 +848,10 @@ bool MpvController::autoCropEnabled() const {
         return false;
     const QVariant v = m_appCore->get_setting(QString(), "auto_crop");
     return v.toString().compare(QStringLiteral("On"), Qt::CaseInsensitive) == 0;
+}
+
+void MpvController::setCropState(int state) {
+    if (state == m_cropState) return;
+    m_cropState = state;
+    emit cropStateChanged(state);
 }
