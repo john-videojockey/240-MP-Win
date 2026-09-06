@@ -830,9 +830,12 @@ FocusScope {
         // same layout fractions, same VCR font and white, so the paused idle state
         // matches the live player. The interactive button row is intentionally left
         // out — nothing is scrubbable/clickable until playback resumes.
+        // These fractions must track scripts/mpv-osc.lua so the released-stream
+        // screen and the live OSC line up seamlessly (the margins were narrowed
+        // there to sit inside the 4:3 crop area — keep them in step).
         readonly property real fs:      root.sh * 0.0333333            // OSC font size
-        readonly property real lm:      root.sw * 0.12                 // left margin
-        readonly property real rm:      root.sw * 0.88                 // right margin
+        readonly property real lm:      root.sw * 0.15                 // left margin  (mpv-osc g.lm)
+        readonly property real rm:      root.sw * 0.85                 // right margin (mpv-osc g.rm)
         readonly property real barW:    rm - lm
         readonly property real barH:    fs * 2
         readonly property real titleCY: root.sh * 0.0666667 + (fs * 1.5) / 2
