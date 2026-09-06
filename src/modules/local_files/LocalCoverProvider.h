@@ -20,11 +20,16 @@
 // and downscales the source on a background thread (ForceAsynchronousImageLoading,
 // so the UI never blocks) and writes a small JPEG to <dataRoot>/covers; every later
 // request — this session or a future one — reads that small local file instead.
-// Keyed by the source's path + size + mtime, so a replaced cover restales itself.
+//
+// The cache is keyed by the SOURCE PATH ALONE, checked before the source is ever
+// touched, so a cache hit reads only the local cache. That's the difference between
+// instant and multi-second on a slow/asleep NAS: statting the source for size+mtime
+// would otherwise wake the drive and stall the whole grid behind the first cover.
+// Trade-off: a cover replaced in place (same path) won't refresh until Clear Cache.
 //
 // Caching can be turned off (setEnabled) and bounded (setLimitBytes) live from the
-// Local Files settings; when the cache passes its limit the oldest files are evicted
-// first. All state the render threads read is atomic; eviction is mutex-guarded.
+// Local Files settings; over the limit the oldest-by-use files are evicted first.
+// All state the render thread reads is atomic; eviction is mutex-guarded.
 class LocalCoverProvider : public QQuickImageProvider {
 public:
     explicit LocalCoverProvider(const QString &dataRoot)
@@ -43,32 +48,21 @@ public:
         QString s = QUrl::fromPercentEncoding(id.toUtf8());
         while (s.startsWith(QLatin1Char('/'))) s.remove(0, 1);   // defensive: no leading slash
         const QString path = s.startsWith(QStringLiteral("file:")) ? QUrl(s).toLocalFile() : s;
-        const QFileInfo fi(path);
-        if (!fi.exists()) {
-            static bool warned = false;
-            if (!warned) { warned = true;
-                qWarning("[lfcover] cover not found — id='%s' -> path='%s'",
-                         qPrintable(id), qPrintable(path)); }
-            return QImage();
-        }
 
         const bool useCache = m_enabled.load();
         QString cachePath;
         if (useCache) {
-            const QString key = fi.absoluteFilePath() + QLatin1Char('|')
-                              + QString::number(fi.size()) + QLatin1Char('|')
-                              + QString::number(fi.lastModified().toSecsSinceEpoch());
-            const QString hash = QString::fromLatin1(
-                QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Md5).toHex());
+            // Key on the path alone — no size/mtime — so a cache hit reads only the
+            // local cache and never wakes the source (see the class note).
+            const QString hash = QString::fromLatin1(QCryptographicHash::hash(
+                QDir::cleanPath(path).toUtf8(), QCryptographicHash::Md5).toHex());
             cachePath = m_cacheDir + QLatin1Char('/') + hash + QStringLiteral(".jpg");
             const QFileInfo cfi(cachePath);
             if (cfi.exists()) {
                 QImage cached;
                 // Open read-write so a cache hit can also bump the file's mtime:
                 // eviction is oldest-mtime-first, and touching on use makes that the
-                // least-recently-*used* cover, not just the oldest-written one. The
-                // touch is throttled (only when the mtime has gone stale) to avoid
-                // rewriting metadata on every scroll.
+                // least-recently-*used* cover. Throttled so scrolling doesn't churn.
                 QFile f(cachePath);
                 if (f.open(QIODevice::ReadWrite) && cached.load(&f, nullptr)) {
                     if (cfi.lastModified().secsTo(QDateTime::currentDateTime()) > 60)
@@ -78,9 +72,15 @@ public:
             }
         }
 
-        // Read the source (the slow external read, on this async thread), downscale,
-        // and — when caching is on — write a small JPEG for next time. A corrupt
-        // partial write just fails to load later and is regenerated, so no locking.
+        // Cache miss (or caching off): this is the only path that touches the source.
+        const QFileInfo fi(path);
+        if (!fi.exists()) {
+            static bool warned = false;
+            if (!warned) { warned = true;
+                qWarning("[lfcover] cover not found — id='%s' -> path='%s'",
+                         qPrintable(id), qPrintable(path)); }
+            return QImage();
+        }
         QImageReader reader(path);
         reader.setAutoTransform(true);
         QImage img = reader.read();
@@ -88,6 +88,7 @@ public:
             return QImage();
         if (img.width() > kCap || img.height() > kCap)
             img = img.scaled(kCap, kCap, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        // A corrupt partial write just fails to load later and is regenerated.
         if (useCache && !cachePath.isEmpty() && img.save(cachePath, "JPG", 85)) {
             if ((m_writes.fetch_add(1) % kEvictEvery) == 0)
                 enforceLimit();
@@ -109,7 +110,7 @@ private:
         return img;
     }
 
-    // Delete the oldest cached covers until the cache is back under its limit.
+    // Delete the oldest-by-use cached covers until the cache is back under its limit.
     void enforceLimit() {
         const qint64 limit = m_limitBytes.load();
         if (limit <= 0) return;              // 0 = unbounded
