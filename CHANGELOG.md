@@ -5,6 +5,25 @@ All notable changes to 240-MP for Windows are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Local Files cover cache never wakes the drive on a hit.** Cached covers are now
+  keyed by the source path alone, so browsing reads only the local cache; the
+  external/network source is touched only for covers not cached yet. A cover
+  replaced in place (same filename) refreshes after **Clear Cache**.
+
+### Fixed
+- **Crop mode survives an idle-pause release.** The **CROP** mode chosen live
+  (fill / 4:3) is now held while a paused Plex stream is released — the held frame
+  is shown through it — and the stream resumes in that mode instead of dropping
+  back to the Auto Crop setting.
+- **Watchlist from the Home dashboard.** Continue Watching / On Deck cards for an
+  episode now carry the show's identity, so the Watchlist bookmark on the resulting
+  detail screen toggles the show instead of silently reverting.
+- **Idle screen lines up with the player controls.** The released-stream screen's
+  static control layout now uses the same narrower margins as the live controls.
+
 ## [0.10.0] - 2026-08-08
 
 ### Added
