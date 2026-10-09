@@ -20,6 +20,7 @@
 #include <QDateTime>
 #include <QProcess>
 #include <functional>
+#include <utility>
 #include "../../win_utils.h"
 
 #include <openssl/evp.h>
@@ -45,6 +46,15 @@ PlexBackend::PlexBackend(const QString &appRoot, const QString &dataRoot, QObjec
 {
     m_pollTimer->setInterval(2000);
     connect(m_pollTimer, &QTimer::timeout, this, &PlexBackend::pollPinTick);
+
+    // The startup check only refreshes a JWT that's within a day of expiry, and
+    // PMS traffic (on its own token) never prompts a refresh — so an app left
+    // running for days would outlive the token and plex.tv calls (the Watchlist)
+    // would start failing. Keep it fresh for as long as the app runs.
+    m_jwtTimer = new QTimer(this);
+    m_jwtTimer->setInterval(60 * 60 * 1000);
+    connect(m_jwtTimer, &QTimer::timeout, this, &PlexBackend::refreshJwtIfDue);
+    m_jwtTimer->start();
 }
 
 // ---------------------------------------------------------------------------
@@ -331,25 +341,32 @@ QString PlexBackend::jwtUserIdClaim(const QString &jwt) {
 // ---------------------------------------------------------------------------
 
 void PlexBackend::refreshJwt(std::function<void(bool ok)> callback) {
-    if (m_refreshInFlight) { callback(false); return; }
+    // A caller arriving while a refresh is under way waits for its result rather
+    // than failing outright (a stale-token retry can overlap the hourly check).
+    m_refreshWaiters.append(callback);
+    if (m_refreshInFlight) return;
     m_refreshInFlight = true;
+    // Every outcome ends here: clear the flag, then answer everyone waiting.
+    auto finish = [this](bool ok) {
+        m_refreshInFlight = false;
+        const auto waiters = std::exchange(m_refreshWaiters, {});
+        for (const auto &w : waiters) w(ok);
+    };
 
     // Step 1: get nonce
     auto *nonceReply = plexGet(QUrl(PLEX_TV + "/api/v2/auth/nonce"), {});
-    connect(nonceReply, &QNetworkReply::finished, this, [this, nonceReply, callback]() {
+    connect(nonceReply, &QNetworkReply::finished, this, [this, nonceReply, finish]() {
         nonceReply->deleteLater();
         if (nonceReply->error() != QNetworkReply::NoError) {
             qWarning("[PlexBackend] JWT refresh: nonce request failed");
-            m_refreshInFlight = false;
-            callback(false);
+            finish(false);
             return;
         }
         QString nonce = QJsonDocument::fromJson(nonceReply->readAll())
                         .object()["nonce"].toString();
         if (nonce.isEmpty()) {
             qWarning("[PlexBackend] JWT refresh: empty nonce");
-            m_refreshInFlight = false;
-            callback(false);
+            finish(false);
             return;
         }
 
@@ -360,8 +377,7 @@ void PlexBackend::refreshJwt(std::function<void(bool ok)> callback) {
         if (!pkey || kid.isEmpty()) {
             qWarning("[PlexBackend] JWT refresh: no private key or key ID");
             if (pkey) EVP_PKEY_free(pkey);
-            m_refreshInFlight = false;
-            callback(false);
+            finish(false);
             return;
         }
         QString deviceJwt = buildDeviceJwt(pkey, kid, nonce);
@@ -373,20 +389,19 @@ void PlexBackend::refreshJwt(std::function<void(bool ok)> callback) {
         auto *tokenReply = plexPostJson(
             QUrl(PLEX_TV + "/api/v2/auth/token"), {},
             QJsonDocument(body).toJson(QJsonDocument::Compact));
-        connect(tokenReply, &QNetworkReply::finished, this, [this, tokenReply, callback]() {
+        connect(tokenReply, &QNetworkReply::finished, this, [this, tokenReply, finish]() {
             tokenReply->deleteLater();
-            m_refreshInFlight = false;
             if (tokenReply->error() != QNetworkReply::NoError) {
                 qWarning("[PlexBackend] JWT refresh: token exchange failed: %s",
                          qPrintable(tokenReply->errorString()));
-                callback(false);
+                finish(false);
                 return;
             }
             QString newJwt = QJsonDocument::fromJson(tokenReply->readAll())
                              .object()["auth_token"].toString();
             if (newJwt.isEmpty()) {
                 qWarning("[PlexBackend] JWT refresh: empty token in response");
-                callback(false);
+                finish(false);
                 return;
             }
             qint64 exp = jwtExpClaim(newJwt);
@@ -396,10 +411,33 @@ void PlexBackend::refreshJwt(std::function<void(bool ok)> callback) {
             QString uid = jwtUserIdClaim(newJwt);
             if (!uid.isEmpty()) a["account_user_id"] = uid;
             saveAuth(a);
-            qDebug("[PlexBackend] JWT refreshed, exp=%lld", static_cast<long long>(exp));
-            callback(true);
+            qInfo("[PlexBackend] JWT refreshed, exp=%lld", static_cast<long long>(exp));
+            finish(true);
         });
     });
+}
+
+void PlexBackend::refreshJwtIfDue() {
+    const QJsonObject auth = loadAuth();
+    const QString token = auth["auth_token"].toString();
+    // Only a JWT session (device key on disk) can refresh; a signed-out app or a
+    // not-yet-migrated legacy token is handled by the startup check instead.
+    if (token.isEmpty() || !QFile::exists(m_dataRoot + "/plex_key.pem")) return;
+    qint64 exp = static_cast<qint64>(auth["jwt_exp"].toDouble());
+    if (exp == 0) exp = jwtExpClaim(token);
+    if (exp > 0 && QDateTime::currentSecsSinceEpoch() < exp - 86400) return;
+    refreshJwt([](bool) {});
+}
+
+bool PlexBackend::retryWithFreshJwt(QNetworkReply *r, bool retried, std::function<void()> retry) {
+    const int status = r->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const bool authRejected = status == 401 || status == 498
+                           || r->error() == QNetworkReply::AuthenticationRequiredError;
+    if (retried || !authRejected) return false;
+    qInfo("[PlexBackend] plex.tv rejected the account token (HTTP %d) — refreshing it and retrying",
+          status);
+    refreshJwt([retry](bool) { retry(); });
+    return true;
 }
 
 void PlexBackend::checkAndRefreshOnStartup(std::function<void()> callback) {
@@ -1387,7 +1425,7 @@ void PlexBackend::load_continue_watching() {
 }
 
 void PlexBackend::fetchWatchlistLocal(int offset, int limit,
-        std::function<void(QVariantList, int, int)> callback) {
+        std::function<void(QVariantList, int, int)> callback, bool retried) {
     const QString accToken = accountToken();
     if (accToken.isEmpty()) { callback({}, offset, 0); return; }
     // The Watchlist is account-level, served by Plex Discover (not the PMS).
@@ -1397,8 +1435,11 @@ void PlexBackend::fetchWatchlistLocal(int offset, int limit,
     wq.addQueryItem("X-Plex-Container-Size", QString::number(limit));
     wl.setQuery(wq);
     auto *r = plexGet(wl, accToken);
-    connect(r, &QNetworkReply::finished, this, [this, r, offset, callback]() mutable {
+    connect(r, &QNetworkReply::finished, this, [this, r, offset, limit, callback, retried]() mutable {
         r->deleteLater();
+        if (retryWithFreshJwt(r, retried, [this, offset, limit, callback] {
+                fetchWatchlistLocal(offset, limit, callback, true); }))
+            return;
         QStringList guids;
         int totalSize = 0, windowCount = 0;
         if (r->error() == QNetworkReply::NoError) {
@@ -1459,6 +1500,10 @@ void PlexBackend::load_watchlist(int offset) {
 }
 
 void PlexBackend::set_watchlist(const QString &guid, bool add) {
+    setWatchlist(guid, add, false);
+}
+
+void PlexBackend::setWatchlist(const QString &guid, bool add, bool retried) {
     const QString accToken = accountToken();
     const QString rk = guid.section('/', -1);   // Discover ratingKey = last GUID segment
     if (accToken.isEmpty() || rk.isEmpty()) {
@@ -1470,8 +1515,10 @@ void PlexBackend::set_watchlist(const QString &guid, bool add) {
     QUrl u("https://discover.provider.plex.tv/actions/" + action);
     QUrlQuery q; q.addQueryItem("ratingKey", rk); u.setQuery(q);
     auto *r = plexPut(u, accToken);
-    connect(r, &QNetworkReply::finished, this, [this, r, guid, add]() {
+    connect(r, &QNetworkReply::finished, this, [this, r, guid, add, retried]() {
         r->deleteLater();
+        if (retryWithFreshJwt(r, retried, [this, guid, add] { setWatchlist(guid, add, true); }))
+            return;
         if (r->error() != QNetworkReply::NoError) {
             emit errorOccurred(QString("WATCHLIST %1 FAILED").arg(add ? "ADD" : "REMOVE"));
             emit watchlistStateReady(guid, !add);   // revert
@@ -1482,6 +1529,10 @@ void PlexBackend::set_watchlist(const QString &guid, bool add) {
 }
 
 void PlexBackend::check_watchlist(const QString &guid) {
+    checkWatchlist(guid, false);
+}
+
+void PlexBackend::checkWatchlist(const QString &guid, bool retried) {
     const QString accToken = accountToken();
     const QString rk = guid.section('/', -1);   // Discover ratingKey = last GUID segment
     if (accToken.isEmpty() || !guid.startsWith("plex://") || rk.isEmpty()) {
@@ -1494,8 +1545,10 @@ void PlexBackend::check_watchlist(const QString &guid) {
     QUrl u("https://discover.provider.plex.tv/library/metadata/" + rk);
     QUrlQuery q; q.addQueryItem("includeUserState", "1"); u.setQuery(q);
     auto *r = plexGet(u, accToken);
-    connect(r, &QNetworkReply::finished, this, [this, r, guid]() {
+    connect(r, &QNetworkReply::finished, this, [this, r, guid, retried]() {
         r->deleteLater();
+        if (retryWithFreshJwt(r, retried, [this, guid] { checkWatchlist(guid, true); }))
+            return;
         bool on = false;
         if (r->error() == QNetworkReply::NoError) {
             const QJsonArray md = QJsonDocument::fromJson(r->readAll())

@@ -248,7 +248,11 @@ private:
     // GUID (up to `limit` entries), preserving watchlist order and dropping any not
     // on this server. `callback` receives the local formatItem() maps.
     void fetchWatchlistLocal(int offset, int limit,
-                             std::function<void(QVariantList, int nextOffset, int totalSize)> callback);
+                             std::function<void(QVariantList, int nextOffset, int totalSize)> callback,
+                             bool retried = false);
+    // set_watchlist / check_watchlist with the one-shot stale-JWT retry flag.
+    void setWatchlist(const QString &guid, bool add, bool retried);
+    void checkWatchlist(const QString &guid, bool retried);
 
     // Connection probing
     void probeConnections(const QJsonArray &connections,
@@ -290,9 +294,20 @@ private:
     void checkAndRefreshOnStartup(std::function<void()> callback);
     void migrateLegacyToken(std::function<void()> callback);
     void refreshJwt(std::function<void(bool ok)> callback);
+    // Refresh the account JWT if it expires within a day (or its expiry is
+    // unknown). Run hourly so a long-running session never outlives the token.
+    void refreshJwtIfDue();
 
     // 498 retry
     void handle498(std::function<void()> retryOp);
+
+    // plex.tv / Discover requests authenticate with the account JWT, which
+    // expires while PMS requests (on their own token) keep working. If `r` was
+    // rejected for auth (401/498) and this isn't already the retry, refresh the
+    // JWT and run `retry` (whatever the refresh's outcome — a failed refresh just
+    // fails again on the retry and takes the caller's error path); returns true
+    // when it took over.
+    bool retryWithFreshJwt(QNetworkReply *r, bool retried, std::function<void()> retry);
 
     // HTTP helper — POST with JSON body
     QNetworkReply* plexPostJson(const QUrl &url, const QString &token, const QByteArray &body);
@@ -307,6 +322,8 @@ private:
     QString m_pendingPinId;
     QString m_clientId;          // cached after first load
     bool    m_refreshInFlight  = false;
+    QList<std::function<void(bool ok)>> m_refreshWaiters;  // callers of the in-flight refreshJwt
+    QTimer *m_jwtTimer = nullptr;       // hourly refreshJwtIfDue
     bool    m_deviceVerified   = false; // set after first successful plex.tv check per session
     QVariantList m_librariesCache;      // last library list (in-memory, this session only)
     QString      m_librariesCacheKey;   // server+user the cache belongs to
