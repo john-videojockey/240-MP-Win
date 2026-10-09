@@ -592,6 +592,13 @@ void MpvController::onIpcReadyRead() {
                         emit episodeNavRequested(args[1].toString());
                     else if (msg == "crop-state" && args.size() > 1)
                         setCropState(args[1].toString().toInt());   // OSC CROP cycled
+                    else if (msg == "sub-track" && args.size() > 5) // OSC SUBTITLE cycled
+                        emit subTrackSelected(QVariantMap{
+                            {"id",       args[1].toString().toInt()},
+                            {"ffIndex",  args[2].toString().toInt()},
+                            {"external", args[3].toString()},
+                            {"title",    args[4].toString()},
+                            {"lang",     args[5].toString()}});
                 }
             }
             continue;

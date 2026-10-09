@@ -32,7 +32,7 @@ On top of the platform rewrite, this port adds a number of features — all opti
 - **Series handling** — a show/movie folder shows its videos flattened unless it has `Season N` subfolders (then those are seasons); bonus videos appear under Cast & Extras.
 
 **Plex & Local Files**
-- **Per‑title playback settings** — audio language, subtitle language, volume gain (± dB), video upscaler and retro filter, chosen on the info screen and carried across a show's episodes.
+- **Per‑title playback settings** — audio language, subtitle track, volume gain (± dB), video upscaler and retro filter, chosen on the info screen and carried across a show's episodes (a subtitle switched during playback is remembered too).
 - **Video upscalers** — GPU‑accelerated mpv GLSL shaders (**ArtCNN, FSRCNNX, Anime4K**, plus a High‑Quality preset) — handy for bringing SD anime up to a 4K panel.
 - **Retro filters** — optional CRT / tape looks (**Scanlines, CRT, NTSC, VHS, Heavy CRT**, each with a curved‑tube variant) laid over playback and chosen per title. Self‑authored mpv GLSL that runs after the upscaler and leaves subtitles crisp.
 - **“Up next”** — finishing an episode (or backing out during the credits) lands on the *next* episode's info.

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import Components
+import "SubtitlePicks.js" as SubtitlePicks
 
 FocusScope {
     id: playerRoot
@@ -33,6 +34,9 @@ FocusScope {
     property var    imageSubtitleIds: navParams.imageSubtitleIds || []
     property string selectedAudioId:    navParams.selectedAudioId    || ""
     property string selectedSubtitleId: navParams.selectedSubtitleId || "0"
+    // Per-show key ("plex:<showKey>") the subtitle choice is remembered under
+    // (SubtitlePicks.js); empty for a clip such as a trailer.
+    property string titleKey:     navParams.titleKey     || ""
 
     property bool stoppedReported:    false
     property bool playbackStarted:    false
@@ -224,17 +228,53 @@ FocusScope {
         }
     }
 
+    // mpv's sub track id for the embedded subtitleStreams[idx]: mpv numbers the
+    // file's own sub tracks 1..n in container order (the --sub-file sidecars come
+    // after them), which is the order of the embedded entries in Plex's list.
+    function mpvEmbeddedSid(idx) {
+        var n = 0
+        for (var i = 1; i <= idx; i++)
+            if (subtitleStreams[i] && !subtitleStreams[i].subUrl) n++
+        return n
+    }
+
+    // Map a track the OSC switched to (MpvController.subTrackSelected) back onto
+    // subtitleStreams: a sidecar by its URL, an embedded track by its container
+    // stream index (mpv's ff-index is Plex's stream index), else by its position
+    // among the embedded tracks. -1 when it can't be placed.
+    function subtitleIdxForMpvTrack(track) {
+        if (!track.id) return 0
+        var i
+        if (track.external) {
+            for (i = 1; i < subtitleStreams.length; i++)
+                if (subtitleStreams[i].subUrl === track.external) return i
+            return -1
+        }
+        if (track.ffIndex >= 0) {
+            for (i = 1; i < subtitleStreams.length; i++)
+                if (!subtitleStreams[i].subUrl && subtitleStreams[i].index === track.ffIndex) return i
+        }
+        var n = 0
+        for (i = 1; i < subtitleStreams.length; i++)
+            if (!subtitleStreams[i].subUrl && ++n === track.id) return i
+        return -1
+    }
+
     function buildSubArgs() {
         var allSubUrls = []
+        var allSubTitles = []   // the OSC's names for the sidecars (else mpv shows the URL's tail)
         for (var i = 1; i < subtitleStreams.length; i++) {
-            if (subtitleStreams[i] && subtitleStreams[i].subUrl)
+            if (subtitleStreams[i] && subtitleStreams[i].subUrl) {
                 allSubUrls.push(subtitleStreams[i].subUrl)
+                allSubTitles.push(subtitleStreams[i].displayTitle || "")
+            }
         }
         var selectedSub = subtitleIdx > 0 ? subtitleStreams[subtitleIdx] : null
         var selectedSubUrl = selectedSub ? (selectedSub.subUrl || "") : ""
-        if (selectedSubUrl && allSubUrls.length > 1) {
-            allSubUrls = allSubUrls.filter(function(u) { return u !== selectedSubUrl })
-            allSubUrls.unshift(selectedSubUrl)
+        var at = selectedSubUrl ? allSubUrls.indexOf(selectedSubUrl) : -1
+        if (at > 0) {
+            allSubUrls.unshift(allSubUrls.splice(at, 1)[0])
+            allSubTitles.unshift(allSubTitles.splice(at, 1)[0])
         }
         var subTrack
         if (subtitleIdx === 0)
@@ -242,8 +282,8 @@ FocusScope {
         else if (selectedSubUrl)
             subTrack = 0
         else
-            subTrack = subtitleIdx
-        return { urls: allSubUrls, track: subTrack }
+            subTrack = mpvEmbeddedSid(subtitleIdx)
+        return { urls: allSubUrls, titles: allSubTitles, track: subTrack }
     }
 
     // Starting mpv runs synchronously and, on the Pi, immediately switches VT
@@ -285,7 +325,7 @@ FocusScope {
             var sub = buildSubArgs()
             mpvController.loadAndPlay(streamUrl, offsetMs / 1000.0,
                                        audioIdx + 1, sub.track, sub.urls, [], false, -1, 0.0, plexToken,
-                                       false, "", false, [], 0.0, false, playerExtraArgs())
+                                       false, "", false, sub.titles, 0.0, false, playerExtraArgs())
         }
     }
 
@@ -421,7 +461,7 @@ FocusScope {
                 // mpv to the resume point — keeps everything before it seekable.
                 var sub = buildSubArgs()
                 mpvController.loadAndPlay(url, viewOffset / 1000.0, audioIdx + 1, sub.track, sub.urls, [], false, -1, 0.0, plexToken,
-                                           false, "", false, [], 0.0, false, playerExtraArgs())
+                                           false, "", false, sub.titles, 0.0, false, playerExtraArgs())
                 return
             }
             if (pendingResume) {
@@ -532,8 +572,12 @@ FocusScope {
         })
 
         // Match the carried languages onto this episode's stream lists, then
-        // remember the resulting selection for the episode after this one.
+        // remember the resulting selection for the episode after this one. The
+        // show's remembered subtitle track wins over the carried language: it
+        // knows the exact track for any subtitle layout seen before.
         applyCarryLanguages()
+        var sp = SubtitlePicks.resolve(appCore, titleKey, subtitleStreams)
+        if (sp >= 0) subtitleIdx = sp
         var audioId = (audioStreams[audioIdx] && audioStreams[audioIdx].id) ? audioStreams[audioIdx].id : ""
         var subId   = (subtitleStreams[subtitleIdx] && subtitleStreams[subtitleIdx].id) ? subtitleStreams[subtitleIdx].id : "0"
         selectedAudioId    = audioId
@@ -640,6 +684,23 @@ FocusScope {
         }
         function onDurationChanged(ms) {
             if (ms > 0) playerRoot.lastKnownDurationMs = ms
+        }
+
+        // The OSC's SUBTITLE button switched tracks. Follow it, so a relaunch
+        // (idle-pause resume, a direct-play retry) reopens the same track, and
+        // remember it for the show so later episodes and the info screen pick it
+        // too. A transcode burns its subtitle in, so mpv's tracks don't apply;
+        // a clip (trailer) has no stream list to map onto.
+        function onSubTrackSelected(track) {
+            if (playerRoot.isTranscoding || playerRoot.subtitleStreams.length < 2) return
+            var idx = playerRoot.subtitleIdxForMpvTrack(track)
+            if (idx < 0) return
+            playerRoot.subtitleIdx = idx
+            playerRoot.selectedSubtitleId = playerRoot.currentSubId()
+            playerRoot.captureCarryLanguages()
+            if (playerRoot.partId)
+                plexBackend.set_subtitle_stream(playerRoot.selectedSubtitleId, playerRoot.partId)
+            SubtitlePicks.remember(appCore, playerRoot.titleKey, playerRoot.subtitleStreams, idx)
         }
 
         function onPlaybackEnded(finalPositionMs, finalDurationMs, reason) {

@@ -5,6 +5,7 @@
 #include <QTimer>
 #include <QJsonArray>
 #include <QStringList>
+#include <QVariantMap>
 
 class AppCore;
 class QQuickWindow;
@@ -123,6 +124,13 @@ signals:
     void playbackEnded(int finalPositionMs, int finalDurationMs, const QString &reason);
 
     void skipRequested();
+    // The OSC's SUBTITLE button switched tracks (mpv itself never tells the app,
+    // so without this a relaunch would reopen the originally chosen track).
+    // `track`: id (mpv's sub track id; 0 = subtitles off), ffIndex (container
+    // stream index, -1 if unknown), external (the --sub-file URL; empty for an
+    // embedded track), title and lang — enough for a Player view to map it back
+    // onto its own stream list.
+    void subTrackSelected(const QVariantMap &track);
     // The OSC's |< / >| buttons when no mpv playlist is loaded: the app decides
     // what "next"/"prev" means (e.g. Plex plays the next episode in the season).
     void episodeNavRequested(const QString &direction);

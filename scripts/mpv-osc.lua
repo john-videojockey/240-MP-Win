@@ -133,6 +133,24 @@ local function get_sub_str()
     return table.concat(parts, " ")
 end
 
+-- Tell the app which subtitle track the user just switched to, so the choice
+-- survives an mpv relaunch (idle-pause resume, next episode) and can be
+-- remembered for the show. The cycle/off commands are synchronous, so
+-- current-tracks/sub already reflects the new track (id 0 = subtitles off).
+local function report_sub_track()
+    mp.commandv("script-message", "sub-track",
+        tostring(mp.get_property_number("current-tracks/sub/id", 0)),
+        tostring(mp.get_property_number("current-tracks/sub/ff-index", -1)),
+        mp.get_property("current-tracks/sub/external-filename", "") or "",
+        mp.get_property("current-tracks/sub/title", "") or "",
+        mp.get_property("current-tracks/sub/lang", "") or "")
+end
+
+local function cycle_sub()
+    mp.command("no-osd cycle sub")
+    report_sub_track()
+end
+
 local function has_subtitle_tracks()
     local tracks = mp.get_property_native("track-list", {})
     for _, t in ipairs(tracks) do
@@ -223,7 +241,7 @@ local function build_left_btns(has_sub, bar_w)
         -- sub=true marks it for the long-press handlers: a held ENTER or a long
         -- touch turns subtitles off outright instead of cycling to the next track.
         btns[#btns + 1] = {label="SUBTITLE", width=math.floor(bar_w * 0.13), sub=true,
-                           action=function() mp.command("no-osd cycle sub") end}
+                           action=cycle_sub}
     end
     btns[#btns + 1] = {label=CROP_NAMES[crop_state], width=math.floor(bar_w * 0.08),
                        action=cycle_crop}
@@ -481,6 +499,7 @@ local sub_touch_consumed = false
 
 local function set_sub_none()
     mp.command("no-osd set sid no")
+    report_sub_track()
 end
 
 local function focused_btn_is_sub()
@@ -518,7 +537,7 @@ mp.add_forced_key_binding("MBTN_LEFT", "osc-click", function(t)
         if sub_touch_pending then
             if sub_touch_timer then sub_touch_timer:kill(); sub_touch_timer = nil end
             if not sub_touch_consumed then
-                mp.command("no-osd cycle sub")
+                cycle_sub()
                 reset_idle_timer(MOUSE_TIMEOUT)
                 draw_menu()
             end

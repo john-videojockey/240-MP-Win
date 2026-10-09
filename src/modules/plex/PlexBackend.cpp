@@ -2092,6 +2092,28 @@ static QString extraSubtypeLabel(const QString &s) {
     return s.toUpper();
 }
 
+// Label for a subtitle stream. Plex's displayTitle is little more than the
+// language, but the metadata also carries the embedded track's own name —
+// append it when it adds something, so same-language tracks can be told apart
+// before playback.
+static QString subtitleLabel(const QJsonObject &s) {
+    QString label = s["displayTitle"].toString();
+    if (label.isEmpty()) label = s["language"].toString("Unknown");
+    const QString title = s["title"].toString().trimmed();
+    if (!title.isEmpty()) {
+        if (title.contains(label, Qt::CaseInsensitive))
+            label = title;                  // the name already states the language
+        else if (!label.contains(title, Qt::CaseInsensitive))
+            label += " - " + title;
+    }
+    if (s["forced"].toBool() && !label.contains("forced", Qt::CaseInsensitive))
+        label += " (Forced)";
+    if (s["hearingImpaired"].toBool() && !label.contains("SDH", Qt::CaseInsensitive)
+            && !label.contains("CC", Qt::CaseSensitive))
+        label += " SDH";
+    return label.toUpper();
+}
+
 QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
     const QString uri = serverUrl();
     // Guard against metadata with no media/part (e.g. an item the server can't
@@ -2138,9 +2160,35 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
             bool isImage = IMAGE_SUB_CODECS.contains(codec);
             QString subKey = s["key"].toString();
             QString subUrl = subKey.isEmpty() ? "" : uri + subKey;
-            subtitleStreams.append(QVariantMap{{"id",sid},{"displayTitle",title},{"language",lang},{"imageSubtitle",isImage},{"subUrl",subUrl}});
+            // title/codec/flags identify the track for the per-show subtitle
+            // memory (SubtitlePicks.js); index is its container stream index,
+            // which is mpv's ff-index for the same track (-1 for a sidecar).
+            subtitleStreams.append(QVariantMap{
+                {"id",sid},{"displayTitle",subtitleLabel(s)},{"language",lang},
+                {"imageSubtitle",isImage},{"subUrl",subUrl},
+                {"title",s["title"].toString()},{"codec",codec},
+                {"index",s["index"].toInt(-1)},
+                {"forced",s["forced"].toBool()},
+                {"hearingImpaired",s["hearingImpaired"].toBool()}});
             if (s["selected"].toBool() && selectedSubtitle == "0")
                 selectedSubtitle = sid;
+        }
+    }
+    // Labels can still collide (untitled tracks in one language): suffix the codec,
+    // then a running number, so every entry on the info screen is distinguishable.
+    for (const bool numbered : {false, true}) {
+        QHash<QString, int> seen;
+        for (int i = 1; i < subtitleStreams.size(); ++i)
+            ++seen[subtitleStreams[i].toMap()["displayTitle"].toString()];
+        QHash<QString, int> nth;
+        for (int i = 1; i < subtitleStreams.size(); ++i) {
+            QVariantMap m = subtitleStreams[i].toMap();
+            const QString label = m["displayTitle"].toString();
+            if (seen.value(label) < 2) continue;
+            m["displayTitle"] = numbered
+                ? label + " #" + QString::number(++nth[label])
+                : label + " (" + m["codec"].toString().toUpper() + ")";
+            subtitleStreams[i] = m;
         }
     }
     if (selectedAudio.isEmpty() && !audioStreams.isEmpty())

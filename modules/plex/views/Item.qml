@@ -1,5 +1,6 @@
 import QtQuick
 import Components
+import "SubtitlePicks.js" as SubtitlePicks
 
 FocusScope {
     id: detailRoot
@@ -174,23 +175,19 @@ FocusScope {
             appCore.save_setting("", "mpv_volume_gain_active", String(volumeDb))
             carryPending = false
         }
-        // Per-show audio/subtitle language override (set when the user cycles these
-        // on the info screen). Applied over the server-derived selection so the
-        // choice sticks across every episode of the show — including landing here
-        // after an episode ends — since Plex keeps no per-show track preference and
-        // an account default (e.g. subtitles on) would otherwise reassert each time.
+        // Per-show audio language / subtitle track (set when the user cycles these
+        // here, or the subtitle in the player). Applied over the server-derived
+        // selection so the choice sticks across every episode of the show —
+        // including landing here after an episode ends — since Plex keeps no
+        // per-show track preference and an account default (e.g. subtitles on)
+        // would otherwise reassert each time.
         var ao = appCore.get_map_setting("", "audio_lang_overrides", titleKey())
         if (ao && ao !== "" && d.audioStreams) {
             for (var ai = 0; ai < d.audioStreams.length; ai++)
                 if (d.audioStreams[ai].language === ao) { audioIdx = ai; break }
         }
-        var so = appCore.get_map_setting("", "sub_lang_overrides", titleKey())
-        if (so === "off") {
-            subtitleIdx = 0
-        } else if (so && so !== "" && d.subtitleStreams) {
-            for (var sj = 1; sj < d.subtitleStreams.length; sj++)
-                if (d.subtitleStreams[sj].language === so) { subtitleIdx = sj; break }
-        }
+        var sp = SubtitlePicks.resolve(appCore, titleKey(), d.subtitleStreams || [])
+        if (sp >= 0) subtitleIdx = sp
         // Theme song for this item (if enabled and one exists). An episode's own
         // detail carries no theme — only the show does — so fall back to the
         // passed-in item's theme (the show's, set on the browse/Continue Watching
@@ -308,7 +305,10 @@ FocusScope {
                 selectedSubtitleUrl: subUrl,
                 sessionId: detailRoot.sessionId,
                 isTranscoding: d.forceTranscode || false,
-                imageSubtitleIds: imageSubs
+                imageSubtitleIds: imageSubs,
+                // Per-show key, so a subtitle switched in the player is remembered
+                // for the show (and the next episode picks it up).
+                titleKey: detailRoot.titleKey()
             })
         }
 
@@ -424,11 +424,12 @@ FocusScope {
         appCore.save_setting("", "mpv_volume_gain_active", String(volumeDb))
     }
 
-    // Per-show audio/subtitle language, remembered per show/movie like the volume
-    // and upscaler. Stored by language (not stream id, which differs per episode)
-    // and re-applied on every episode by applyDetail, so a choice sticks across the
-    // whole show. Plex keeps no per-show track preference, so without this the
-    // account default (e.g. subtitles on) reasserts on each episode.
+    // Per-show audio language / subtitle track, remembered per show/movie like the
+    // volume and upscaler and re-applied on every episode by applyDetail, so a
+    // choice sticks across the whole show. Plex keeps no per-show track
+    // preference, so without this the account default (e.g. subtitles on)
+    // reasserts on each episode. Audio is stored by language (stream ids differ
+    // per episode); subtitles by track — see SubtitlePicks.js.
     function cycleAudio(dir) {
         if (!detail || !detail.audioStreams || detail.audioStreams.length < 2) return
         var n = detail.audioStreams.length
@@ -440,11 +441,7 @@ FocusScope {
         if (!detail || !detail.subtitleStreams || detail.subtitleStreams.length < 2) return
         var n = detail.subtitleStreams.length
         subtitleIdx = (subtitleIdx + dir + n) % n
-        // Index 0 is the synthetic "OFF" pseudo-stream; store "off" for it so the
-        // subtitles-off choice is remembered even though it has no language.
-        appCore.save_map_setting("", "sub_lang_overrides", titleKey(),
-                                 subtitleIdx === 0 ? "off"
-                                 : ((detail.subtitleStreams[subtitleIdx] || {}).language || ""))
+        SubtitlePicks.remember(appCore, titleKey(), detail.subtitleStreams, subtitleIdx)
     }
 
     // The play/options + playback-settings block all fits at once, so nothing
@@ -1247,6 +1244,7 @@ FocusScope {
             }
 
             Text {
+                id: subtitleLabel
                 text: "Subtitles"
                 color: focusRow === 4 ? root.surfaceColor : root.primaryColor
                 font.family: root.globalFont
@@ -1258,12 +1256,14 @@ FocusScope {
             }
 
             Row {
+                id: subtitleValueRow
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.right: parent.right
                 anchors.rightMargin: root.sw * 0.009375 //6
                 spacing: root.sw * 0.00625 //4
 
                 Text {
+                    id: subtitlePrevArrow
                     text: "\u25C4"
                     color: focusRow === 4 ? root.surfaceColor : root.tertiaryColor
                     font.family: root.globalFont
@@ -1287,6 +1287,12 @@ FocusScope {
                     font.capitalization: Font.AllUppercase
                     anchors.verticalCenter: parent.verticalCenter
                     font.pixelSize:detailRoot.optFont
+                    // Track names can be long: keep clear of the row label and
+                    // elide the rest.
+                    width: Math.min(implicitWidth, subtitleRow.width - subtitleLabel.width
+                                    - 2 * subtitlePrevArrow.width - 2 * subtitleValueRow.spacing
+                                    - root.sw * 0.04)
+                    elide: Text.ElideRight
                 }
                 Text {
                     text: "\u25BA"
