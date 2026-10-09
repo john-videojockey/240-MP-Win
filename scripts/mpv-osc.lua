@@ -133,22 +133,24 @@ local function get_sub_str()
     return table.concat(parts, " ")
 end
 
--- Tell the app which subtitle track the user just switched to, so the choice
--- survives an mpv relaunch (idle-pause resume, next episode) and can be
--- remembered for the show. The cycle/off commands are synchronous, so
--- current-tracks/sub already reflects the new track (id 0 = subtitles off).
-local function report_sub_track()
-    mp.commandv("script-message", "sub-track",
-        tostring(mp.get_property_number("current-tracks/sub/id", 0)),
-        tostring(mp.get_property_number("current-tracks/sub/ff-index", -1)),
-        mp.get_property("current-tracks/sub/external-filename", "") or "",
-        mp.get_property("current-tracks/sub/title", "") or "",
-        mp.get_property("current-tracks/sub/lang", "") or "")
+-- Tell the app which audio ("audio") or subtitle ("sub") track the user just
+-- switched to, so the choice survives an mpv relaunch (idle-pause resume, next
+-- episode) and can be remembered for the show. The cycle/off commands are
+-- synchronous, so current-tracks/<kind> already reflects the new track (id 0 =
+-- none/off).
+local function report_track(kind)
+    local p = "current-tracks/" .. kind .. "/"
+    mp.commandv("script-message", "track-selected", kind,
+        tostring(mp.get_property_number(p .. "id", 0)),
+        tostring(mp.get_property_number(p .. "ff-index", -1)),
+        mp.get_property(p .. "external-filename", "") or "",
+        mp.get_property(p .. "title", "") or "",
+        mp.get_property(p .. "lang", "") or "")
 end
 
-local function cycle_sub()
-    mp.command("no-osd cycle sub")
-    report_sub_track()
+local function cycle_track(kind)
+    mp.command("no-osd cycle " .. kind)
+    report_track(kind)
 end
 
 local function has_subtitle_tracks()
@@ -236,12 +238,12 @@ local function build_left_btns(has_sub, bar_w)
         btns[#btns + 1] = {label=">|", width=math.floor(bar_w * 0.05), action=nav_next}
     end
     btns[#btns + 1] = {label="AUDIO", width=math.floor(bar_w * 0.095),
-                       action=function() mp.command("no-osd cycle audio") end}
+                       action=function() cycle_track("audio") end}
     if has_sub then
         -- sub=true marks it for the long-press handlers: a held ENTER or a long
         -- touch turns subtitles off outright instead of cycling to the next track.
         btns[#btns + 1] = {label="SUBTITLE", width=math.floor(bar_w * 0.13), sub=true,
-                           action=cycle_sub}
+                           action=function() cycle_track("sub") end}
     end
     btns[#btns + 1] = {label=CROP_NAMES[crop_state], width=math.floor(bar_w * 0.08),
                        action=cycle_crop}
@@ -499,7 +501,7 @@ local sub_touch_consumed = false
 
 local function set_sub_none()
     mp.command("no-osd set sid no")
-    report_sub_track()
+    report_track("sub")
 end
 
 local function focused_btn_is_sub()
@@ -537,7 +539,7 @@ mp.add_forced_key_binding("MBTN_LEFT", "osc-click", function(t)
         if sub_touch_pending then
             if sub_touch_timer then sub_touch_timer:kill(); sub_touch_timer = nil end
             if not sub_touch_consumed then
-                cycle_sub()
+                cycle_track("sub")
                 reset_idle_timer(MOUSE_TIMEOUT)
                 draw_menu()
             end

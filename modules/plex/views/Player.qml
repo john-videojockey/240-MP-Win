@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import Components
-import "SubtitlePicks.js" as SubtitlePicks
+import "TrackPicks.js" as TrackPicks
 
 FocusScope {
     id: playerRoot
@@ -34,8 +34,8 @@ FocusScope {
     property var    imageSubtitleIds: navParams.imageSubtitleIds || []
     property string selectedAudioId:    navParams.selectedAudioId    || ""
     property string selectedSubtitleId: navParams.selectedSubtitleId || "0"
-    // Per-show key ("plex:<showKey>") the subtitle choice is remembered under
-    // (SubtitlePicks.js); empty for a clip such as a trailer.
+    // Per-show key ("plex:<showKey>") the audio/subtitle choices are remembered under
+    // (TrackPicks.js); empty for a clip such as a trailer.
     property string titleKey:     navParams.titleKey     || ""
 
     property bool stoppedReported:    false
@@ -238,26 +238,56 @@ FocusScope {
         return n
     }
 
-    // Map a track the OSC switched to (MpvController.subTrackSelected) back onto
-    // subtitleStreams: a sidecar by its URL, an embedded track by its container
-    // stream index (mpv's ff-index is Plex's stream index), else by its position
-    // among the embedded tracks. -1 when it can't be placed.
-    function subtitleIdxForMpvTrack(track) {
-        if (!track.id) return 0
+    // Map a track the OSC switched to (MpvController.trackSelected) back onto
+    // `streams`, whose real tracks start at `first` (a subtitle list has the
+    // synthetic OFF at 0): a sidecar by its URL, an embedded track by its
+    // container stream index (mpv's ff-index is Plex's stream index), else by its
+    // position among the embedded tracks. -1 when it can't be placed — including
+    // mpv's "no audio", which has no entry to keep.
+    function streamIdxForMpvTrack(streams, first, track) {
+        if (!track.id) return first > 0 ? 0 : -1
         var i
         if (track.external) {
-            for (i = 1; i < subtitleStreams.length; i++)
-                if (subtitleStreams[i].subUrl === track.external) return i
+            for (i = first; i < streams.length; i++)
+                if (streams[i].subUrl === track.external) return i
             return -1
         }
         if (track.ffIndex >= 0) {
-            for (i = 1; i < subtitleStreams.length; i++)
-                if (!subtitleStreams[i].subUrl && subtitleStreams[i].index === track.ffIndex) return i
+            for (i = first; i < streams.length; i++)
+                if (!streams[i].subUrl && streams[i].index === track.ffIndex) return i
         }
         var n = 0
-        for (i = 1; i < subtitleStreams.length; i++)
-            if (!subtitleStreams[i].subUrl && ++n === track.id) return i
+        for (i = first; i < streams.length; i++)
+            if (!streams[i].subUrl && ++n === track.id) return i
         return -1
+    }
+
+    // The OSC's AUDIO or SUBTITLE button switched tracks. Follow it, so a
+    // relaunch (idle-pause resume, a direct-play retry) reopens the same track,
+    // and remember it for the show so later episodes and the info screen pick it
+    // too. A transcode carries only the chosen tracks (its subtitle burned in),
+    // so mpv's tracks don't map onto the stream lists; a clip (trailer) has none.
+    function followTrack(type, track) {
+        if (isTranscoding) return
+        var idx
+        if (type === "sub" && subtitleStreams.length > 1) {
+            idx = streamIdxForMpvTrack(subtitleStreams, 1, track)
+            if (idx < 0) return
+            subtitleIdx = idx
+            selectedSubtitleId = currentSubId()
+            if (partId) plexBackend.set_subtitle_stream(selectedSubtitleId, partId)
+            TrackPicks.remember(appCore, "sub", titleKey, subtitleStreams, idx)
+        } else if (type === "audio" && audioStreams.length > 1) {
+            idx = streamIdxForMpvTrack(audioStreams, 0, track)
+            if (idx < 0) return
+            audioIdx = idx
+            selectedAudioId = currentAudioId()
+            if (partId) plexBackend.set_audio_stream(selectedAudioId, partId)
+            TrackPicks.remember(appCore, "audio", titleKey, audioStreams, idx)
+        } else {
+            return
+        }
+        captureCarryLanguages()
     }
 
     function buildSubArgs() {
@@ -573,10 +603,12 @@ FocusScope {
 
         // Match the carried languages onto this episode's stream lists, then
         // remember the resulting selection for the episode after this one. The
-        // show's remembered subtitle track wins over the carried language: it
-        // knows the exact track for any subtitle layout seen before.
+        // show's remembered tracks win over the carried languages: they know the
+        // exact track for any track layout seen before.
         applyCarryLanguages()
-        var sp = SubtitlePicks.resolve(appCore, titleKey, subtitleStreams)
+        var ap = TrackPicks.resolve(appCore, "audio", titleKey, audioStreams)
+        if (ap >= 0) audioIdx = ap
+        var sp = TrackPicks.resolve(appCore, "sub", titleKey, subtitleStreams)
         if (sp >= 0) subtitleIdx = sp
         var audioId = (audioStreams[audioIdx] && audioStreams[audioIdx].id) ? audioStreams[audioIdx].id : ""
         var subId   = (subtitleStreams[subtitleIdx] && subtitleStreams[subtitleIdx].id) ? subtitleStreams[subtitleIdx].id : "0"
@@ -686,22 +718,7 @@ FocusScope {
             if (ms > 0) playerRoot.lastKnownDurationMs = ms
         }
 
-        // The OSC's SUBTITLE button switched tracks. Follow it, so a relaunch
-        // (idle-pause resume, a direct-play retry) reopens the same track, and
-        // remember it for the show so later episodes and the info screen pick it
-        // too. A transcode burns its subtitle in, so mpv's tracks don't apply;
-        // a clip (trailer) has no stream list to map onto.
-        function onSubTrackSelected(track) {
-            if (playerRoot.isTranscoding || playerRoot.subtitleStreams.length < 2) return
-            var idx = playerRoot.subtitleIdxForMpvTrack(track)
-            if (idx < 0) return
-            playerRoot.subtitleIdx = idx
-            playerRoot.selectedSubtitleId = playerRoot.currentSubId()
-            playerRoot.captureCarryLanguages()
-            if (playerRoot.partId)
-                plexBackend.set_subtitle_stream(playerRoot.selectedSubtitleId, playerRoot.partId)
-            SubtitlePicks.remember(appCore, playerRoot.titleKey, playerRoot.subtitleStreams, idx)
-        }
+        function onTrackSelected(type, track) { playerRoot.followTrack(type, track) }
 
         function onPlaybackEnded(finalPositionMs, finalDurationMs, reason) {
             // mpv was torn down on purpose to suspend a long pause — stay on the

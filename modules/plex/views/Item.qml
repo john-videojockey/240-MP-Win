@@ -1,6 +1,6 @@
 import QtQuick
 import Components
-import "SubtitlePicks.js" as SubtitlePicks
+import "TrackPicks.js" as TrackPicks
 
 FocusScope {
     id: detailRoot
@@ -175,18 +175,15 @@ FocusScope {
             appCore.save_setting("", "mpv_volume_gain_active", String(volumeDb))
             carryPending = false
         }
-        // Per-show audio language / subtitle track (set when the user cycles these
-        // here, or the subtitle in the player). Applied over the server-derived
-        // selection so the choice sticks across every episode of the show —
-        // including landing here after an episode ends — since Plex keeps no
-        // per-show track preference and an account default (e.g. subtitles on)
-        // would otherwise reassert each time.
-        var ao = appCore.get_map_setting("", "audio_lang_overrides", titleKey())
-        if (ao && ao !== "" && d.audioStreams) {
-            for (var ai = 0; ai < d.audioStreams.length; ai++)
-                if (d.audioStreams[ai].language === ao) { audioIdx = ai; break }
-        }
-        var sp = SubtitlePicks.resolve(appCore, titleKey(), d.subtitleStreams || [])
+        // Per-show audio/subtitle track (set when the user cycles these here or
+        // in the player). Applied over the server-derived selection so the
+        // choice sticks across every episode of the show — including landing
+        // here after an episode ends — since Plex keeps no per-show track
+        // preference and an account default (e.g. subtitles on) would otherwise
+        // reassert each time.
+        var ap = TrackPicks.resolve(appCore, "audio", titleKey(), d.audioStreams || [])
+        if (ap >= 0) audioIdx = ap
+        var sp = TrackPicks.resolve(appCore, "sub", titleKey(), d.subtitleStreams || [])
         if (sp >= 0) subtitleIdx = sp
         // Theme song for this item (if enabled and one exists). An episode's own
         // detail carries no theme — only the show does — so fall back to the
@@ -306,7 +303,7 @@ FocusScope {
                 sessionId: detailRoot.sessionId,
                 isTranscoding: d.forceTranscode || false,
                 imageSubtitleIds: imageSubs,
-                // Per-show key, so a subtitle switched in the player is remembered
+                // Per-show key, so a track switched in the player is remembered
                 // for the show (and the next episode picks it up).
                 titleKey: detailRoot.titleKey()
             })
@@ -424,24 +421,23 @@ FocusScope {
         appCore.save_setting("", "mpv_volume_gain_active", String(volumeDb))
     }
 
-    // Per-show audio language / subtitle track, remembered per show/movie like the
-    // volume and upscaler and re-applied on every episode by applyDetail, so a
-    // choice sticks across the whole show. Plex keeps no per-show track
-    // preference, so without this the account default (e.g. subtitles on)
-    // reasserts on each episode. Audio is stored by language (stream ids differ
-    // per episode); subtitles by track — see SubtitlePicks.js.
+    // Per-show audio/subtitle track, remembered per show/movie like the volume
+    // and upscaler and re-applied on every episode by applyDetail, so a choice
+    // sticks across the whole show. Plex keeps no per-show track preference, so
+    // without this the account default (e.g. subtitles on) reasserts on each
+    // episode. Stored by track, not stream id (which differs per episode) — see
+    // TrackPicks.js.
     function cycleAudio(dir) {
         if (!detail || !detail.audioStreams || detail.audioStreams.length < 2) return
         var n = detail.audioStreams.length
         audioIdx = (audioIdx + dir + n) % n
-        appCore.save_map_setting("", "audio_lang_overrides", titleKey(),
-                                 (detail.audioStreams[audioIdx] || {}).language || "")
+        TrackPicks.remember(appCore, "audio", titleKey(), detail.audioStreams, audioIdx)
     }
     function cycleSubtitle(dir) {
         if (!detail || !detail.subtitleStreams || detail.subtitleStreams.length < 2) return
         var n = detail.subtitleStreams.length
         subtitleIdx = (subtitleIdx + dir + n) % n
-        SubtitlePicks.remember(appCore, titleKey(), detail.subtitleStreams, subtitleIdx)
+        TrackPicks.remember(appCore, "sub", titleKey(), detail.subtitleStreams, subtitleIdx)
     }
 
     // The play/options + playback-settings block all fits at once, so nothing
@@ -1159,6 +1155,7 @@ FocusScope {
             }
 
             Text {
+                id: audioLabel
                 text: "Audio"
                 color: focusRow === 3 ? root.surfaceColor : root.primaryColor
                 font.family: root.globalFont
@@ -1170,12 +1167,14 @@ FocusScope {
             }
 
             Row {
+                id: audioValueRow
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.right: parent.right
                 anchors.rightMargin: root.sw * 0.009375 //6
                 spacing: root.sw * 0.00625 //4
 
                 Text {
+                    id: audioPrevArrow
                     text: "\u25C4"
                     color: focusRow === 3 ? root.surfaceColor : root.tertiaryColor
                     font.family: root.globalFont
@@ -1201,6 +1200,11 @@ FocusScope {
                     font.capitalization: Font.AllUppercase
                     anchors.verticalCenter: parent.verticalCenter
                     font.pixelSize:detailRoot.optFont
+                    // Keep clear of the row label and elide a long track name.
+                    width: Math.min(implicitWidth, audioRow.width - audioLabel.width
+                                    - 2 * audioPrevArrow.width - 2 * audioValueRow.spacing
+                                    - root.sw * 0.04)
+                    elide: Text.ElideRight
                 }
                 Text {
                     text: "\u25BA"

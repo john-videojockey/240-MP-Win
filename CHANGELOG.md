@@ -8,19 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- **Plex subtitles are chosen by track, not just language.** The info screen now
-  shows each subtitle track's own name (alongside its language), so same-language
+- **Plex audio and subtitles are chosen by track, not just language.** The info
+  screen now shows each subtitle track's own name (alongside its language), and
+  names audio tracks whose labels would otherwise read the same, so same-language
   tracks can be told apart before playback. The choice is remembered per show along
-  with the episode's whole subtitle layout: any later episode with a layout seen
-  before gets that layout's pick back, an unseen layout falls back to the same-named
-  track and then to the first track in the chosen language.
+  with the episode's whole track layout: any later episode with a layout seen before
+  gets that layout's pick back, an unseen layout falls back to the same-named track
+  and then to the first track in the chosen language.
 
 ### Fixed
-- **Subtitle switched during playback sticks.** A track picked with the on-screen
-  **SUBTITLE** button is now followed by the app: it survives an idle-pause release
-  (the stream resumes on it instead of the original track), carries into the next
-  episode, and is what the info screen shows on return — it no longer resets to the
-  first track in the language.
+- **Audio or subtitle switched during playback sticks.** A track picked with the
+  on-screen **AUDIO** or **SUBTITLE** button is now followed by the app: it survives
+  an idle-pause release (the stream resumes on it instead of the original track),
+  carries into the next episode, and is what the info screen shows on return — it
+  no longer resets to the first track in the language.
 
 ## [0.10.1] - 2026-09-19
 

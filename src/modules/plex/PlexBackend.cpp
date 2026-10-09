@@ -19,6 +19,7 @@
 #include <QDebug>
 #include <QDateTime>
 #include <QProcess>
+#include <functional>
 #include "../../win_utils.h"
 
 #include <openssl/evp.h>
@@ -2114,6 +2115,28 @@ static QString subtitleLabel(const QJsonObject &s) {
     return label.toUpper();
 }
 
+// Make the labels of streams[first..] unique, so every entry on the info screen
+// is distinguishable: colliding labels first get suffix(stream) (when it says
+// something), then a running number.
+static void disambiguateLabels(QVariantList &streams, int first,
+                               const std::function<QString(const QVariantMap &)> &suffix) {
+    for (const bool numbered : {false, true}) {
+        QHash<QString, int> seen;
+        for (int i = first; i < streams.size(); ++i)
+            ++seen[streams[i].toMap()["displayTitle"].toString()];
+        QHash<QString, int> nth;
+        for (int i = first; i < streams.size(); ++i) {
+            QVariantMap m = streams[i].toMap();
+            const QString label = m["displayTitle"].toString();
+            if (seen.value(label) < 2) continue;
+            const QString extra = numbered ? " #" + QString::number(++nth[label]) : suffix(m);
+            if (extra.isEmpty()) continue;
+            m["displayTitle"] = label + extra;
+            streams[i] = m;
+        }
+    }
+}
+
 QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
     const QString uri = serverUrl();
     // Guard against metadata with no media/part (e.g. an item the server can't
@@ -2153,7 +2176,13 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
         if (st == 1) {
             videoCodec = codec;
         } else if (st == 2) {
-            audioStreams.append(QVariantMap{{"id",sid},{"displayTitle",title},{"language",lang}});
+            // title/codec/channels identify the track for the per-show audio
+            // memory (TrackPicks.js); index is its container stream index, which
+            // is mpv's ff-index for the same track.
+            audioStreams.append(QVariantMap{
+                {"id",sid},{"displayTitle",title},{"language",lang},
+                {"title",s["title"].toString()},{"codec",codec},
+                {"index",s["index"].toInt(-1)},{"channels",s["channels"].toInt()}});
             if (s["selected"].toBool() && selectedAudio.isEmpty())
                 selectedAudio = sid;
         } else if (st == 3) {
@@ -2161,7 +2190,7 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
             QString subKey = s["key"].toString();
             QString subUrl = subKey.isEmpty() ? "" : uri + subKey;
             // title/codec/flags identify the track for the per-show subtitle
-            // memory (SubtitlePicks.js); index is its container stream index,
+            // memory (TrackPicks.js); index is its container stream index,
             // which is mpv's ff-index for the same track (-1 for a sidecar).
             subtitleStreams.append(QVariantMap{
                 {"id",sid},{"displayTitle",subtitleLabel(s)},{"language",lang},
@@ -2174,23 +2203,16 @@ QVariantMap PlexBackend::buildItemDetail(const QJsonObject &meta) const {
                 selectedSubtitle = sid;
         }
     }
-    // Labels can still collide (untitled tracks in one language): suffix the codec,
-    // then a running number, so every entry on the info screen is distinguishable.
-    for (const bool numbered : {false, true}) {
-        QHash<QString, int> seen;
-        for (int i = 1; i < subtitleStreams.size(); ++i)
-            ++seen[subtitleStreams[i].toMap()["displayTitle"].toString()];
-        QHash<QString, int> nth;
-        for (int i = 1; i < subtitleStreams.size(); ++i) {
-            QVariantMap m = subtitleStreams[i].toMap();
-            const QString label = m["displayTitle"].toString();
-            if (seen.value(label) < 2) continue;
-            m["displayTitle"] = numbered
-                ? label + " #" + QString::number(++nth[label])
-                : label + " (" + m["codec"].toString().toUpper() + ")";
-            subtitleStreams[i] = m;
-        }
-    }
+    // Subtitle labels can still collide (untitled tracks in one language): tell
+    // them apart by codec. Audio labels already carry codec and channels, so a
+    // collision (e.g. a commentary track) is told apart by the track's own name.
+    disambiguateLabels(subtitleStreams, 1, [](const QVariantMap &m) {
+        return QString(" (" + m["codec"].toString().toUpper() + ")");
+    });
+    disambiguateLabels(audioStreams, 0, [](const QVariantMap &m) {
+        const QString t = m["title"].toString().trimmed().toUpper();
+        return (t.isEmpty() || m["displayTitle"].toString().contains(t)) ? QString() : QString(" - " + t);
+    });
     if (selectedAudio.isEmpty() && !audioStreams.isEmpty())
         selectedAudio = audioStreams[0].toMap()["id"].toString();
 
