@@ -90,11 +90,18 @@ FocusScope {
     // Ask the server to recover a cover-less item's artwork (opt-in), at most
     // once per item per session. The caller guards on the cell's coverMissing so
     // this only fires on genuinely absent art — never a cover still loading.
-    function maybeRefreshCover(it) {
-        if (!autoRefreshCovers || !it || !it.ratingKey) return
-        if (refreshedCovers[it.ratingKey]) return
-        refreshedCovers[it.ratingKey] = true
-        plexBackend.refresh_metadata(it.ratingKey, it.title || "")
+    // The refresh targets the item that owns the art on screen — for an episode
+    // shown with its show's or season's poster (Continue Watching) that's the
+    // show or season, not the episode — read off the art path
+    // (/library/metadata/<key>/thumb/…) when there is one, else the poster owner.
+    function maybeRefreshCover(it, artPath) {
+        if (!autoRefreshCovers || !it) return
+        var m = /^\/library\/metadata\/(\d+)\//.exec(artPath || "")
+        var key = m ? m[1] : (it.posterKey || it.ratingKey)
+        if (!key || refreshedCovers[key]) return
+        refreshedCovers[key] = true
+        plexBackend.refresh_metadata(key, key === it.ratingKey ? (it.title || "")
+                                          : (it.grandparentTitle || it.parentTitle || it.title || ""))
     }
 
     // Shared post-load bookkeeping: both views track the same current index so
@@ -383,7 +390,7 @@ FocusScope {
             // grid delegate reports whether its art is genuinely missing (not just
             // mid-load), so a cover that's present is never refreshed.
             if (itemListRoot.coverMode && coverGrid.currentItem && coverGrid.currentItem.coverMissing)
-                itemListRoot.maybeRefreshCover(it)
+                itemListRoot.maybeRefreshCover(it, coverGrid.currentItem.coverArt)
         }
     }
     // Restart the debounce whenever the highlight moves in either view — needed
@@ -537,6 +544,8 @@ FocusScope {
             // ask the server to refresh a dropped poster.
             property bool coverMissing: !modelData.loadMore
                     && (!posterBox.artPath || posterImage.status === Image.Error)
+            // The art path this cell shows (names the item that owns it).
+            readonly property string coverArt: posterBox.artPath
 
             // Touch: first tap highlights the poster, tapping the highlighted
             // poster activates it (same two-tap pattern as the lists).

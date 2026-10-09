@@ -680,6 +680,16 @@ QVariantMap PlexBackend::formatItem(const QJsonObject &m) const {
         {"poster",                 !m["grandparentThumb"].toString().isEmpty() ? m["grandparentThumb"].toString()
                                  : !m["parentThumb"].toString().isEmpty()      ? m["parentThumb"].toString()
                                                                                : m["thumb"].toString()},
+        // ratingKey of the item that owns that poster — an episode's show (or its
+        // season's), else the item itself — which is what a cover refresh must
+        // target to recover the art. With no art at all, the show/season the
+        // poster would have come from.
+        {"posterKey",              !m["grandparentThumb"].toString().isEmpty() ? m["grandparentRatingKey"].toString()
+                                 : !m["parentThumb"].toString().isEmpty()      ? m["parentRatingKey"].toString()
+                                 : !m["thumb"].toString().isEmpty()            ? m["ratingKey"].toString()
+                                 : !m["grandparentRatingKey"].toString().isEmpty() ? m["grandparentRatingKey"].toString()
+                                 : !m["parentRatingKey"].toString().isEmpty()  ? m["parentRatingKey"].toString()
+                                                                               : m["ratingKey"].toString()},
         {"title",                  m["title"].toString().toUpper()},
         {"editionTitle",           m["editionTitle"].toString()},
         {"year",                   m["year"].toVariant()},

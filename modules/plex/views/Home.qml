@@ -50,11 +50,18 @@ FocusScope {
     function hoveredItem() { return colIndex <= 0 ? null : (currentItems()[colIndex - 1] || null) }
 
     // Ask the server to recover a cover-less item's art (opt-in), once per item.
-    function maybeRefreshCover(it) {
-        if (!autoRefreshCovers || !it || !it.ratingKey) return
-        if (refreshedCovers[it.ratingKey]) return
-        refreshedCovers[it.ratingKey] = true
-        plexBackend.refresh_metadata(it.ratingKey, it.title || "")
+    // The refresh targets the item that owns the art on screen — for an episode's
+    // card (Continue Watching) that's its show or season, not the episode — read
+    // off the art path (/library/metadata/<key>/thumb/…) when there is one, else
+    // the card's poster owner.
+    function maybeRefreshCover(it, artPath) {
+        if (!autoRefreshCovers || !it) return
+        var m = /^\/library\/metadata\/(\d+)\//.exec(artPath || "")
+        var key = m ? m[1] : (it.posterKey || it.ratingKey)
+        if (!key || refreshedCovers[key]) return
+        refreshedCovers[key] = true
+        plexBackend.refresh_metadata(key, key === it.ratingKey ? (it.title || "")
+                                          : (it.grandparentTitle || it.parentTitle || it.title || ""))
     }
 
     // Cursor position to restore to on return.
@@ -162,7 +169,7 @@ FocusScope {
             if (homeRoot.autoRefreshCovers && !homeRoot.textMode && it) {
                 var row = rowList.currentItem
                 var pd  = row ? row.currentPoster : null
-                if (pd && pd.coverMissing) homeRoot.maybeRefreshCover(it)
+                if (pd && pd.coverMissing) homeRoot.maybeRefreshCover(it, it.poster)
             }
         }
     }
