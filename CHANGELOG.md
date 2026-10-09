@@ -22,6 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an idle-pause release (the stream resumes on it instead of the original track),
   carries into the next episode, and is what the info screen shows on return — it
   no longer resets to the first track in the language.
+- **Missing covers recover from Continue Watching too.** Auto-Refresh Missing Covers
+  refreshed the episode behind a Continue Watching card, but the card shows its
+  show's (or season's) poster — so the missing art never came back. It now refreshes
+  the item the artwork actually belongs to, on Home and in the browse grid alike.
+- **Watchlist bookmark keeps working in long sessions.** The Plex account sign-in
+  (renewed every few days) was only refreshed at startup, so an app left running
+  outlived it: the bookmark then flipped back on every press, everywhere, until a
+  restart. It is now renewed while the app runs, and a rejected Watchlist request
+  renews it and retries.
+- **UI scale survives display power-off and resolution changes.** Turning the
+  monitors off and on, or changing resolution, could leave the window larger (or
+  smaller) than the screen — the whole interface zoomed in until a restart. The
+  window now re-fits its screen whenever its size, position or scale factor drifts.
 
 ## [0.10.1] - 2026-09-19
 
