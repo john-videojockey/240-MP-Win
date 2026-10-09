@@ -260,20 +260,48 @@ Window {
         if (root.width  !== Screen.width)    root.width = Screen.width
         if (root.height !== Screen.height)   root.height = Screen.height
     }
+    // True when the window no longer covers exactly its screen (1px of rounding
+    // slack for fractional scale factors).
+    function _fullscreenMismatch() {
+        return Math.abs(root.x - Screen.virtualX) > 1 || Math.abs(root.y - Screen.virtualY) > 1
+            || Math.abs(root.width - Screen.width) > 1 || Math.abs(root.height - Screen.height) > 1
+    }
 
     // A display-mode change moves the Screen dimensions; re-apply so the window
     // tracks them even after its original Screen.* bindings have been broken.
     Screen.onWidthChanged:  root._ensureFullscreen()
     Screen.onHeightChanged: root._ensureFullscreen()
 
-    // Last-resort watchdog for a total (0x0) collapse that no event caught. Acts
-    // only on a zero-size *shown* window, so it can never disturb a legitimate
-    // minimize (which is a non-zero size in the Minimized visibility state).
+    // The window's own resize can land AFTER the Screen change it belongs to:
+    // when displays come back from power-off, or change mode, Windows (and the
+    // DPI-change handling) re-applies the window's earlier size at the new scale
+    // factor, leaving it larger or smaller than the screen — and since every view
+    // sizes itself from root.sw/sh, the whole UI then shows zoomed (or shrunk)
+    // until a restart. So re-check shortly after any change to the window's
+    // geometry, screen or scale factor too, once the sequence has settled.
+    Screen.onVirtualXChanged:        geometryHeal.restart()
+    Screen.onVirtualYChanged:        geometryHeal.restart()
+    Screen.onDevicePixelRatioChanged: geometryHeal.restart()
+    onScreenChanged: geometryHeal.restart()
+    onXChanged:      geometryHeal.restart()
+    onYChanged:      geometryHeal.restart()
+    onWidthChanged:  geometryHeal.restart()
+    onHeightChanged: geometryHeal.restart()
+    Timer {
+        id: geometryHeal
+        interval: 500
+        onTriggered: if (root._fullscreenMismatch()) root._ensureFullscreen()
+    }
+
+    // Last-resort watchdog for a wrong geometry that no event caught — a total
+    // (0x0) collapse, or a window left larger/smaller than its screen. Acts only
+    // on a *shown* window, so it can never disturb a legitimate minimize (which
+    // is a non-zero size in the Minimized visibility state).
     Timer {
         interval: 2000; repeat: true; running: true
         onTriggered: {
             if (root.visibility === Window.Windowed
-                    && (root.width <= 0 || root.height <= 0))
+                    && (root.width <= 0 || root.height <= 0 || root._fullscreenMismatch()))
                 root._ensureFullscreen()
         }
     }
