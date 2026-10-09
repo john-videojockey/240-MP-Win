@@ -266,6 +266,37 @@ Window {
         return Math.abs(root.x - Screen.virtualX) > 1 || Math.abs(root.y - Screen.virtualY) > 1
             || Math.abs(root.width - Screen.width) > 1 || Math.abs(root.height - Screen.height) > 1
     }
+    // The root content item — which every view fills — normally follows the
+    // window through its resize events, but it can be left behind. When the
+    // displays come back from power-off, Qt moves the window from its stand-in
+    // screen (scale 1) to the real one without the physical size changing, so no
+    // resize event comes: the window's logical size updates while the content
+    // item keeps the stand-in's, several times larger. Everything anchored
+    // right/bottom then sits off-screen and every fill (fanart) is blown up, until
+    // a restart. True when the content item no longer matches the window.
+    function _contentMismatch() {
+        var c = root.contentItem
+        return !!c && (Math.abs(c.width - root.width) > 1 || Math.abs(c.height - root.height) > 1)
+    }
+    // Put the window back over its screen and the content item back to the
+    // window, logging what was found so a recurrence shows up in the app log.
+    function _healGeometry() {
+        if (root.visibility === Window.Minimized || root.visibility === Window.Hidden)
+            return
+        var windowOff  = root.width <= 0 || root.height <= 0 || _fullscreenMismatch()
+        var contentOff = _contentMismatch()
+        if (!windowOff && !contentOff) return
+        console.info("[Main] geometry heal: window " + root.x + "," + root.y + " "
+                     + root.width + "x" + root.height
+                     + ", content " + root.contentItem.width + "x" + root.contentItem.height
+                     + ", screen " + Screen.virtualX + "," + Screen.virtualY + " "
+                     + Screen.width + "x" + Screen.height + " @" + Screen.devicePixelRatio)
+        if (windowOff) _ensureFullscreen()
+        if (_contentMismatch()) {
+            root.contentItem.width  = root.width
+            root.contentItem.height = root.height
+        }
+    }
 
     // A display-mode change moves the Screen dimensions; re-apply so the window
     // tracks them even after its original Screen.* bindings have been broken.
@@ -287,23 +318,25 @@ Window {
     onYChanged:      geometryHeal.restart()
     onWidthChanged:  geometryHeal.restart()
     onHeightChanged: geometryHeal.restart()
+    Connections {
+        target: root.contentItem
+        function onWidthChanged()  { geometryHeal.restart() }
+        function onHeightChanged() { geometryHeal.restart() }
+    }
     Timer {
         id: geometryHeal
         interval: 500
-        onTriggered: if (root._fullscreenMismatch()) root._ensureFullscreen()
+        onTriggered: root._healGeometry()
     }
 
     // Last-resort watchdog for a wrong geometry that no event caught — a total
-    // (0x0) collapse, or a window left larger/smaller than its screen. Acts only
-    // on a *shown* window, so it can never disturb a legitimate minimize (which
-    // is a non-zero size in the Minimized visibility state).
+    // (0x0) collapse, a window left larger/smaller than its screen, or a content
+    // item left at another size than the window. Acts only on a *shown* window,
+    // so it can never disturb a legitimate minimize (which is a non-zero size in
+    // the Minimized visibility state).
     Timer {
         interval: 2000; repeat: true; running: true
-        onTriggered: {
-            if (root.visibility === Window.Windowed
-                    && (root.width <= 0 || root.height <= 0 || root._fullscreenMismatch()))
-                root._ensureFullscreen()
-        }
+        onTriggered: if (root.visibility === Window.Windowed) root._healGeometry()
     }
 
     // Restoring the single taskbar button un-minimizes this owner window; heal the
@@ -314,7 +347,7 @@ Window {
     // this also fires as the window hides during app shutdown.
     onVisibilityChanged: {
         if (root.visibility === Window.Windowed)
-            root._ensureFullscreen()
+            root._healGeometry()
         // Keep the mpv window in lockstep with this (owner) window during
         // playback: minimize it with us and bring it back on restore, so the two
         // never split even if the owned-window marriage failed to take.

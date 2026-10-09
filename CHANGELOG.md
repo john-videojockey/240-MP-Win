@@ -32,9 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   restart. It is now renewed while the app runs, and a rejected Watchlist request
   renews it and retries.
 - **UI scale survives display power-off and resolution changes.** Turning the
-  monitors off and on, or changing resolution, could leave the window larger (or
-  smaller) than the screen — the whole interface zoomed in until a restart. The
-  window now re-fits its screen whenever its size, position or scale factor drifts.
+  monitors off and on, or changing resolution, could leave the window — or the
+  content area inside it — larger than the screen: the interface zoomed in, with
+  the BACK chip, footer hints and the edges of the fanart pushed off-screen until a
+  restart. The window now re-fits its screen, and its content area the window,
+  whenever either drifts; each repair is noted in the app log.
 
 ## [0.10.1] - 2026-09-19
 
